@@ -332,7 +332,7 @@ public class ApplicationBuilder {
         Path templateDir;
         try {
             String templatePath = String.format("templates/%s/app", buildTool.getName());
-            templateDir = TemplateProcessor.extractTemplateDirectory("rumi-app-template", templatePath);
+            templateDir = TemplateProcessor.extractTemplateDirectory("rumi-app-template", templatePath, false);
         }
         catch (IOException e) {
             throw new IOException("Failed to extract template for build tool: " + buildTool, e);

@@ -50,46 +50,48 @@ class ConfigInjector {
         if (params.getServiceHAModel() != null) {
             templateRoot = templateRoot + "/" + params.getServiceHAModel().getName();
         }
-        Path configTemplatesDir = TemplateProcessor.extractTemplateDirectory("rumi-service-config-template", templateRoot);
+        Path configTemplatesDir = TemplateProcessor.extractTemplateDirectory("rumi-service-config-template", templateRoot, true);
 
-        // inject
-        try {
-            int numInstances = params.getNumPartitions() * (params.isClustered() ? 2 : 1);
-            for (int i = 0 ; i < numInstances ; i++) {
-                params.getTokenMap().put(TokenUtils.toToken("ServicePartition"), String.valueOf((params.isClustered() ? i/2 : i) + 1));
-                params.getTokenMap().put(TokenUtils.toToken("ServiceInstance"), String.valueOf(i+1));
-                Files.walk(configTemplatesDir)
-                        .filter(p -> p.getFileName().toString().equals("config.xml"))
-                        .forEach(templatePath -> {
-                            try {
-                                String injectionContent = Files.readString(templatePath);
-                                String processedContent = TemplateProcessor.applyTokens(injectionContent, params.getTokenMap());
-                                List<String> pathParts = getRelativeConfigPath(configTemplatesDir, templatePath);
-                                injectIntoDOM(doc, pathParts, processedContent);
-                            } catch (Exception e) {
-                                throw new RuntimeException("Failed to inject config block from: " + templatePath, e);
-                            }
-                        });
+        // inject if template path was found
+        if (configTemplatesDir != null) {
+            try {
+                int numInstances = params.getNumPartitions() * (params.isClustered() ? 2 : 1);
+                for (int i = 0 ; i < numInstances ; i++) {
+                    params.getTokenMap().put(TokenUtils.toToken("ServicePartition"), String.valueOf((params.isClustered() ? i/2 : i) + 1));
+                    params.getTokenMap().put(TokenUtils.toToken("ServiceInstance"), String.valueOf(i+1));
+                    Files.walk(configTemplatesDir)
+                            .filter(p -> p.getFileName().toString().equals("config.xml"))
+                            .forEach(templatePath -> {
+                                try {
+                                    String injectionContent = Files.readString(templatePath);
+                                    String processedContent = TemplateProcessor.applyTokens(injectionContent, params.getTokenMap());
+                                    List<String> pathParts = getRelativeConfigPath(configTemplatesDir, templatePath);
+                                    injectIntoDOM(doc, pathParts, processedContent);
+                                } catch (Exception e) {
+                                    throw new RuntimeException("Failed to inject config block from: " + templatePath, e);
+                                }
+                            });
+                }
             }
-        }
-        finally { 
-            params.getTokenMap().remove(TokenUtils.toToken("ServicePartition"));
-            params.getTokenMap().remove(TokenUtils.toToken("ServiceInstance"));
-        }
+            finally { 
+                params.getTokenMap().remove(TokenUtils.toToken("ServicePartition"));
+                params.getTokenMap().remove(TokenUtils.toToken("ServiceInstance"));
+            }
 
-        // write back to file with formatting preserved
-        removeEmptyTextNodes(doc);
-        TransformerFactory transformerFactory = TransformerFactory.newInstance();
-        Transformer transformer = transformerFactory.newTransformer();
-        transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-        transformer.setOutputProperty(OutputKeys.METHOD, "xml");
-        transformer.setOutputProperty(OutputKeys.ENCODING, "UTF-8");
-        transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4");
-        transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "no");
-        transformer.setOutputProperty(OutputKeys.STANDALONE, "yes");
-        DOMSource source = new DOMSource(doc);
-        StreamResult result = new StreamResult(new OutputStreamWriter(new FileOutputStream(configPath.toFile()), "UTF-8"));
-        transformer.transform(source, result);
+            // write back to file with formatting preserved
+            removeEmptyTextNodes(doc);
+            TransformerFactory transformerFactory = TransformerFactory.newInstance();
+            Transformer transformer = transformerFactory.newTransformer();
+            transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+            transformer.setOutputProperty(OutputKeys.METHOD, "xml");
+            transformer.setOutputProperty(OutputKeys.ENCODING, "UTF-8");
+            transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4");
+            transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "no");
+            transformer.setOutputProperty(OutputKeys.STANDALONE, "yes");
+            DOMSource source = new DOMSource(doc);
+            StreamResult result = new StreamResult(new OutputStreamWriter(new FileOutputStream(configPath.toFile()), "UTF-8"));
+            transformer.transform(source, result);
+        }
     }
 
     private static void removeEmptyTextNodes(Node node) {

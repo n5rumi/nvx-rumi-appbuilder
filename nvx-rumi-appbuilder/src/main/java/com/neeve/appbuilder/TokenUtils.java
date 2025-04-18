@@ -60,15 +60,13 @@ class TokenUtils {
 
         String[] words = name.trim().split("\\s+");
         StringBuilder result = new StringBuilder();
-
         for (String word : words) {
             if (!word.isEmpty()) {
                 result.append(Character.toUpperCase(word.charAt(0)));
-                result.append(word.substring(1).toLowerCase());
+                result.append(word.substring(1));
                 result.append(" ");
             }
         }
-
         return result.toString().trim();
     }
 }

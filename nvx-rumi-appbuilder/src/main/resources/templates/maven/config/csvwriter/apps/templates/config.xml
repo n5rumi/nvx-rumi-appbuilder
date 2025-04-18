@@ -4,6 +4,7 @@
             <factory name="{{AppPackageName}}.roe.Factory"/>
         </factories>
         <bus name="{{BusName}}"/>
+        <bus name="{{ServiceName}}"/>
     </messaging>
     <storage enabled="false"/>
     <captureMessageTypeStats>${SERVICE_CAPTURE_MESSAGE_TYPE_STATS::true}</captureMessageTypeStats>

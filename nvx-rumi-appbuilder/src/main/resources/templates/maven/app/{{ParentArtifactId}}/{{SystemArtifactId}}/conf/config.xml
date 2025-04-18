@@ -53,7 +53,7 @@
             <env>
                 <ROOT_DIR>${{{AppTokenName}}.rootdir::/home/rumi/{{AppTokenName}}}</ROOT_DIR>
                 <APP_BUS_DESCRIPTOR>{{MessagingConnectionString}}</APP_BUS_DESCRIPTOR>
-                <STORE_LOCATION>${ROOT_DIR}/store/${nv.ddl.targetxvm}</STORE_LOCATION>
+                <SERVICE_STORE_LOCATION>${ROOT_DIR}/store/${nv.ddl.targetxvm}</SERVICE_STORE_LOCATION>
                 <nv>
                     <!-- discovery -->
                     <discovery.descriptor>activemq://discovery.rumi.local:61616?wireFormat.maxInactivityDuration=0</discovery.descriptor>

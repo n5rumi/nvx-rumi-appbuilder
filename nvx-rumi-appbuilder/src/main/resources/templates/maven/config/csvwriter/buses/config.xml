@@ -1,0 +1,8 @@
+<bus descriptor="connector://.&amp;classname={{AppPackageName}}.{{ServicePackageName}}.connector.Main&amp;inbound_channel=in" name="{{ServiceName}}">
+    <channels>
+        <channel name="in" id="1">
+            <qos>BestEffort</qos>
+        </channel>
+    </channels>
+</bus>
+

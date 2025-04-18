@@ -5,14 +5,8 @@
     </factories>
 
     <messages>
-        <!-- This is where the application messages would be defined. Application messages are -->
-        <!-- shared by all micro services that comprise the application and, thus reside in    -->
-        <!-- this separate ROE module. Each service would depend on the ROE module to gain     -->
-        <!-- access to the application message set                                             -->
     </messages>
 
     <entities>
-        <!-- This is where all the embedded entities (field groups) used by the message defined -->
-        <!-- above and by service state models would reside                                     -->
     </entities>
 </model>

@@ -1,6 +1,10 @@
 <xvm name="{{ServiceName}}-template">
     <env>
         <{{AppTokenName}}.{{ServicePackageName}}>
+            <file>
+                <location>${ROOT_DIR}/csvwriter</location>
+                <name>file.csv</name>
+            </file>
         </{{AppTokenName}}.{{ServicePackageName}}>
     </env>
     <acceptors>

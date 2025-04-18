@@ -11,7 +11,11 @@
     <provisioning>
         <jvm>
             <javaHome>${{{AppTokenName}}.java.home::%JAVA_HOME_11%}</javaHome>
-            <jvmParams>%JAVA_11_OPTS%</jvmParams>
+            <jvmParamSets>
+                <jvmParamSet name="java-11-opens" order="0">
+                    <jvmParams>--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.management/sun.management=ALL-UNNAMED --illegal-access=warn</jvmParams>
+                </jvmParamSet>
+            </jvmParamSets>
         </jvm>
     </provisioning>
 </xvm>

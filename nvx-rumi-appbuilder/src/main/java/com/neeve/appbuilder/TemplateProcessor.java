@@ -31,11 +31,14 @@ import java.nio.file.*;
 import java.util.*;
 
 class TemplateProcessor {
-    static Path extractTemplateDirectory(String templateDirPrefix, String templatePath) throws IOException {
+    static Path extractTemplateDirectory(String templateDirPrefix, String templatePath, boolean templatePathCanBeAbsent) throws IOException {
         Path tempDir = Files.createTempDirectory(templateDirPrefix + "-");
         try (ScanResult scanResult = new ClassGraph().acceptPaths(templatePath).scan()) {
             var resources = scanResult.getAllResources();
             if (resources.isEmpty()) {
+                if (templatePathCanBeAbsent) {
+                    return null;
+                }
                 throw new InternalError("Template path not found or is empty: " + templatePath);
             }
             for (Resource resource : resources) {

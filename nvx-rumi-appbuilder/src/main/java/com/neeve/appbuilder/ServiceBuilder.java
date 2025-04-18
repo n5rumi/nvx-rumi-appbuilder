@@ -30,7 +30,7 @@ import java.util.Map;
 public class ServiceBuilder {
     public enum ServiceType {
         DRIVER("driver", false),
-        CONNECTOR("connector", false),
+        CSVWRITER("csvwriter", false),
         PROCESSOR("processor", true);
 
         private final String name;
@@ -131,7 +131,7 @@ public class ServiceBuilder {
             String serviceArtifactId = parentArtifactId + "-" + kebabCase;
             map.put(TokenUtils.toToken("ServiceDisplayName"), TokenUtils.forDisplay(serviceName));
             map.put(TokenUtils.toToken("ServiceTokenName"), kebabCase);     // e.g., "order-processor"
-            map.put(TokenUtils.toToken("ServiceName"), map.get(TokenUtils.toToken("AppTokenName")) + "-" + kebabCase);     // e.g., "order-processor"
+            map.put(TokenUtils.toToken("ServiceName"), map.get(TokenUtils.toToken("AppTokenName")) + "-" + kebabCase); // e.g., "tradingsystem-order-processor"
             map.put(TokenUtils.toToken("ServicePackageName"), dottedCase);  // e.g., "order.processor"
             map.put(TokenUtils.toToken("ServicePackagePath"), slashCase);      // e.g., "order/processor"
             map.put(TokenUtils.toToken("ServiceType"), serviceType.getName());
@@ -170,10 +170,20 @@ public class ServiceBuilder {
     }
 
     private void updateParentPom(Path appRoot, ServiceParams params) throws IOException {
+        // resolve pom to be updated
         Path pomPath = appRoot.resolve("pom.xml");
+
+        // get the token map
+        Map<String, String> tokens = params.getTokenMap();
+
+        // prepare service module line to be added
+        String serviceModuleLine = "        <module>" + tokens.get(TokenUtils.toToken("ServiceArtifactId")) + "</module>";
+
+        // prepare system module line that serves as position where the new module line needs to be added
+        String systemModuleLine = "<module>" + tokens.get(TokenUtils.toToken("SystemArtifactId")) + "</module>";
+
+        // read the pom
         List<String> lines = Files.readAllLines(pomPath);
-        String serviceModuleLine = "        <module>" + params.getTokenMap().get(TokenUtils.toToken("ServiceArtifactId")) + "</module>";
-        String systemModuleLine = "<module>" + params.getTokenMap().get(TokenUtils.toToken("SystemArtifactId")) + "</module>";
 
         // skip if it's already present
         for (int i = 0; i < lines.size(); i++) {
@@ -201,6 +211,38 @@ public class ServiceBuilder {
         }
     }
 
+    private void updateSystemModulePom(Path appRoot, ServiceParams params) throws IOException {
+        // get the tokens
+        Map<String, String> tokens = params.getTokenMap();
+
+        // resolve the system module pom.xml path
+        Path pomPath = appRoot.resolve(tokens.get(TokenUtils.toToken("SystemArtifactId"))).resolve("pom.xml");
+
+        // read the POM content
+        List<String> lines = Files.readAllLines(pomPath);
+        String closingTag = "</dependencies>";
+        String dependencyBlock = String.format(
+            "        <dependency>\n" +
+            "            <groupId>%s</groupId>\n" +
+            "            <artifactId>%s</artifactId>\n" +
+            "            <version>${project.version}</version>\n" +
+            "        </dependency>",
+            tokens.get(TokenUtils.toToken("GroupId")),
+            tokens.get(TokenUtils.toToken("ServiceArtifactId"))
+        );
+
+        // find the last </dependencies> tag and inject before it
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).contains(closingTag)) {
+                lines.add(i, dependencyBlock);
+                break;
+            }
+        }
+
+        // write back the modified pom
+        Files.write(pomPath, lines);
+    }
+
     public ServiceBuilder createService(ServiceParams params) throws Exception {
         // validate
         if (params == null) {
@@ -220,7 +262,7 @@ public class ServiceBuilder {
             if (params.getServiceHAModel() != null) {
                 templatePath = templatePath + "/" + params.getServiceHAModel().getName();
             }
-            templateDir = TemplateProcessor.extractTemplateDirectory("rumi-service-template", templatePath);
+            templateDir = TemplateProcessor.extractTemplateDirectory("rumi-service-template", templatePath, false);
         }
         catch (IOException e) {
             throw new IOException("Failed to extract template for build tool '" + buildToolName + "' and service type '" + serviceTypeName + "'", e);
@@ -236,6 +278,12 @@ public class ServiceBuilder {
 
         // inject service config
         ConfigInjector.injectServiceConfig(appRoot, params);
+
+        // inject deployment script updates
+        ScriptInjector.injectIntoScripts(appRoot, params);
+
+        // update the system module pom
+        updateSystemModulePom(appRoot, params);
 
         // update the parent pom
         updateParentPom(appRoot, params);

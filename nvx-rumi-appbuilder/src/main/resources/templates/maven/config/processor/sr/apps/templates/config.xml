@@ -1,7 +1,7 @@
 <app name="{{ServiceName}}-template" mainClass="{{AppPackageName}}.{{ServicePackageName}}.Main">
     <messaging>
         <factories>
-            <factory name="{{AppPackageName}}.roe.MessageFactory"/>
+            <factory name="{{AppPackageName}}.roe.Factory"/>
             <factory name="{{AppPackageName}}.{{ServicePackageName}}.messages.MessageFactory"/>
         </factories>
         <bus name="{{BusName}}"/>
