@@ -10,6 +10,10 @@
     <acceptors>
         <acceptor descriptor="tcp://${HOST::0.0.0.0}:0"/>
     </acceptors>
+    <heartbeats enabled="${{{AppTokenName}}.local.telemetry.enable::${SERVICE_TELEMTRY_ENABLE::false}}" interval="${{{AppTokenName}}.local.telemetry.frequency::15}">
+        <collectIndividualThreadStats>false</collectIndividualThreadStats>
+        <includeMessageTypeStats>true</includeMessageTypeStats>
+    </heartbeats>
     <provisioning>
         <host>${SERVICE_HOST::.}</host>
         <rootDirectory>${ROOT_DIR}</rootDirectory>

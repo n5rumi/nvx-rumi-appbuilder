@@ -1,0 +1,59 @@
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.2.0 http://maven.apache.org/xsd/assembly-2.2.0.xsd">
+    <id>standalone</id>
+    <formats>
+        <format>tar.gz</format>
+    </formats>
+    <includeBaseDirectory>false</includeBaseDirectory>
+
+    <dependencySets>
+        <!-- Unpack sandbox distribution as base (exclude dirs we replace) -->
+        <dependencySet>
+            <includes>
+                <include>com.neeve:nvx-rumi:tar.gz:sandbox-*</include>
+            </includes>
+            <unpack>true</unpack>
+            <unpackOptions>
+                <excludes>
+                    <exclude>**/bin/java/lib/**</exclude>
+                    <exclude>**/conf/wrapper.env.vars</exclude>
+                    <exclude>**/conf/wrapper.jvm.params</exclude>
+                    <exclude>**/conf/config.xml</exclude>
+                </excludes>
+            </unpackOptions>
+            <outputDirectory>/</outputDirectory>
+            <useProjectArtifact>false</useProjectArtifact>
+        </dependencySet>
+
+        <!-- Application runtime jars to bin/java/lib/ -->
+        <dependencySet>
+            <excludes>
+                <exclude>com.neeve:nvx-rumi:tar.gz:sandbox-*</exclude>
+            </excludes>
+            <unpack>false</unpack>
+            <outputDirectory>bin/java/lib</outputDirectory>
+            <useProjectArtifact>false</useProjectArtifact>
+        </dependencySet>
+    </dependencySets>
+
+    <fileSets>
+        <!-- Application config.xml -->
+        <fileSet>
+            <directory>${project.basedir}/conf</directory>
+            <outputDirectory>conf</outputDirectory>
+            <includes>
+                <include>config.xml</include>
+            </includes>
+        </fileSet>
+        <!-- Standalone wrapper configuration -->
+        <fileSet>
+            <directory>${project.basedir}/src/assembly/conf</directory>
+            <outputDirectory>conf</outputDirectory>
+            <includes>
+                <include>wrapper.env.vars</include>
+                <include>wrapper.jvm.params</include>
+            </includes>
+        </fileSet>
+    </fileSets>
+</assembly>

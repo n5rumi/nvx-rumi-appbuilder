@@ -1,0 +1,6 @@
+<xvm name="{{ServiceName}}-template">
+    <env>
+        <SERVICE_HEAP_SIZE_PARAMS>${{{AppTokenName}}.local.heap.{{ServicePackageName}}::-Xms32m -Xmx1g}</SERVICE_HEAP_SIZE_PARAMS>
+        <SERVICE_TELEMTRY_ENABLE>true</SERVICE_TELEMTRY_ENABLE>
+    </env>
+</xvm>

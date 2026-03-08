@@ -1,0 +1,8 @@
+<xvm name="{{ServiceName}}-template">
+    <env>
+        <SERVICE_HEAP_SIZE_PARAMS>${{{AppTokenName}}.local.heap.{{ServicePackageName}}::-Xms32m -Xmx1g}</SERVICE_HEAP_SIZE_PARAMS>
+        <SERVICE_CLUSTERING_ENABLED>true</SERVICE_CLUSTERING_ENABLED>
+        <SERVICE_COMPACTION_THRESHOLD>${{{AppTokenName}}.local.compaction.threshold.{{ServicePackageName}}::100m}</SERVICE_COMPACTION_THRESHOLD>
+        <SERVICE_TELEMTRY_ENABLE>true</SERVICE_TELEMTRY_ENABLE>
+    </env>
+</xvm>

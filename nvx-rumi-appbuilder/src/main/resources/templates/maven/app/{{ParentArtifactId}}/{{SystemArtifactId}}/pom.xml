@@ -58,4 +58,43 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Profile for building standalone distribution -->
+        <profile>
+            <id>dist</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.neeve</groupId>
+                    <artifactId>nvx-rumi</artifactId>
+                    <version>${nvx.rumi.version}</version>
+                    <classifier>sandbox-${arch}</classifier>
+                    <type>tar.gz</type>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-assembly-plugin</artifactId>
+                        <version>3.6.0</version>
+                        <executions>
+                            <execution>
+                                <id>standalone</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>single</goal>
+                                </goals>
+                                <configuration>
+                                    <descriptors>
+                                        <descriptor>src/assembly/standalone.xml</descriptor>
+                                    </descriptors>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
