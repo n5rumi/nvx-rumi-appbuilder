@@ -8,6 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build Commands
 
+**Requires Java 17** (the system default may be Java 8 — make sure `JAVA_HOME` points to a JDK 17 installation before building).
+
 ```bash
 # Build the project
 mvn clean install
@@ -53,7 +55,7 @@ The project has a single module: `nvx-rumi-appbuilder`.
 
 - **ClassGraph** (`io.github.classgraph:classgraph:4.8.162`) — Classpath scanning for template extraction
 - **Gson** (`com.google.gson:gson:2.10.1`) — JSON serialization of app config (`.rumi` file)
-- Target: Java 8 (release 8), builds with Maven Compiler Plugin 3.13.0
+- Target: Java 11+ (release 11), requires Java 17 to build. Maven Compiler Plugin 3.8.1
 
 ## Branch Strategy
 
