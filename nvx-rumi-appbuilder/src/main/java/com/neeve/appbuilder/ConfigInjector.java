@@ -197,7 +197,26 @@ class ConfigInjector {
             }
         }
         Element child = parent.getOwnerDocument().createElement(tag);
-        parent.appendChild(child);
+        if (tag.equals("templates")) {
+            // templates must precede non-template element siblings (e.g. individual xvm/app declarations)
+            // Files.walk order is non-deterministic, so a direct child may already have been appended
+            Node refNode = null;
+            NodeList siblings = parent.getChildNodes();
+            for (int j = 0; j < siblings.getLength(); j++) {
+                Node sibling = siblings.item(j);
+                if (sibling.getNodeType() == Node.ELEMENT_NODE && !sibling.getNodeName().equals("templates")) {
+                    refNode = sibling;
+                    break;
+                }
+            }
+            if (refNode != null) {
+                parent.insertBefore(child, refNode);
+            } else {
+                parent.appendChild(child);
+            }
+        } else {
+            parent.appendChild(child);
+        }
         return child;
     }
 
