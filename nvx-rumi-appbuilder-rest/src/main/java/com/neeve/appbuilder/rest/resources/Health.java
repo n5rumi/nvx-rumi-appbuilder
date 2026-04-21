@@ -33,7 +33,7 @@ import java.util.Map;
  * probe the service without hitting any stateful surface.
  */
 @Path("/health")
-public class HealthResource extends AbstractResource {
+public class Health extends AbstractResource {
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
@@ -46,7 +46,7 @@ public class HealthResource extends AbstractResource {
     }
 
     private static String versionString() {
-        Package p = HealthResource.class.getPackage();
+        Package p = Health.class.getPackage();
         String v = p != null ? p.getImplementationVersion() : null;
         return v != null ? v : "dev";
     }

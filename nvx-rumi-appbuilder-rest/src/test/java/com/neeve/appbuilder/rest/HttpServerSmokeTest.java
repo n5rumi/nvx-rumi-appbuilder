@@ -46,7 +46,7 @@ public class HttpServerSmokeTest {
 
     @Before
     public void setUp() throws Exception {
-        server = new HttpServer("127.0.0.1", 0, new AppBuilderResourceConfig());
+        server = new HttpServer("127.0.0.1", 0, new Main.ResourceConfig());
         server.start();
     }
 

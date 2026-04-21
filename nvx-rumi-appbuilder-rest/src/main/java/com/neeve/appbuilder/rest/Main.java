@@ -21,6 +21,9 @@
  */
 package com.neeve.appbuilder.rest;
 
+import com.neeve.appbuilder.rest.mappers.ExceptionMapper;
+import com.neeve.appbuilder.rest.resources.Health;
+import org.glassfish.jersey.jackson.JacksonFeature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,9 +31,9 @@ import org.slf4j.LoggerFactory;
  * Entry point for the Rumi App Builder REST service.
  *
  * <p>Starts an embedded Jetty 12 HTTP server hosting the Jersey 3
- * {@link AppBuilderResourceConfig}. Runs as a plain Java process in v1
- * (no AEP lifecycle, no Rumi Management hooks — those land when the
- * packaging story in RUMI-304 requires them).
+ * {@link ResourceConfig}. Runs as a plain Java process in v1 (no AEP
+ * lifecycle, no Rumi Management hooks — those land when the packaging
+ * story in RUMI-304 requires them).
  *
  * <p>Configuration is via environment variables so the deployed
  * systemd/AMI story can control behaviour without a config file:
@@ -40,16 +43,16 @@ import org.slf4j.LoggerFactory;
  *   <li>{@code RUMI_APPBUILDER_REST_HOST} — bind host, default {@code 0.0.0.0}
  * </ul>
  */
-public final class AppBuilderRestMain {
-    private static final Logger LOG = LoggerFactory.getLogger(AppBuilderRestMain.class);
+public final class Main {
+    private static final Logger LOG = LoggerFactory.getLogger(Main.class);
 
-    private AppBuilderRestMain() {}
+    private Main() {}
 
     public static void main(String[] args) throws Exception {
         int port = intEnv("RUMI_APPBUILDER_REST_PORT", 3200);
         String host = env("RUMI_APPBUILDER_REST_HOST", "0.0.0.0");
 
-        HttpServer server = new HttpServer(host, port, new AppBuilderResourceConfig());
+        HttpServer server = new HttpServer(host, port, new ResourceConfig());
         server.start();
         LOG.info("Rumi App Builder REST listening on http://{}:{}", host, port);
 
@@ -75,5 +78,25 @@ public final class AppBuilderRestMain {
     private static String env(String name, String defaultValue) {
         String raw = System.getenv(name);
         return (raw == null || raw.isBlank()) ? defaultValue : raw;
+    }
+
+    /**
+     * Jersey resource config for the App Builder REST service.
+     *
+     * <p>Resources are registered explicitly (not via package scan) so the
+     * API surface is visible in one place and easy to audit. Endpoint
+     * implementations (apps, services, handlers, messages, state, config,
+     * factory-ids) land under RUMI-301.
+     */
+    public static final class ResourceConfig extends org.glassfish.jersey.server.ResourceConfig {
+        public ResourceConfig() {
+            register(JacksonFeature.class);
+
+            // Resources.
+            register(Health.class);
+
+            // Central exception -> HTTP status mapping (Paywhere-style envelope).
+            register(ExceptionMapper.class);
+        }
     }
 }

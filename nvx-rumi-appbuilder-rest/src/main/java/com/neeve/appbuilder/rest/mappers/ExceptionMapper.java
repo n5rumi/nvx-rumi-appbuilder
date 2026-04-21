@@ -26,7 +26,6 @@ import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,8 +64,8 @@ import java.nio.file.NoSuchFileException;
  * deliberately does not include internal details.
  */
 @Provider
-public class RestExceptionMapper implements ExceptionMapper<Throwable> {
-    private static final Logger LOG = LoggerFactory.getLogger(RestExceptionMapper.class);
+public class ExceptionMapper implements jakarta.ws.rs.ext.ExceptionMapper<Throwable> {
+    private static final Logger LOG = LoggerFactory.getLogger(ExceptionMapper.class);
 
     @Override
     public Response toResponse(Throwable t) {
