@@ -12,16 +12,102 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <!--
-      Scaffold — dependencies and plugins filled in once we've anchored on
-      the Rumi Management Agent's canonical service template. See
-      PROJECT.md "Open Questions" for decisions still to make.
-    -->
+    <properties>
+        <jetty.version>12.0.16</jetty.version>
+        <jersey.version>3.1.11</jersey.version>
+        <jackson.version>2.18.2</jackson.version>
+        <swagger.version>2.2.36</swagger.version>
+        <slf4j.version>2.0.16</slf4j.version>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>com.neeve</groupId>
             <artifactId>nvx-rumi-appbuilder-sdk</artifactId>
             <version>${project.version}</version>
         </dependency>
+
+        <!-- Jersey (Jakarta EE 10) -->
+        <dependency>
+            <groupId>org.glassfish.jersey.core</groupId>
+            <artifactId>jersey-server</artifactId>
+            <version>${jersey.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish.jersey.containers</groupId>
+            <artifactId>jersey-container-servlet-core</artifactId>
+            <version>${jersey.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish.jersey.inject</groupId>
+            <artifactId>jersey-hk2</artifactId>
+            <version>${jersey.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish.jersey.media</groupId>
+            <artifactId>jersey-media-json-jackson</artifactId>
+            <version>${jersey.version}</version>
+        </dependency>
+
+        <!-- Jackson (explicit to pin the version matrix) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+
+        <!-- Jetty 12 (Jakarta EE 10) -->
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-server</artifactId>
+            <version>${jetty.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty.ee10</groupId>
+            <artifactId>jetty-ee10-servlet</artifactId>
+            <version>${jetty.version}</version>
+        </dependency>
+
+        <!-- Swagger (OpenAPI generation; jakarta variant) -->
+        <dependency>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-jaxrs2-jakarta</artifactId>
+            <version>${swagger.version}</version>
+        </dependency>
+
+        <!-- Logging -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>${slf4j.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Test -->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <build>
+        <finalName>nvx-rumi-appbuilder-rest</finalName>
+        <plugins>
+            <!-- REST module runs on a JVM we control; use Java 17 features.
+                 The SDK stays at Java 11 for library-consumer compatibility. -->
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>17</release>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

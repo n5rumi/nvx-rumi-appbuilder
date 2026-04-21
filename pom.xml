@@ -10,7 +10,7 @@
     <parent>
         <groupId>com.neeve</groupId>
         <artifactId>nvx-os-parent</artifactId>
-        <version>1.1.5</version>
+        <version>1.1.6</version>
     </parent>
 
     <organization>
@@ -28,8 +28,8 @@
     </licenses>
 
     <scm>
-        <url>https://github.com/n5rumi/nvx-rumi-development</url>
-        <connection>scm:git:git://github.com/n5rumi/nvx-rumi-development.git</connection>
+        <url>https://github.com/n5rumi/nvx-rumi-appbuilder</url>
+        <connection>scm:git:git://github.com/n5rumi/nvx-rumi-appbuilder.git</connection>
     </scm>
 
     <modules>

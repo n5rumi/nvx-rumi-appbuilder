@@ -1,0 +1,79 @@
+/**
+ * Copyright 2022 N5 Technologies, Inc
+ *
+ * This product includes software developed at N5 Technologies, Inc
+ * (http://www.n5corp.com/) as well as software licenced to N5 Technologies,
+ * Inc under one or more contributor license agreements. See the NOTICE
+ * file distributed with this work for additional information regarding
+ * copyright ownership.
+ *
+ * N5 Technologies licenses this file to you under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at:
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.neeve.appbuilder.rest;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Entry point for the Rumi App Builder REST service.
+ *
+ * <p>Starts an embedded Jetty 12 HTTP server hosting the Jersey 3
+ * {@link AppBuilderResourceConfig}. Runs as a plain Java process in v1
+ * (no AEP lifecycle, no Rumi Management hooks — those land when the
+ * packaging story in RUMI-304 requires them).
+ *
+ * <p>Configuration is via environment variables so the deployed
+ * systemd/AMI story can control behaviour without a config file:
+ *
+ * <ul>
+ *   <li>{@code RUMI_APPBUILDER_REST_PORT} — HTTP port, default {@code 3200}
+ *   <li>{@code RUMI_APPBUILDER_REST_HOST} — bind host, default {@code 0.0.0.0}
+ * </ul>
+ */
+public final class AppBuilderRestMain {
+    private static final Logger LOG = LoggerFactory.getLogger(AppBuilderRestMain.class);
+
+    private AppBuilderRestMain() {}
+
+    public static void main(String[] args) throws Exception {
+        int port = intEnv("RUMI_APPBUILDER_REST_PORT", 3200);
+        String host = env("RUMI_APPBUILDER_REST_HOST", "0.0.0.0");
+
+        HttpServer server = new HttpServer(host, port, new AppBuilderResourceConfig());
+        server.start();
+        LOG.info("Rumi App Builder REST listening on http://{}:{}", host, port);
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try { server.stop(); } catch (Exception e) {
+                LOG.warn("Could not stop HTTP server cleanly: {}", e.getMessage());
+            }
+        }, "appbuilder-rest-shutdown"));
+
+        server.join();
+    }
+
+    private static int intEnv(String name, int defaultValue) {
+        String raw = System.getenv(name);
+        if (raw == null || raw.isBlank()) return defaultValue;
+        try { return Integer.parseInt(raw.trim()); }
+        catch (NumberFormatException e) {
+            LOG.warn("Env {} is not a valid int ({}); using default {}", name, raw, defaultValue);
+            return defaultValue;
+        }
+    }
+
+    private static String env(String name, String defaultValue) {
+        String raw = System.getenv(name);
+        return (raw == null || raw.isBlank()) ? defaultValue : raw;
+    }
+}
