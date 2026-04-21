@@ -5,7 +5,8 @@ This file provides guidance to Claude Code when working in this repository.
 ## Project Overview
 
 **nvx-rumi-development** is a monorepo for projects that support
-**developing applications on the Neeve Rumi platform**. It groups
+**developing applications on the Rumi platform** (Rumi is an N5 product).
+It groups
 related dev-tooling projects so they can share a git history, release
 cadence, and code conventions without forcing a single build reactor
 across unrelated technology stacks.

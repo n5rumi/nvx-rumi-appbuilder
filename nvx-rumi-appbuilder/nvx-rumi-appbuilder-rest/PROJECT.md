@@ -33,7 +33,7 @@ service** (`github/datafye-platform/datafye-api/datafye-api-rest`). That
 codebase has a clean resource-class structure — one resource class per
 API surface, HK2 `@Inject`, standard exception mapping, OpenAPI
 generation. Reusing its shape gives us a familiar pattern that other
-Neeve Java devs will recognise.
+N5 Java devs will recognise.
 
 **DI**: HK2, with a Guice-HK2 bridge if needed (the Management Agent
 uses one for reasons TBD during implementation — investigate and decide).
