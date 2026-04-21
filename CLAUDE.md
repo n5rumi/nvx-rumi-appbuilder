@@ -4,57 +4,142 @@ This file provides guidance to Claude Code when working in this repository.
 
 ## Project Overview
 
-**nvx-rumi-development** is a monorepo for projects that support
-**developing applications on the Rumi platform** (Rumi is an N5 product).
-It groups
-related dev-tooling projects so they can share a git history, release
-cadence, and code conventions without forcing a single build reactor
-across unrelated technology stacks.
+The **Rumi App Builder** is the library + service + MCP surface for
+scaffolding and incrementally building Rumi applications (Rumi is an N5
+product). Three sibling modules at the repository root, each a thin
+layer on the one beneath it:
 
-There is no top-level `pom.xml`. Each peer project owns its own build,
-release, and deployment story.
-
-## Peer Projects
-
-| Directory | Purpose | Build |
+| Module | Language | Role |
 |---|---|---|
-| `nvx-rumi-appbuilder/` | The Rumi App Builder — SDK + REST service + MCP server for scaffolding and incrementally building Rumi apps | Maven (+ Python for the MCP module) |
+| `nvx-rumi-appbuilder-sdk/` | Java | The library. All scaffolder logic lives here — `ApplicationBuilder`, `ServiceBuilder`, `ConfigInjector`, etc. Consumed directly by `nvx-rumi-cli` (no runtime dependency on the REST service). |
+| `nvx-rumi-appbuilder-rest/` | Java | A canonical Rumi REST service (Mgmt-Agent-style lifecycle, Datafye-API-REST-style resource classes) that wraps the SDK and exposes every scaffolder operation as a REST endpoint. Consumed by Sutra, the Rumi Support Agent, CI jobs, and anything else that wants app-building via HTTP. |
+| `nvx-rumi-appbuilder-mcp/` | Python | A Model Context Protocol server that wraps the REST service. Each MCP tool is a typed call to one REST endpoint. Consumed by external coding assistants (Claude Code, Cursor, etc.) and optionally by agents that prefer the MCP interface for tool-call visibility. |
 
-Planned (not yet started, names indicative):
+## Scope
 
-- `nvx-rumi-ide-plugin/` — IDE integration (IntelliJ, VS Code) using the
-  App Builder REST API / MCP server.
-- `nvx-rumi-codegen/` — ROE / ADM code generation utilities separable
-  from the main Rumi build.
+**In scope — strictly app-building "do" operations.** Scaffold apps, add
+and remove services, handlers, message types, state entities, config
+fragments. Inspect what's there.
 
-Each peer project carries its own `CLAUDE.md` and `PROJECT.md`.
+**Out of scope — explicitly.**
+- Learning about Rumi (docs, API reference, schema lookup). Served by
+  docs-on-disk + the GitBook-hosted Rumi Docs MCP server.
+- Environment lifecycle, cloud provisioning, analytics tooling — all of
+  which stay in the `rumi` CLI.
+- Package / build orchestration — consumers run `mvn` directly.
 
-## What Belongs Here
+## Consumer story
 
-Anything that exists to make **app development on Rumi** easier. The
-tests:
+| Consumer | Path | Why |
+|---|---|---|
+| `rumi` CLI | SDK (direct Maven dependency) | CLI stands alone — no runtime requirement on the REST service. |
+| Sutra / Rumi Support Agent | REST (direct) or MCP | Both are localhost-local on the sandbox. REST for simpler Python code; MCP for better tool-call visibility in the Claude Agent SDK UI. Agents typically use MCP. |
+| External coding assistants (Claude Code, Cursor) | MCP | Native to these tools. |
+| Scripts, CI, IDE plugins, anything non-MCP | REST | No MCP client machinery needed. |
 
-- Is it a tool a Rumi developer would install or use to build an app?
-  (Yes → belongs here.)
-- Is it a runtime component of the Rumi platform itself? (No → belongs
-  in `nvx-rumi` / `nvx-rumi-messaging` / etc.)
-- Is it customer-facing documentation? (No → belongs in `nvx-rumi-docs`.)
+## Tech Stack
+
+- **SDK**: Java 11+ (builds with Java 17). Dependencies: ClassGraph, Gson.
+- **REST service**: Java, canonical Rumi REST stack — Rumi-managed
+  lifecycle (provision/deploy/configure/launch), HK2 DI, AepEngine
+  accessible to resource classes for stateful ops or outbound publishing.
+  Resource class structure modelled on `datafye-api-rest`.
+- **MCP**: Python 3.11+, official MCP SDK. Hand-written or
+  auto-generated from the REST service's OpenAPI spec (TBD).
+
+## Project Structure
+
+```
+nvx-rumi-appbuilder/
+├── pom.xml                         # Parent + aggregator for the two Java modules
+├── CLAUDE.md / PROJECT.md / LICENSE
+├── nvx-rumi-appbuilder-sdk/        # Java library (the original appbuilder)
+│   ├── pom.xml
+│   └── src/
+├── nvx-rumi-appbuilder-rest/       # Java REST service (canonical Rumi stack)
+│   ├── pom.xml
+│   └── src/
+└── nvx-rumi-appbuilder-mcp/        # Python MCP wrapper
+    ├── pyproject.toml              # Not in the Maven reactor
+    └── src/
+```
+
+The root `pom.xml` is both **aggregator** (its `<modules>` list is
+`nvx-rumi-appbuilder-sdk` and, once it lands, `nvx-rumi-appbuilder-rest`)
+and **parent** (the two Java modules inherit from it). The Python MCP
+module has its own `pyproject.toml` and is not a Maven module.
+
+## Build
+
+```bash
+# Build both Java modules (SDK and, when it lands, REST service)
+mvn clean install
+
+# Build only the SDK
+mvn -pl nvx-rumi-appbuilder-sdk -am clean install
+
+# Python MCP has its own build
+cd nvx-rumi-appbuilder-mcp
+pip install -e .
+```
+
+Maven repositories are `nexus.rumidata.io` and `nexus.n5corp.com`. Parent
+of the App Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
 
 ## Conventions
 
-- **Directory naming**: `nvx-rumi-<project-name>` for each peer.
-  Sub-modules under a peer use `<project-name>-<role>` (e.g.
-  `nvx-rumi-appbuilder-sdk`, `-rest`, `-mcp`).
 - **Maven group**: `com.neeve` throughout.
-- **Parent POM** (for Java peers): `com.neeve:nvx-os-parent:1.1.5`
-  directly, not an inherited top-level project POM.
-- **Language-mixed peers**: a Java+Python peer (like
-  `nvx-rumi-appbuilder`) can have Python sub-modules with `pyproject.toml`
-  sitting alongside Maven sub-modules. The parent POM's `<modules>` lists
-  only the Maven children.
-- **Git commits**: no `Co-Authored-By` trailers.
+- **Parent POM**: `com.neeve:nvx-os-parent:1.1.5` directly, not an
+  inherited higher-level POM.
+- **Sub-module naming**: `nvx-rumi-appbuilder-<role>` (e.g. `-sdk`,
+  `-rest`, `-mcp`).
+- **Language-mixed reactor**: the Python MCP sub-module has its own
+  `pyproject.toml` and sits alongside the Maven children; it is not
+  listed in the parent POM's `<modules>`.
+
+## Key Design Decisions
+
+- **Three modules, not one.** Each serves a different consumer shape.
+  Bundling them would force the CLI to pull unused REST/MCP dependencies.
+- **SDK is the source of truth.** REST and MCP are both thin layers on
+  the SDK — no logic lives in them that isn't in the SDK.
+- **CLI consumes the SDK directly.** No "CLI calls REST" pattern; the
+  CLI must work offline and without a running service.
+- **REST service is canonical Rumi stack.** Mgmt-Agent-style packaging
+  and lifecycle, Datafye-API-REST-style resource classes. This gives us
+  AMI-bake, systemd, auto-upgrade, HK2 DI, AepEngine access for free.
+- **MCP wraps REST, not the SDK directly.** Keeps the Python code tiny
+  (optionally auto-generated from OpenAPI) and lets any consumer choose
+  REST-direct or MCP without feature asymmetry.
+- **Runtime tool namespace `rumi-dev`.** The MCP server registers itself
+  under that short prefix so tools appear as `mcp__rumi-dev__<tool_name>`.
+  The directory name `nvx-rumi-appbuilder-mcp` is engineering convenience;
+  the runtime namespace is for prompt readability.
+
+## Relationship to Sister Projects
+
+- **`nvx-rumi-cli`** — direct consumer of the SDK via Maven dependency
+  (`nvx-rumi-appbuilder-sdk`).
+- **`nvx-rumi-agent`** — consumes the MCP (or can go REST-direct if it
+  wants). Agent installer fetches and installs both the REST service and
+  the MCP server as sibling systemd units.
+- **Sutra** — consumes either the REST service or the MCP, depending on
+  whether it wants tool-call visibility through the Claude Agent SDK.
+- **Rumi Management Agent** (`nvx-rumi-management/rumi-agent`) —
+  architectural template for the REST service's packaging, lifecycle, and
+  deployment surface.
+- **Datafye API REST service** (`github/datafye-platform/datafye-api/
+  datafye-api-rest`) — architectural template for the REST resource
+  class structure and HK2 wiring.
+- **Rumi Docs MCP server** (GitBook-hosted, separate product) — the
+  "learn about Rumi" complement. Not a dependency; called out here so
+  the scope boundary is explicit.
 
 ## Branch Strategy
 
 - `develop` — active development
 - `main` — stable releases
+
+## Git Commits
+
+Do not include `Co-Authored-By` trailers in commit messages.
