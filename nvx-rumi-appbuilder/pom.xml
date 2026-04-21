@@ -1,29 +1,92 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <name>Rumi App Builder Parent</name>
     <modelVersion>4.0.0</modelVersion>
-    <artifactId>nvx-rumi-appbuilder</artifactId>
-    <packaging>jar</packaging>
-    <name>Rumi App Builder</name>
+    <artifactId>nvx-rumi-appbuilder-parent</artifactId>
+    <packaging>pom</packaging>
+    <version>1.0-SNAPSHOT</version>
 
     <parent>
         <groupId>com.neeve</groupId>
-        <artifactId>nvx-rumi-development-parent</artifactId>
-        <version>1.0-SNAPSHOT</version>
+        <artifactId>nvx-os-parent</artifactId>
+        <version>1.1.5</version>
     </parent>
 
-    <dependencies>
-        <dependency>
-            <groupId>io.github.classgraph</groupId>
-            <artifactId>classgraph</artifactId>
-            <version>4.8.162</version>
-        </dependency>
+    <organization>
+        <name>N5 Technologies, Inc</name>
+        <url>http://www.n5corp.com</url>
+    </organization>
 
-        <dependency>
-            <groupId>com.google.code.gson</groupId>
-            <artifactId>gson</artifactId>
-            <version>2.10.1</version>
-        </dependency>
-    </dependencies>
+    <licenses>
+        <license>
+            <name>Apache 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+            <comments>A business-friendly OSS license</comments>
+        </license>
+    </licenses>
+
+    <scm>
+        <url>https://github.com/n5rumi/nvx-rumi-development</url>
+        <connection>scm:git:git://github.com/n5rumi/nvx-rumi-development.git</connection>
+    </scm>
+
+    <modules>
+        <module>nvx-rumi-appbuilder-sdk</module>
+        <module>nvx-rumi-appbuilder-rest</module>
+        <!-- nvx-rumi-appbuilder-mcp is Python (pyproject.toml) — not a Maven module -->
+    </modules>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <!-- Java 11 -->
+                <plugin>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.8.1</version>
+                    <configuration>
+                        <release>11</release>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
+        <plugins>
+            <!-- Exclude header checking/formatting of all template files in any module -->
+            <plugin>
+                <groupId>com.mycila</groupId>
+                <artifactId>license-maven-plugin</artifactId>
+                <version>2.9</version>
+                <executions>
+                    <execution>
+                        <id>format-headers</id>
+                    </execution>
+                    <execution>
+                        <id>check-headers</id>
+                    </execution>
+                </executions>
+                <configuration>
+                    <strictCheck>false</strictCheck>
+                    <excludes>
+                        <exclude>**/src/main/resources/templates/**</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <repositories>
+        <repository>
+            <id>rumi-public</id>
+            <url>http://nexus.rumidata.io:8081/repository/maven-public/</url>
+            <name>Rumi Repository</name>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+        </repository>
+    </repositories>
 </project>
-

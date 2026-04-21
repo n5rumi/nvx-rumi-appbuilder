@@ -1,63 +1,59 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working in this repository.
 
 ## Project Overview
 
-**nvx-rumi-appbuilder** is a Java code generation / scaffolding tool for creating distributed applications on the Neeve Rumi platform. It generates complete Maven multi-module projects with services, configuration, and deployment scripts via embedded templates with token substitution (`{{TokenName}}`).
+**nvx-rumi-development** is a monorepo for projects that support
+**developing applications on the Neeve Rumi platform**. It groups
+related dev-tooling projects so they can share a git history, release
+cadence, and code conventions without forcing a single build reactor
+across unrelated technology stacks.
 
-## Build Commands
+There is no top-level `pom.xml`. Each peer project owns its own build,
+release, and deployment story.
 
-**Requires Java 17** (the system default may be Java 8 — make sure `JAVA_HOME` points to a JDK 17 installation before building).
+## Peer Projects
 
-```bash
-# Build the project
-mvn clean install
+| Directory | Purpose | Build |
+|---|---|---|
+| `nvx-rumi-appbuilder/` | The Rumi App Builder — SDK + REST service + MCP server for scaffolding and incrementally building Rumi apps | Maven (+ Python for the MCP module) |
 
-# Build without tests
-mvn clean install -DskipTests
+Planned (not yet started, names indicative):
 
-# Check license headers
-mvn license:check
-```
+- `nvx-rumi-ide-plugin/` — IDE integration (IntelliJ, VS Code) using the
+  App Builder REST API / MCP server.
+- `nvx-rumi-codegen/` — ROE / ADM code generation utilities separable
+  from the main Rumi build.
 
-Maven repositories are hosted at `nexus.rumidata.io` and `nexus.n5corp.com`. The parent POM is `com.neeve:nvx-os-parent:1.1.5`.
+Each peer project carries its own `CLAUDE.md` and `PROJECT.md`.
 
-## Architecture
+## What Belongs Here
 
-The project has a single module: `nvx-rumi-appbuilder`.
+Anything that exists to make **app development on Rumi** easier. The
+tests:
 
-### Core Components (all in `com.neeve.appbuilder`)
+- Is it a tool a Rumi developer would install or use to build an app?
+  (Yes → belongs here.)
+- Is it a runtime component of the Rumi platform itself? (No → belongs
+  in `nvx-rumi` / `nvx-rumi-messaging` / etc.)
+- Is it customer-facing documentation? (No → belongs in `nvx-rumi-docs`.)
 
-- **ApplicationBuilder** — Entry point. Creates a new Rumi app from `AppParams` (app name, package, Rumi version, encoding type, messaging provider). Extracts Maven app templates, writes a `.rumi` JSON config file.
-- **ServiceBuilder** — Adds services to an existing app. Three service types: DRIVER (data input, non-clusterable), PROCESSOR (business logic, clusterable with STATE_REPLICATION or EVENT_SOURCING HA), CSVWRITER (data output, non-clusterable). Updates POMs, injects config XML, injects deployment scripts.
-- **TemplateProcessor** — Extracts embedded templates from the classpath using ClassGraph, performs recursive `{{Token}}` substitution on filenames and file contents.
-- **ConfigInjector** — DOM-based XML manipulation to merge service config fragments into the app's `config.xml`, handling profile hierarchies (cloud/standalone) and deduplication.
-- **ScriptInjector** — Injects service-specific script snippets into deployment scripts, handling partitioned (multi-instance) services.
-- **FactoryIdCollector** — Scans model XML files to find used factory IDs (0–32767 range), returns available gaps and next IDs to prevent collisions.
-- **TokenUtils** — String transformations: camelCase→kebab-case, package→path, PascalCase, display names.
+## Conventions
 
-### Template Structure (`src/main/resources/templates/maven/`)
-
-- `app/` — Base app skeleton (parent POM, system module, ROE module, config, assembly)
-- `service/` — Per-service-type templates (driver, processor, csvwriter) with Main.java and pom.xml
-- `config/` — Service config fragments for each type and deployment profile (cloud/standalone)
-- `scripts/` — Deployment script templates with injection points
-
-### Key Design Patterns
-
-- Templates use `{{TokenName}}` placeholders in both filenames and content (e.g., `{{ParentArtifactId}}`, `{{SystemArtifactId}}`)
-- Config and script injection is idempotent — duplicates are detected and skipped
-- Factory ID assignment fills gaps before incrementing to avoid collisions
-- Generated apps follow Maven multi-module structure: parent → system (runtime) + ROE (data models)
-
-## Dependencies
-
-- **ClassGraph** (`io.github.classgraph:classgraph:4.8.162`) — Classpath scanning for template extraction
-- **Gson** (`com.google.gson:gson:2.10.1`) — JSON serialization of app config (`.rumi` file)
-- Target: Java 11+ (release 11), requires Java 17 to build. Maven Compiler Plugin 3.8.1
+- **Directory naming**: `nvx-rumi-<project-name>` for each peer.
+  Sub-modules under a peer use `<project-name>-<role>` (e.g.
+  `nvx-rumi-appbuilder-sdk`, `-rest`, `-mcp`).
+- **Maven group**: `com.neeve` throughout.
+- **Parent POM** (for Java peers): `com.neeve:nvx-os-parent:1.1.5`
+  directly, not an inherited top-level project POM.
+- **Language-mixed peers**: a Java+Python peer (like
+  `nvx-rumi-appbuilder`) can have Python sub-modules with `pyproject.toml`
+  sitting alongside Maven sub-modules. The parent POM's `<modules>` lists
+  only the Maven children.
+- **Git commits**: no `Co-Authored-By` trailers.
 
 ## Branch Strategy
 
-- `develop` — Active development
-- `main` — Stable releases
+- `develop` — active development
+- `main` — stable releases

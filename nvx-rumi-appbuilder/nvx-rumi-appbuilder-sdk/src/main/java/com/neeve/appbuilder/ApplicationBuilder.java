@@ -242,7 +242,7 @@ public class ApplicationBuilder {
             }
         }
 
-        static AppParams read(Path appRoot) throws IOException {
+        public static AppParams read(Path appRoot) throws IOException {
             Path configFile = appRoot.resolve(CONFIG_FILE_NAME);
             if (!Files.exists(configFile)) {
                 throw new IllegalArgumentException(appRoot.toAbsolutePath().normalize() + " is not a valid Rumi application root");
