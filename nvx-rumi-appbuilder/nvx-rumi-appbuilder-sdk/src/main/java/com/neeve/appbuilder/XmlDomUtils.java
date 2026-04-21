@@ -183,20 +183,21 @@ public final class XmlDomUtils {
      * (names and values), same children (recursive). Whitespace in text
      * nodes is trimmed before comparison so pretty-printing differences
      * don't cause false negatives.
+     *
+     * <p>{@code xmlns} declarations (both default and prefixed) are
+     * ignored when comparing attributes. The element's namespaceURI is
+     * already captured by the tag comparison; {@code xmlns} as a literal
+     * attribute is a redundant serialization detail that round-trips
+     * inconsistently across DOM save/load cycles.
      */
     public static boolean nodesAreEquivalent(Element a, Element b) {
         if (!a.getTagName().equals(b.getTagName())) return false;
 
-        NamedNodeMap attrsA = a.getAttributes();
-        NamedNodeMap attrsB = b.getAttributes();
-        if (attrsA.getLength() != attrsB.getLength()) return false;
-
-        for (int i = 0; i < attrsA.getLength(); i++) {
-            Node attrA = attrsA.item(i);
-            Node attrB = attrsB.getNamedItem(attrA.getNodeName());
-            if (attrB == null || !attrA.getNodeValue().equals(attrB.getNodeValue())) {
-                return false;
-            }
+        java.util.Map<String, String> filteredA = nonXmlnsAttributes(a);
+        java.util.Map<String, String> filteredB = nonXmlnsAttributes(b);
+        if (filteredA.size() != filteredB.size()) return false;
+        for (java.util.Map.Entry<String, String> entry : filteredA.entrySet()) {
+            if (!entry.getValue().equals(filteredB.get(entry.getKey()))) return false;
         }
 
         NodeList childrenA = a.getChildNodes();
@@ -219,6 +220,18 @@ public final class XmlDomUtils {
             }
         }
         return true;
+    }
+
+    private static java.util.Map<String, String> nonXmlnsAttributes(Element e) {
+        NamedNodeMap attrs = e.getAttributes();
+        java.util.Map<String, String> out = new java.util.HashMap<>();
+        for (int i = 0; i < attrs.getLength(); i++) {
+            Node a = attrs.item(i);
+            String name = a.getNodeName();
+            if ("xmlns".equals(name) || name.startsWith("xmlns:")) continue;
+            out.put(name, a.getNodeValue());
+        }
+        return out;
     }
 
     /**
