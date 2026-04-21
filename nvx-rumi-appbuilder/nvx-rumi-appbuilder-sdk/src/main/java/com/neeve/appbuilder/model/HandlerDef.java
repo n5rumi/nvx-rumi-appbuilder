@@ -36,8 +36,8 @@ public final class HandlerDef {
 
     public HandlerDef(String methodName, String messageType, String returnType, int startLine) {
         this.methodName = Objects.requireNonNull(methodName, "methodName");
-        this.messageType = Objects.requireNonNull(messageType, "messageType");
-        this.returnType = returnType;  // may be null or "void"
+        this.messageType = messageType;  // null for zero/multi-param handlers (lifecycle events, etc.)
+        this.returnType = returnType;    // may be null or "void"
         this.startLine = startLine;
     }
 
@@ -45,7 +45,11 @@ public final class HandlerDef {
         return methodName;
     }
 
-    /** The single parameter's type — the message type the handler receives. */
+    /**
+     * The single parameter's type — the message type the handler receives.
+     * Null for handlers with zero or more-than-one parameters (lifecycle
+     * handlers and edge cases).
+     */
     public String getMessageType() {
         return messageType;
     }

@@ -126,7 +126,7 @@ public final class ServiceIntrospector {
             MessageIntrospector.listMessages(appRoot, serviceName),
             StateIntrospector.listStateEntities(appRoot, serviceName),
             StateIntrospector.listCollections(appRoot, serviceName),
-            Collections.emptyList()  // handlers — populated by HandlerIntrospector in Phase C
+            HandlerIntrospector.listHandlers(appRoot, serviceName)
         );
     }
 }
