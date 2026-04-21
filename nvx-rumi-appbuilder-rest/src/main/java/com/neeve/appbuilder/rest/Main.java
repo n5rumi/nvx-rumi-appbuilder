@@ -22,7 +22,14 @@
 package com.neeve.appbuilder.rest;
 
 import com.neeve.appbuilder.rest.mappers.ExceptionMapper;
+import com.neeve.appbuilder.rest.resources.Apps;
+import com.neeve.appbuilder.rest.resources.Config;
+import com.neeve.appbuilder.rest.resources.FactoryIds;
+import com.neeve.appbuilder.rest.resources.Handlers;
 import com.neeve.appbuilder.rest.resources.Health;
+import com.neeve.appbuilder.rest.resources.Messages;
+import com.neeve.appbuilder.rest.resources.Services;
+import com.neeve.appbuilder.rest.resources.StateEntities;
 import org.glassfish.jersey.jackson.JacksonFeature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -84,16 +91,22 @@ public final class Main {
      * Jersey resource config for the App Builder REST service.
      *
      * <p>Resources are registered explicitly (not via package scan) so the
-     * API surface is visible in one place and easy to audit. Endpoint
-     * implementations (apps, services, handlers, messages, state, config,
-     * factory-ids) land under RUMI-301.
+     * API surface is visible in one place and easy to audit.
      */
     public static final class ResourceConfig extends org.glassfish.jersey.server.ResourceConfig {
         public ResourceConfig() {
             register(JacksonFeature.class);
+            register(JacksonConfig.class);
 
             // Resources.
             register(Health.class);
+            register(Apps.class);
+            register(Services.class);
+            register(Handlers.class);
+            register(Messages.class);
+            register(StateEntities.class);
+            register(Config.class);
+            register(FactoryIds.class);
 
             // Central exception -> HTTP status mapping (Paywhere-style envelope).
             register(ExceptionMapper.class);

@@ -36,19 +36,24 @@ import java.nio.file.Path;
 public abstract class AbstractResource {
 
     /**
-     * Parse an {@code appRoot} path-param into a {@link Path} and assert
-     * it is absolute. Relative paths can't reliably resolve from the
-     * service's working directory, so we reject them early with a clear
-     * error instead of letting the SDK fail deeper with a misleading
-     * stack trace.
+     * Parse an {@code app_root} query param into a {@link Path} and
+     * assert it is absolute. Relative paths can't reliably resolve from
+     * the service's working directory, so we reject them early with a
+     * clear error instead of letting the SDK fail deeper with a
+     * misleading stack trace.
      */
     protected static Path requireAbsoluteAppRoot(String appRoot) {
-        if (appRoot == null || appRoot.isBlank()) {
-            throw new IllegalArgumentException("appRoot is required");
+        return requireAbsolutePath("app_root", appRoot);
+    }
+
+    /** Same idea as {@link #requireAbsoluteAppRoot} but for any labelled parameter. */
+    protected static Path requireAbsolutePath(String paramName, String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(paramName + " is required");
         }
-        Path p = Path.of(appRoot);
+        Path p = Path.of(value);
         if (!p.isAbsolute()) {
-            throw new IllegalArgumentException("appRoot must be an absolute path: " + appRoot);
+            throw new IllegalArgumentException(paramName + " must be an absolute path: " + value);
         }
         return p;
     }
