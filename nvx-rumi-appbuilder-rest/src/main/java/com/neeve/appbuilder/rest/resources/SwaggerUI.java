@@ -36,8 +36,7 @@ import java.util.Objects;
 
 /**
  * Serves the Swagger UI at {@code /swagger} and the OpenAPI YAML spec
- * at {@code /openapi}. Pattern lifted verbatim from Datafye API REST
- * and Paywhere client API: the UI is a single HTML document with the
+ * at {@code /openapi}. The UI is a single HTML document with the
  * swagger-ui CSS + JS bundles inlined at request time, so no CDN
  * dependency and no external static-file handler.
  *

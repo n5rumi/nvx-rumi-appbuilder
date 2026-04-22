@@ -28,12 +28,9 @@ the AMI-bake, systemd, auto-upgrade, provision/deploy/configure/launch
 story for Rumi-managed services. Reusing its shape is the shortest path
 to "this runs in production like any other Rumi service."
 
-**REST resource architecture**: modelled on the **Datafye API REST
-service** (`github/datafye-platform/datafye-api/datafye-api-rest`). That
-codebase has a clean resource-class structure — one resource class per
-API surface, HK2 `@Inject`, standard exception mapping, OpenAPI
-generation. Reusing its shape gives us a familiar pattern that other
-N5 Java devs will recognise.
+**REST resource architecture**: clean resource-class structure — one
+resource class per API surface, HK2 `@Inject`, standard exception
+mapping, OpenAPI generation. Consistent with other N5 Java services.
 
 **DI**: HK2, with a Guice-HK2 bridge if needed (the Management Agent
 uses one for reasons TBD during implementation — investigate and decide).
@@ -71,8 +68,6 @@ body field; returns the structured change set either way.
 
 ## Class Structure (planned)
 
-Following `datafye-api-rest`:
-
 ```
 nvx-rumi-appbuilder-rest/
 ├── pom.xml
@@ -96,7 +91,7 @@ nvx-rumi-appbuilder-rest/
         └── SdkBinder.java                  # HK2 binding for SDK entry points
 ```
 
-**Resource class pattern** (per Datafye):
+**Resource class pattern**:
 
 ```java
 @Path("/v1/apps/{appRoot}/services")

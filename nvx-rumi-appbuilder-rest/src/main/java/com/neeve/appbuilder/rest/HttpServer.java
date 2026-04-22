@@ -35,9 +35,11 @@ import org.glassfish.jersey.servlet.ServletContainer;
  */
 public final class HttpServer {
     private final Server server;
+    private final String host;
     private final int requestedPort;
 
     public HttpServer(String host, int port, Application application) {
+        this.host = host;
         this.requestedPort = port;
         this.server = new Server();
 
@@ -61,6 +63,8 @@ public final class HttpServer {
     public void join() throws InterruptedException { server.join(); }
 
     public void stop() throws Exception { server.stop(); }
+
+    public String getHost() { return host; }
 
     /** Actual bound port — useful for tests started on port 0. */
     public int getPort() {

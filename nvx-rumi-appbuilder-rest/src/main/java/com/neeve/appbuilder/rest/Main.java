@@ -21,71 +21,67 @@
  */
 package com.neeve.appbuilder.rest;
 
-import com.neeve.appbuilder.rest.mappers.ExceptionMapper;
-import com.neeve.appbuilder.rest.resources.Apps;
-import com.neeve.appbuilder.rest.resources.Config;
-import com.neeve.appbuilder.rest.resources.FactoryIds;
-import com.neeve.appbuilder.rest.resources.Handlers;
-import com.neeve.appbuilder.rest.resources.Health;
-import com.neeve.appbuilder.rest.resources.Messages;
-import com.neeve.appbuilder.rest.resources.Services;
-import com.neeve.appbuilder.rest.resources.StateEntities;
-import com.neeve.appbuilder.rest.resources.SwaggerUI;
-import org.glassfish.jersey.jackson.JacksonFeature;
+import com.neeve.aep.AepEngine;
+import com.neeve.aep.annotations.EventHandler;
+import com.neeve.aep.event.AepEngineStoppedEvent;
+import com.neeve.aep.event.AepMessagingPrestartEvent;
+import com.neeve.config.Config;
+import com.neeve.server.app.annotations.AppInjectionPoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Entry point for the Rumi App Builder REST service.
+ * Rumi App Builder REST — Rumi AEP app entry point.
  *
- * <p>Starts an embedded Jetty 12 HTTP server hosting the Jersey 3
- * {@link ResourceConfig}. Runs as a plain Java process in v1 (no AEP
- * lifecycle, no Rumi Management hooks — those land when the packaging
- * story in RUMI-304 requires them).
+ * <p>This class is loaded and invoked by Rumi's standalone launch
+ * machinery (via {@code conf/config.xml}'s {@code mainClass} attribute).
+ * The AEP framework injects engine references through
+ * {@link AppInjectionPoint}-annotated setters and drives lifecycle via
+ * {@link EventHandler}-annotated methods.
  *
- * <p>Configuration is via environment variables so the deployed
- * systemd/AMI story can control behaviour without a config file:
+ * <p>The HTTP server starts on {@link AepMessagingPrestartEvent} and
+ * stops on {@link AepEngineStoppedEvent}.
  *
- * <ul>
- *   <li>{@code RUMI_APPBUILDER_REST_PORT} — HTTP port, default {@code 3200}
- *   <li>{@code RUMI_APPBUILDER_REST_HOST} — bind host, default {@code 0.0.0.0}
- * </ul>
+ * <p>Configuration is sourced via {@link Config#getValue} — so every
+ * operator-tunable knob (port, host) comes from the Rumi config file
+ * configured at launch time.
  */
 public final class Main {
     private static final Logger LOG = LoggerFactory.getLogger(Main.class);
 
-    private Main() {}
+    private final HttpServer _httpServer;
+    private AepEngine _engine;
 
-    public static void main(String[] args) throws Exception {
-        int port = intEnv("RUMI_APPBUILDER_REST_PORT", 3200);
-        String host = env("RUMI_APPBUILDER_REST_HOST", "0.0.0.0");
-
-        HttpServer server = new HttpServer(host, port, new ResourceConfig());
-        server.start();
-        LOG.info("Rumi App Builder REST listening on http://{}:{}", host, port);
-
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try { server.stop(); } catch (Exception e) {
-                LOG.warn("Could not stop HTTP server cleanly: {}", e.getMessage());
-            }
-        }, "appbuilder-rest-shutdown"));
-
-        server.join();
+    public Main() {
+        final String host = Config.getValue("appbuilder.rest.host", "0.0.0.0");
+        final int port = Config.getValue("appbuilder.rest.port", 3200);
+        _httpServer = new HttpServer(host, port, new ResourceConfig());
     }
 
-    private static int intEnv(String name, int defaultValue) {
-        String raw = System.getenv(name);
-        if (raw == null || raw.isBlank()) return defaultValue;
-        try { return Integer.parseInt(raw.trim()); }
-        catch (NumberFormatException e) {
-            LOG.warn("Env {} is not a valid int ({}); using default {}", name, raw, defaultValue);
-            return defaultValue;
+    @AppInjectionPoint
+    public void setAppEngine(final AepEngine engine) {
+        _engine = engine;
+    }
+
+    @EventHandler
+    public void onMessagingPrestart(final AepMessagingPrestartEvent event) {
+        try {
+            _httpServer.start();
+            LOG.info("Rumi App Builder REST listening on http://{}:{}",
+                _httpServer.getHost(), _httpServer.getPort());
+        } catch (Exception e) {
+            LOG.error("Could not start HTTP server", e);
+            _engine.stop(e);
         }
     }
 
-    private static String env(String name, String defaultValue) {
-        String raw = System.getenv(name);
-        return (raw == null || raw.isBlank()) ? defaultValue : raw;
+    @EventHandler
+    public void onEngineStopped(final AepEngineStoppedEvent event) {
+        try {
+            _httpServer.stop();
+        } catch (Exception e) {
+            LOG.warn("Could not stop HTTP server cleanly: {}", e.getMessage());
+        }
     }
 
     /**
@@ -103,24 +99,24 @@ public final class Main {
      */
     public static final class ResourceConfig extends org.glassfish.jersey.server.ResourceConfig {
         public ResourceConfig() {
-            register(JacksonFeature.class);
+            register(org.glassfish.jersey.jackson.JacksonFeature.class);
             register(JacksonConfig.class);
 
             // Resources.
-            register(Health.class);
-            register(Apps.class);
-            register(Services.class);
-            register(Handlers.class);
-            register(Messages.class);
-            register(StateEntities.class);
-            register(Config.class);
-            register(FactoryIds.class);
+            register(com.neeve.appbuilder.rest.resources.Health.class);
+            register(com.neeve.appbuilder.rest.resources.Apps.class);
+            register(com.neeve.appbuilder.rest.resources.Services.class);
+            register(com.neeve.appbuilder.rest.resources.Handlers.class);
+            register(com.neeve.appbuilder.rest.resources.Messages.class);
+            register(com.neeve.appbuilder.rest.resources.StateEntities.class);
+            register(com.neeve.appbuilder.rest.resources.Config.class);
+            register(com.neeve.appbuilder.rest.resources.FactoryIds.class);
 
-            // Swagger UI + OpenAPI YAML (Datafye/Paywhere pattern).
-            register(SwaggerUI.class);
+            // Swagger UI + OpenAPI YAML.
+            register(com.neeve.appbuilder.rest.resources.SwaggerUI.class);
 
-            // Central exception -> HTTP status mapping (Paywhere-style envelope).
-            register(ExceptionMapper.class);
+            // Central exception -> HTTP status mapping.
+            register(com.neeve.appbuilder.rest.mappers.ExceptionMapper.class);
         }
     }
 }

@@ -26,8 +26,7 @@ package com.neeve.appbuilder.rest.resources;
  * UI HTML template: the raw HTML, the raw CSS, the two JS bundles, and
  * the URL where the OpenAPI YAML can be fetched.
  *
- * <p>Mirrors Datafye's {@code SwaggerUIModel} but uses plain getters
- * rather than Lombok; we don't pull Lombok into the build for one class.
+ * <p>Plain getters; no Lombok dependency for a single holder class.
  */
 public final class SwaggerUIModel {
     private final String html;

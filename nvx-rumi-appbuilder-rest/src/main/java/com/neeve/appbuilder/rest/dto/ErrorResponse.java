@@ -22,9 +22,9 @@
 package com.neeve.appbuilder.rest.dto;
 
 /**
- * Envelope returned on every error, matching the Paywhere client-API
- * pattern: one stable {@code code} (enum-like string clients can branch
- * on) plus one human-readable {@code description}.
+ * Envelope returned on every error: one stable {@code code} (enum-like
+ * string clients can branch on) plus one human-readable
+ * {@code description}.
  *
  * <p>Serialised as:
  * <pre>

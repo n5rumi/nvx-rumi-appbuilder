@@ -36,7 +36,6 @@ import java.nio.file.Path;
  * future home for: app-root path resolution, dry-run flag handling,
  * common error-response helpers, and any HK2-injected SDK singletons.
  *
- * <p>Modelled on Datafye API REST's {@code AbstractResource}.
  */
 @OpenAPIDefinition(
     info = @Info(

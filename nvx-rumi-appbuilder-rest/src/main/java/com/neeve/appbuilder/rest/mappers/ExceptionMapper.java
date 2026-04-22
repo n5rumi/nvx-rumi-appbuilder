@@ -39,13 +39,9 @@ import java.nio.file.NoSuchFileException;
  * into the {@link ErrorResponse} envelope with a semantic HTTP status
  * code.
  *
- * <p>Shape is adapted from the Paywhere client-API {@code
- * mapErrorToHttpStatus} switch: stable string codes clients can branch
- * on, plus a human-readable description. The pattern differs from
- * Paywhere in that our SDK throws exceptions (Java-library style)
- * whereas Paywhere handlers return response objects carrying an error
- * context — so the mapper is a JAX-RS {@code ExceptionMapper} rather
- * than a {@code buildResponse} helper.
+ * <p>Stable string codes clients can branch on, plus a human-readable
+ * description. Implemented as a JAX-RS {@code ExceptionMapper} because
+ * the SDK throws exceptions (Java-library style).
  *
  * <p>Status mapping:
  *
