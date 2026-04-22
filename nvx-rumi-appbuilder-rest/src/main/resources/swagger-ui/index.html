@@ -1,0 +1,62 @@
+<!--
+
+    Copyright (c) 2025 Datafye. All Rights Reserved.
+    Confidential and proprietary information of Datafye.
+    Copyright Version 1.0
+
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Swagger UI</title>
+  <style>{{CSS_CONTENT}}</style>
+  <style>
+    html {
+      box-sizing: border-box;
+      overflow: -moz-scrollbars-vertical;
+      overflow-y: scroll;
+    }
+
+    *,
+    *:before,
+    *:after {
+      box-sizing: inherit;
+    }
+
+    body {
+      margin: 0;
+      background: #fafafa;
+    }
+
+    .download-url-wrapper {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+<link rel="icon" href="favicon.ico" />
+<div id="swagger-ui"></div>
+
+<script>{{JS_BUNDLE_CONTENT}}</script>
+<script>{{JS_STANDALONE_PRESET_CONTENT}}</script>
+<script>
+  window.onload = function () {
+
+    window.ui = SwaggerUIBundle({
+      url: "{{OPENAPI_YAML_URL}}",
+      dom_id: '#swagger-ui',
+      deepLinking: true,
+      presets: [
+        SwaggerUIBundle.presets.apis,
+        SwaggerUIStandalonePreset
+      ],
+      plugins: [
+        SwaggerUIBundle.plugins.DownloadUrl
+      ],
+      layout: "StandaloneLayout"
+    });
+  };
+</script>
+</body>
+</html>

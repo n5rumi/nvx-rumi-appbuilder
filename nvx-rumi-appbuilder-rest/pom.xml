@@ -108,6 +108,34 @@
                     <release>17</release>
                 </configuration>
             </plugin>
+
+            <!-- Compile-time OpenAPI generation. Scans resource classes in
+                 com.neeve.appbuilder.rest.resources, picks up the
+                 @OpenAPIDefinition on AbstractResource for global metadata,
+                 and emits META-INF/openAPI/appbuilder-api.yaml into the
+                 classes output. SwaggerUI serves that file at runtime. -->
+            <plugin>
+                <groupId>io.swagger.core.v3</groupId>
+                <artifactId>swagger-maven-plugin-jakarta</artifactId>
+                <version>${swagger.version}</version>
+                <configuration>
+                    <outputFileName>appbuilder-api</outputFileName>
+                    <outputPath>${project.build.outputDirectory}/META-INF/openAPI</outputPath>
+                    <outputFormat>YAML</outputFormat>
+                    <scanDependencies>false</scanDependencies>
+                    <resourcePackages>
+                        <package>com.neeve.appbuilder.rest.resources</package>
+                    </resourcePackages>
+                    <prettyPrint>true</prettyPrint>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>resolve</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>

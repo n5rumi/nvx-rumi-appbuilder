@@ -219,6 +219,30 @@ public class EndpointIntegrationTest {
         assertTrue(r.body().contains("\"code\":\"NotFound\""));
     }
 
+    @Test
+    public void openapi_yamlEndpointReturnsSpec() throws Exception {
+        HttpResponse<String> r = get("/openapi");
+        assertEquals(200, r.statusCode());
+        // Title from @OpenAPIDefinition on AbstractResource, populated at compile
+        // time by swagger-maven-plugin-jakarta.
+        assertTrue("spec has title, got: " + r.body().substring(0, Math.min(400, r.body().length())),
+            r.body().contains("Rumi App Builder REST API"));
+        // At least a few endpoints we annotated.
+        assertTrue(r.body().contains("/v1/apps"));
+        assertTrue(r.body().contains("/v1/services"));
+        assertTrue(r.body().contains("/v1/config/fragments"));
+        assertTrue(r.body().contains("/v1/factory-ids"));
+    }
+
+    @Test
+    public void swagger_endpointReturnsSwaggerUiHtml() throws Exception {
+        HttpResponse<String> r = get("/swagger");
+        assertEquals(200, r.statusCode());
+        // HTML template with swagger-ui CSS/JS inlined; renders against /openapi.
+        assertTrue(r.body().contains("swagger-ui"));
+        assertTrue(r.body().contains("/openapi"));
+    }
+
     // --- helpers ------------------------------------------------------
 
     private HttpResponse<String> get(String path) throws Exception {

@@ -26,6 +26,8 @@ import com.neeve.appbuilder.StateIntrospector;
 import com.neeve.appbuilder.model.ChangeSet;
 import com.neeve.appbuilder.model.EntityDef;
 import com.neeve.appbuilder.rest.dto.AddStateEntityRequest;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
@@ -46,9 +48,12 @@ import java.util.List;
  */
 @Path("/v1/services/{svc}/state-entities")
 @Produces(MediaType.APPLICATION_JSON)
+@Tag(name = "StateEntities", description = "X-ADML state entity definitions")
 public class StateEntities extends AbstractResource {
 
     @GET
+    @Operation(summary = "List state entities on a service",
+               description = "Returns every state entity defined in the service's state.xml.")
     public List<EntityDef> list(@QueryParam("app_root") String appRoot,
                                 @PathParam("svc") String service) throws IOException {
         return StateIntrospector.listStateEntities(requireAbsoluteAppRoot(appRoot), service);
@@ -56,6 +61,8 @@ public class StateEntities extends AbstractResource {
 
     @GET
     @Path("/{name}")
+    @Operation(summary = "Get a single state entity",
+               description = "Returns the entity definition (fields, key annotations, factory IDs) for the named entity. 404 if the entity isn't present.")
     public EntityDef get(@QueryParam("app_root") String appRoot,
                          @PathParam("svc") String service,
                          @PathParam("name") String name) throws IOException {
@@ -66,6 +73,8 @@ public class StateEntities extends AbstractResource {
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Add a state entity to a service",
+               description = "Adds a new state entity to the service's state.xml. Fields can carry attributes like key=true.")
     public ChangeSet add(@QueryParam("app_root") String appRoot,
                          @PathParam("svc") String service,
                          @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
@@ -77,6 +86,8 @@ public class StateEntities extends AbstractResource {
 
     @DELETE
     @Path("/{name}")
+    @Operation(summary = "Remove a state entity",
+               description = "Removes the named entity from the service's state.xml.")
     public ChangeSet remove(@QueryParam("app_root") String appRoot,
                             @PathParam("svc") String service,
                             @PathParam("name") String name,

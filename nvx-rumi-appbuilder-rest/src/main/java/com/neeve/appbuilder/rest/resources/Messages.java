@@ -26,6 +26,8 @@ import com.neeve.appbuilder.MessageIntrospector;
 import com.neeve.appbuilder.model.ChangeSet;
 import com.neeve.appbuilder.model.MessageDef;
 import com.neeve.appbuilder.rest.dto.AddMessageRequest;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
@@ -46,9 +48,12 @@ import java.util.List;
  */
 @Path("/v1/services/{svc}/messages")
 @Produces(MediaType.APPLICATION_JSON)
+@Tag(name = "Messages", description = "X-ADML message type definitions")
 public class Messages extends AbstractResource {
 
     @GET
+    @Operation(summary = "List message types on a service",
+               description = "Returns every message type defined in the service's messages.xml.")
     public List<MessageDef> list(@QueryParam("app_root") String appRoot,
                                  @PathParam("svc") String service) throws IOException {
         return MessageIntrospector.listMessages(requireAbsoluteAppRoot(appRoot), service);
@@ -56,6 +61,8 @@ public class Messages extends AbstractResource {
 
     @GET
     @Path("/{name}")
+    @Operation(summary = "Get a single message type",
+               description = "Returns the message definition (fields, factory IDs, local IDs) for the named message. 404 if the message isn't present.")
     public MessageDef get(@QueryParam("app_root") String appRoot,
                           @PathParam("svc") String service,
                           @PathParam("name") String name) throws IOException {
@@ -66,6 +73,8 @@ public class Messages extends AbstractResource {
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Add a message type to a service",
+               description = "Adds a new message type to the service's messages.xml. Local message ID is allocated automatically.")
     public ChangeSet add(@QueryParam("app_root") String appRoot,
                          @PathParam("svc") String service,
                          @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
@@ -77,6 +86,8 @@ public class Messages extends AbstractResource {
 
     @DELETE
     @Path("/{name}")
+    @Operation(summary = "Remove a message type",
+               description = "Removes the named message from the service's messages.xml.")
     public ChangeSet remove(@QueryParam("app_root") String appRoot,
                             @PathParam("svc") String service,
                             @PathParam("name") String name,

@@ -27,6 +27,8 @@ import com.neeve.appbuilder.ServiceRemover;
 import com.neeve.appbuilder.model.ChangeSet;
 import com.neeve.appbuilder.model.ServiceInfo;
 import com.neeve.appbuilder.rest.dto.AddServiceRequest;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
@@ -47,15 +49,20 @@ import java.util.List;
  */
 @Path("/v1/services")
 @Produces(MediaType.APPLICATION_JSON)
+@Tag(name = "Services", description = "Rumi service CRUD (processor, driver, csvwriter)")
 public class Services extends AbstractResource {
 
     @GET
+    @Operation(summary = "List services in an app",
+               description = "Returns every service scaffolded under the app, each with its rolled-up handlers, messages, and state entities.")
     public List<ServiceInfo> list(@QueryParam("app_root") String appRoot) throws IOException {
         return ServiceIntrospector.listServices(requireAbsoluteAppRoot(appRoot));
     }
 
     @GET
     @Path("/{name}")
+    @Operation(summary = "Get service detail",
+               description = "Returns the full rolled-up view of a single service. 404 if the service isn't scaffolded.")
     public ServiceInfo get(@QueryParam("app_root") String appRoot,
                            @PathParam("name") String name) throws IOException {
         ServiceInfo info = ServiceIntrospector.getService(requireAbsoluteAppRoot(appRoot), name);
@@ -65,6 +72,8 @@ public class Services extends AbstractResource {
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Add a service to an app",
+               description = "Scaffolds a new service under the app. Type must be processor, driver, or csvwriter. HA model and partition settings only apply to processors.")
     public ServiceInfo add(@QueryParam("app_root") String appRoot,
                            AddServiceRequest req) throws Exception {
         java.nio.file.Path root = requireAbsoluteAppRoot(appRoot);
@@ -82,6 +91,8 @@ public class Services extends AbstractResource {
 
     @DELETE
     @Path("/{name}")
+    @Operation(summary = "Remove a service from an app",
+               description = "Orchestrated reverse of service add: removes the module directory, parent-POM entry, system-POM dep, config fragments, and releases factory IDs. Supports dry_run to preview the full blast radius.")
     public ChangeSet remove(@QueryParam("app_root") String appRoot,
                             @PathParam("name") String name,
                             @QueryParam("dry_run") @DefaultValue("false") boolean dryRun) throws IOException {

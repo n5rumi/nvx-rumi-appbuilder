@@ -30,6 +30,7 @@ import com.neeve.appbuilder.rest.resources.Health;
 import com.neeve.appbuilder.rest.resources.Messages;
 import com.neeve.appbuilder.rest.resources.Services;
 import com.neeve.appbuilder.rest.resources.StateEntities;
+import com.neeve.appbuilder.rest.resources.SwaggerUI;
 import org.glassfish.jersey.jackson.JacksonFeature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,6 +93,13 @@ public final class Main {
      *
      * <p>Resources are registered explicitly (not via package scan) so the
      * API surface is visible in one place and easy to audit.
+     *
+     * <p>The OpenAPI spec's global metadata lives on
+     * {@code AbstractResource} via {@code @OpenAPIDefinition}. The
+     * {@code swagger-maven-plugin-jakarta} picks it up during the
+     * {@code resolve} goal and emits {@code META-INF/openAPI/appbuilder-api.yaml}.
+     * {@code SwaggerUI} serves that YAML at runtime at {@code /openapi}
+     * and the Swagger UI page at {@code /swagger}.
      */
     public static final class ResourceConfig extends org.glassfish.jersey.server.ResourceConfig {
         public ResourceConfig() {
@@ -107,6 +115,9 @@ public final class Main {
             register(StateEntities.class);
             register(Config.class);
             register(FactoryIds.class);
+
+            // Swagger UI + OpenAPI YAML (Datafye/Paywhere pattern).
+            register(SwaggerUI.class);
 
             // Central exception -> HTTP status mapping (Paywhere-style envelope).
             register(ExceptionMapper.class);

@@ -29,6 +29,8 @@ import com.neeve.appbuilder.model.ValidationResult;
 import com.neeve.appbuilder.rest.dto.AddConfigFragmentRequest;
 import com.neeve.appbuilder.rest.dto.ConfigFragmentView;
 import com.neeve.appbuilder.rest.dto.RemoveConfigFragmentRequest;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
@@ -53,13 +55,13 @@ import java.util.stream.Collectors;
  * Config-level endpoints: full config retrieval, fragment CRUD, X-DDL validation.
  */
 @Path("/v1/config")
+@Tag(name = "Config", description = "X-DDL config file inspection, fragment CRUD, schema validation")
 public class Config extends AbstractResource {
 
-    /**
-     * {@code GET /v1/config?app_root=...} — rendered config.xml as text/xml.
-     */
     @GET
     @Produces(MediaType.APPLICATION_XML)
+    @Operation(summary = "Get the rendered config.xml",
+               description = "Returns the app's assembled config.xml as text/xml. Includes every fragment ConfigInjector has placed at all scopes.")
     public String getConfig(@QueryParam("app_root") String appRoot) throws IOException {
         try {
             StringWriter out = new StringWriter();
@@ -74,26 +76,23 @@ public class Config extends AbstractResource {
         }
     }
 
-    /**
-     * {@code GET /v1/config/fragments?app_root=...[&profile=...]} — list fragments,
-     * optionally filtered by profile.
-     */
     @GET
     @Path("/fragments")
     @Produces(MediaType.APPLICATION_JSON)
+    @Operation(summary = "List config fragments",
+               description = "Returns every fragment discovered across config-fragment files. Optionally filter by profile name.")
     public List<ConfigFragmentView> listFragments(@QueryParam("app_root") String appRoot,
                                                   @QueryParam("profile") String profile) throws IOException {
         return ConfigIntrospector.listFragments(requireAbsoluteAppRoot(appRoot), profile)
             .stream().map(ConfigFragmentView::from).collect(Collectors.toList());
     }
 
-    /**
-     * {@code POST /v1/config/fragments?app_root=...[&dry_run=true]} — add a fragment.
-     */
     @POST
     @Path("/fragments")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Add a config fragment",
+               description = "Adds the given XML fragment under the specified scope path (e.g. [\"apps\",\"templates\"], [\"buses\"]). Idempotent — a structurally identical fragment is a no-op.")
     public ChangeSet addFragment(@QueryParam("app_root") String appRoot,
                                  @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
                                  AddConfigFragmentRequest req) throws IOException {
@@ -102,14 +101,12 @@ public class Config extends AbstractResource {
             req.getScopePath(), req.getXml(), dryRun);
     }
 
-    /**
-     * {@code DELETE /v1/config/fragments?app_root=...[&dry_run=true]} — remove
-     * fragment(s) matching the selector under the given scope path.
-     */
     @DELETE
     @Path("/fragments")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Remove config fragment(s)",
+               description = "Removes every fragment matching the selector (tag, name, or both) under the specified scope path.")
     public ChangeSet removeFragment(@QueryParam("app_root") String appRoot,
                                     @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
                                     RemoveConfigFragmentRequest req) throws IOException {
@@ -118,14 +115,11 @@ public class Config extends AbstractResource {
             req.getScopePath(), req.toSelector(), dryRun);
     }
 
-    /**
-     * {@code POST /v1/config/validate?app_root=...} — run X-DDL schema validation.
-     * Always returns 200 with the result envelope; callers branch on
-     * {@code ok} or the errors list.
-     */
     @POST
     @Path("/validate")
     @Produces(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Validate config.xml against the X-DDL schema",
+               description = "Runs X-DDL schema validation and returns a result envelope. Always 200 — callers branch on the ok flag or the errors list.")
     public ValidationResult validate(@QueryParam("app_root") String appRoot) throws IOException {
         return ConfigValidator.validate(requireAbsoluteAppRoot(appRoot));
     }

@@ -21,6 +21,8 @@
  */
 package com.neeve.appbuilder.rest.resources;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -33,10 +35,13 @@ import java.util.Map;
  * probe the service without hitting any stateful surface.
  */
 @Path("/health")
+@Tag(name = "Health", description = "Liveness / smoke endpoint")
 public class Health extends AbstractResource {
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Service liveness check",
+               description = "Returns a static 200 with service identity. Safe to poll for health checks.")
     public Map<String, Object> health() {
         return Map.of(
             "status", "ok",

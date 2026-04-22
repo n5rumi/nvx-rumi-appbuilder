@@ -21,6 +21,11 @@
  */
 package com.neeve.appbuilder.rest.resources;
 
+import io.swagger.v3.oas.annotations.OpenAPIDefinition;
+import io.swagger.v3.oas.annotations.info.Info;
+import io.swagger.v3.oas.annotations.info.License;
+import io.swagger.v3.oas.annotations.servers.Server;
+
 import java.nio.file.Path;
 
 /**
@@ -33,6 +38,15 @@ import java.nio.file.Path;
  *
  * <p>Modelled on Datafye API REST's {@code AbstractResource}.
  */
+@OpenAPIDefinition(
+    info = @Info(
+        title = "Rumi App Builder REST API",
+        version = "1.0",
+        description = "REST interface over the Rumi App Builder SDK. Every endpoint maps 1:1 to an SDK operation: scaffold apps, add/remove services, inspect what's there, edit handlers and message types and state entities and config fragments, validate config against the X-DDL schema.",
+        license = @License(name = "Apache-2.0", url = "https://www.apache.org/licenses/LICENSE-2.0")
+    ),
+    servers = { @Server(url = "{url}") }
+)
 public abstract class AbstractResource {
 
     /**

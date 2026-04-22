@@ -24,6 +24,8 @@ package com.neeve.appbuilder.rest.resources;
 import com.neeve.appbuilder.AppIntrospector;
 import com.neeve.appbuilder.ApplicationBuilder;
 import com.neeve.appbuilder.rest.dto.AppParamsRequest;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -45,27 +47,21 @@ import java.util.Map;
  */
 @Path("/v1/apps")
 @Produces(MediaType.APPLICATION_JSON)
+@Tag(name = "Apps", description = "Rumi app scaffolding and metadata")
 public class Apps extends AbstractResource {
 
-    /**
-     * {@code GET /v1/apps?under=/parent/dir} — list every Rumi app under
-     * the given directory.
-     */
     @GET
+    @Operation(summary = "List Rumi apps under a parent directory",
+               description = "Scans the parent directory for scaffolded Rumi apps and returns their root paths.")
     public List<java.nio.file.Path> list(@QueryParam("under") String under) throws IOException {
         java.nio.file.Path base = requireAbsolutePath("under", under);
         return AppIntrospector.listRumiApps(base);
     }
 
-    /**
-     * {@code POST /v1/apps} — scaffold a new app from the given params.
-     * Returns the resolved {@link ApplicationBuilder.AppParams} (with
-     * derived fields populated: {@code appTokenName}, {@code tokenMap},
-     * {@code appRoot}) so the caller can discover where the app landed
-     * without re-reading disk.
-     */
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Scaffold a new Rumi app",
+               description = "Creates a new Rumi app from the supplied parameters. Returns the resolved AppParams with derived fields (appTokenName, appRoot, tokenMap) populated so the caller knows where the app landed.")
     public ApplicationBuilder.AppParams create(AppParamsRequest req) throws IOException {
         if (req == null) throw new IllegalArgumentException("request body is required");
         ApplicationBuilder.AppParams params = req.toSdk();
@@ -79,12 +75,10 @@ public class Apps extends AbstractResource {
         return params;
     }
 
-    /**
-     * {@code GET /v1/apps/info?app_root=...} — metadata for a specific
-     * scaffolded app (package, group ID, rumi version, etc.).
-     */
     @GET
     @Path("/info")
+    @Operation(summary = "Get app metadata",
+               description = "Returns the AppParams for an existing scaffolded app (package, group ID, rumi version, encoding type, etc.).")
     public ApplicationBuilder.AppParams info(@QueryParam("app_root") String appRoot) throws IOException {
         return AppIntrospector.loadAppParams(requireAbsoluteAppRoot(appRoot));
     }

@@ -22,6 +22,8 @@
 package com.neeve.appbuilder.rest.resources;
 
 import com.neeve.appbuilder.FactoryIdCollector;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -36,23 +38,20 @@ import java.util.Map;
  */
 @Path("/v1/factory-ids")
 @Produces(MediaType.APPLICATION_JSON)
+@Tag(name = "FactoryIds", description = "Global factory ID inspection")
 public class FactoryIds extends AbstractResource {
 
-    /**
-     * {@code GET /v1/factory-ids?app_root=...} — map of used ID to owner.
-     */
     @GET
+    @Operation(summary = "List used factory IDs",
+               description = "Returns a map of used factory ID (integer) to owner description (string, e.g. 'service:order-processor:state').")
     public Map<Integer, String> list(@QueryParam("app_root") String appRoot) throws IOException {
         return FactoryIdCollector.listUsedIds(requireAbsoluteAppRoot(appRoot));
     }
 
-    /**
-     * {@code GET /v1/factory-ids/next?app_root=...} — lowest free ID. The
-     * PROJECT.md catalog mentioned a {@code ?kind=} filter; dropped
-     * because the SDK does not split factory IDs by kind today.
-     */
     @GET
     @Path("/next")
+    @Operation(summary = "Next available factory ID",
+               description = "Returns the lowest unused factory ID. Does not reserve it; callers are expected to use the SDK's allocation path (via ServiceBuilder, MessageEditor, StateEditor) which reserves atomically.")
     public Map<String, Integer> next(@QueryParam("app_root") String appRoot) throws IOException {
         return Map.of("nextAvailableId", FactoryIdCollector.nextAvailableId(requireAbsoluteAppRoot(appRoot)));
     }
