@@ -1,0 +1,5 @@
+##DISPLAYNAME Launch App Builder REST
+##DESCRIPTION Launches the App Builder REST service
+
+launch the appbuilder-rest xvm
+wait until the appbuilder-rest app in the appbuilder-rest xvm is appstartdone

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model xmlns="http://www.neeveresearch.com/schema/x-ddl">
+    <env>
+        <nv>
+            <stats>
+                <memory>
+                    <enable>true</enable>
+                </memory>
+            </stats>
+        </nv>
+    </env>
+
+    <apps>
+        <app name="appbuilder-rest" mainClass="com.neeve.appbuilder.rest.Main">
+            <storage enabled="false"/>
+        </app>
+    </apps>
+
+    <xvms>
+        <xvm name="appbuilder-rest">
+            <env>
+                <nv>
+                    <file>
+                        <usenative>false</usenative>
+                    </file>
+                </nv>
+            </env>
+            <acceptors>
+                <acceptor descriptor="tcp://${HOST::0.0.0.0}:0"/>
+            </acceptors>
+            <provisioning>
+                <host>${HOST::.}</host>
+                <rootDirectory>${ROOT_DIR}</rootDirectory>
+                <dataDirectory>tlog</dataDirectory>
+                <jvm>
+                    <jvmParamSets>
+                        <jvmParamSet name="prefer-ipv4">
+                            <jvmParams>-Djava.net.preferIPv4Stack=true</jvmParams>
+                        </jvmParamSet>
+                        <jvmParamSet name="heap-size" order="-1">
+                            <jvmParams>${HEAP_SIZE_PARAMS::-Xms128m -Xmx512m}</jvmParams>
+                        </jvmParamSet>
+                    </jvmParamSets>
+                </jvm>
+            </provisioning>
+            <apps>
+                <app name="appbuilder-rest" autoStart="true"/>
+            </apps>
+        </xvm>
+    </xvms>
+</model>

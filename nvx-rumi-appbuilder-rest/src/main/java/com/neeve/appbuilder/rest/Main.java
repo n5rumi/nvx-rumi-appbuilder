@@ -99,7 +99,9 @@ public final class Main {
      */
     public static final class ResourceConfig extends org.glassfish.jersey.server.ResourceConfig {
         public ResourceConfig() {
-            register(org.glassfish.jersey.jackson.JacksonFeature.class);
+            // Tiny custom Jackson provider; see JacksonJsonProvider for the
+            // why-not-jersey-media-json-jackson note.
+            register(JacksonJsonProvider.class);
             register(JacksonConfig.class);
 
             // Resources.

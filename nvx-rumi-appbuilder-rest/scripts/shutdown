@@ -1,0 +1,5 @@
+##DISPLAYNAME Shutdown App Builder REST
+##DESCRIPTION Shuts down the App Builder REST service
+
+assume launch has run
+shutdown the appbuilder-rest xvm

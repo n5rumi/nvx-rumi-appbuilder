@@ -35,6 +35,27 @@
             <version>${nvx.rumi.version}</version>
         </dependency>
 
+        <!-- Canonical Java 11+ runtime deps per the Rumi docs
+             (core/guides/developing-applications/set-up-your-dev-environment).
+             Rumi core uses the legacy javax.xml.bind namespace for config
+             parsing and expects these exact coordinates. Matches the
+             Datafye Platform parent POM. -->
+        <dependency>
+            <groupId>javax.annotation</groupId>
+            <artifactId>javax.annotation-api</artifactId>
+            <version>1.3.2</version>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.xml.bind</groupId>
+            <artifactId>jakarta.xml.bind-api</artifactId>
+            <version>2.3.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish.jaxb</groupId>
+            <artifactId>jaxb-runtime</artifactId>
+            <version>2.3.2</version>
+        </dependency>
+
         <!-- Jersey (Jakarta EE 10) -->
         <dependency>
             <groupId>org.glassfish.jersey.core</groupId>
@@ -51,11 +72,12 @@
             <artifactId>jersey-hk2</artifactId>
             <version>${jersey.version}</version>
         </dependency>
-        <dependency>
-            <groupId>org.glassfish.jersey.media</groupId>
-            <artifactId>jersey-media-json-jackson</artifactId>
-            <version>${jersey.version}</version>
-        </dependency>
+        <!-- Jersey's JSON-Jackson integration (jersey-media-json-jackson) is
+             deliberately NOT used. It hardcodes a static reference to
+             JakartaXmlBindAnnotationIntrospector, which forces jakarta.xml.bind
+             4.x (jakarta namespace) on the classpath; that conflicts with the
+             2.3.2 jars (javax namespace) Rumi core requires. We register a
+             thin Jackson body reader/writer in Main.ResourceConfig instead. -->
 
         <!-- Jackson (explicit to pin the version matrix) -->
         <dependency>
@@ -76,10 +98,14 @@
             <version>${jetty.version}</version>
         </dependency>
 
-        <!-- Swagger (OpenAPI generation; jakarta variant) -->
+        <!-- Swagger annotations for @Tag / @Operation / @OpenAPIDefinition on
+             resource classes. The full swagger-jaxrs2-jakarta lives only under
+             the swagger-maven-plugin-jakarta's plugin classpath (see build)
+             because it transitively pulls a jackson-jakarta-xmlbind chain
+             that conflicts with Rumi core's javax.xml.bind. -->
         <dependency>
             <groupId>io.swagger.core.v3</groupId>
-            <artifactId>swagger-jaxrs2-jakarta</artifactId>
+            <artifactId>swagger-annotations-jakarta</artifactId>
             <version>${swagger.version}</version>
         </dependency>
 
@@ -126,6 +152,16 @@
                 <groupId>io.swagger.core.v3</groupId>
                 <artifactId>swagger-maven-plugin-jakarta</artifactId>
                 <version>${swagger.version}</version>
+                <dependencies>
+                    <!-- Plugin-scope dep; NOT on the app's runtime classpath.
+                         Keeps the jackson-jakarta-xmlbind chain out of the
+                         shipped bin/java/lib/. -->
+                    <dependency>
+                        <groupId>io.swagger.core.v3</groupId>
+                        <artifactId>swagger-jaxrs2-jakarta</artifactId>
+                        <version>${swagger.version}</version>
+                    </dependency>
+                </dependencies>
                 <configuration>
                     <outputFileName>appbuilder-api</outputFileName>
                     <outputPath>${project.build.outputDirectory}/META-INF/openAPI</outputPath>
@@ -146,4 +182,54 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+          'dist' profile: builds the standalone, sandbox-wrapped tarball
+          for Mgmt-Agent-style install. Requires -Darch=<os-cpu> where
+          <os-cpu> is one of linux-x86-64 | linux-arm-64 | osx-x86-64 |
+          osx-arm-64 (matching the classifier convention of the Rumi
+          sandbox distribution).
+
+          Produces: target/nvx-rumi-appbuilder-rest-<version>-<arch>.tar.gz
+
+          Activate with:
+              mvn -Pdist -Darch=osx-arm-64 package
+        -->
+        <profile>
+            <id>dist</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.neeve</groupId>
+                    <artifactId>nvx-rumi</artifactId>
+                    <version>${nvx.rumi.version}</version>
+                    <classifier>sandbox-${arch}</classifier>
+                    <type>tar.gz</type>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-assembly-plugin</artifactId>
+                        <version>3.6.0</version>
+                        <executions>
+                            <execution>
+                                <id>standalone</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>single</goal>
+                                </goals>
+                                <configuration>
+                                    <descriptors>
+                                        <descriptor>src/assembly/standalone.xml</descriptor>
+                                    </descriptors>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
