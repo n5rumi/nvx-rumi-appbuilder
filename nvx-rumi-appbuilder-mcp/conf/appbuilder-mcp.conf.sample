@@ -1,0 +1,22 @@
+# Rumi App Builder MCP Server — configuration.
+#
+# Operator-tunable values. Sourced by scripts/launch.sh at start time
+# with `set -a; source <this-file>; set +a`, so every uncommented
+# key=value line becomes an env var visible to the Python process.
+#
+# Installer bootstraps this file into data/conf/appbuilder-mcp.conf
+# on first install and leaves it alone on upgrades.
+
+# HTTP port the MCP server binds on (Rumi Agent expects 3201).
+RUMI_APPBUILDER_MCP_PORT=3201
+
+# Bind host for the MCP HTTP listener.
+RUMI_APPBUILDER_MCP_HOST=127.0.0.1
+
+# REST service URL the MCP proxies to. Must match wherever the App
+# Builder REST service is installed and listening.
+RUMI_APPBUILDER_REST_URL=http://127.0.0.1:3200
+
+# MCP transport — stdio (for local coding assistants), streamable-http
+# (for network callers like the Rumi Agent), or sse.
+RUMI_APPBUILDER_MCP_TRANSPORT=streamable-http
