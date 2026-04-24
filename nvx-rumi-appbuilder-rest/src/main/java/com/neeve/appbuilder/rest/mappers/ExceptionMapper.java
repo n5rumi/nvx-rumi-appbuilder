@@ -21,14 +21,15 @@
  */
 package com.neeve.appbuilder.rest.mappers;
 
+import com.neeve.appbuilder.rest.Main;
 import com.neeve.appbuilder.rest.dto.ErrorResponse;
+import com.neeve.trace.Tracer;
+import com.neeve.util.UtlThrowable;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.FileNotFoundException;
 import java.nio.file.FileAlreadyExistsException;
@@ -61,15 +62,19 @@ import java.nio.file.NoSuchFileException;
  */
 @Provider
 public class ExceptionMapper implements jakarta.ws.rs.ext.ExceptionMapper<Throwable> {
-    private static final Logger LOG = LoggerFactory.getLogger(ExceptionMapper.class);
+    // Same named singleton configured in Main; Tracer.get resolves to
+    // the one instance whose level Main set from config.
+    private static final Tracer TRACER = Tracer.get(Main.NAME);
 
     @Override
     public Response toResponse(Throwable t) {
         Mapping m = map(t);
         if (m.status >= 500) {
-            LOG.error("Unhandled exception in App Builder REST handler", t);
-        } else {
-            LOG.debug("Handled exception {} -> {} {}", t.getClass().getSimpleName(), m.status, m.code);
+            TRACER.log("Unhandled exception in App Builder REST handler: "
+                + UtlThrowable.prepareStackTrace(t), Tracer.Level.SEVERE);
+        } else if (TRACER.isEnabled(Tracer.Level.FINE)) {
+            TRACER.log("Handled exception " + t.getClass().getSimpleName()
+                + " -> " + m.status + " " + m.code, Tracer.Level.FINE);
         }
         return Response.status(m.status)
             .type(MediaType.APPLICATION_JSON)

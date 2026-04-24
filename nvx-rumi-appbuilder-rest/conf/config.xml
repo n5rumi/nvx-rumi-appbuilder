@@ -33,6 +33,10 @@
                         <rest>
                             <host>${RUMI_APPBUILDER_REST_HOST::0.0.0.0}</host>
                             <port>${RUMI_APPBUILDER_REST_PORT::3200}</port>
+                            <!-- Rumi trace framework reads this to set the
+                                 level on Tracer.get("rumi.appbuilder.rest")
+                                 automatically. -->
+                            <trace>${RUMI_APPBUILDER_REST_TRACE_LEVEL::info}</trace>
                         </rest>
                     </appbuilder>
                 </rumi>

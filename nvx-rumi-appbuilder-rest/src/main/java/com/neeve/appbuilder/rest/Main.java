@@ -51,8 +51,17 @@ public final class Main {
     private final HttpServer _httpServer;
     private AepEngine _engine;
 
+    /**
+     * Well-known name for the service-wide {@link Tracer}. Every class in
+     * the service calls {@code Tracer.get(NAME)} to reach the same
+     * instance. The Rumi trace framework reads the level from the config
+     * path matching this name — {@code <env><rumi><appbuilder><rest><trace>LEVEL</trace>}
+     * — so no explicit {@code setLevel} call is needed.
+     */
+    public static final String NAME = "rumi.appbuilder.rest";
+
     public Main() {
-        _tracer = Tracer.get("rumi.appbuilder.rest");
+        _tracer = Tracer.get(NAME);
         final String host = Config.getValue("rumi.appbuilder.rest.host", "0.0.0.0");
         final int port = Config.getValue("rumi.appbuilder.rest.port", 3200);
         _httpServer = new HttpServer(host, port, new ResourceConfig());
