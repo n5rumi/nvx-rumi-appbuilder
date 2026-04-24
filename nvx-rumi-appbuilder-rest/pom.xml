@@ -132,7 +132,6 @@
     </dependencies>
 
     <build>
-        <finalName>nvx-rumi-appbuilder-rest</finalName>
         <plugins>
             <!-- REST module runs on a JVM we control; use Java 17 features.
                  The SDK stays at Java 11 for library-consumer compatibility. -->
