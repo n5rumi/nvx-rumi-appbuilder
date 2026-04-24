@@ -24,28 +24,43 @@
                         <usenative>false</usenative>
                     </file>
                 </nv>
+                <!-- App-level tunables sourced here so launch-time overrides
+                     (via env vars consumed by wrapper.env.vars, e.g.
+                     set.RUMI_APPBUILDER_REST_PORT=3300) flow through to the
+                     service. Defaults match the standalone profile below. -->
+                <rumi>
+                    <appbuilder>
+                        <rest>
+                            <host>${RUMI_APPBUILDER_REST_HOST::0.0.0.0}</host>
+                            <port>${RUMI_APPBUILDER_REST_PORT::3200}</port>
+                        </rest>
+                    </appbuilder>
+                </rumi>
             </env>
             <acceptors>
-                <acceptor descriptor="tcp://${HOST::0.0.0.0}:0"/>
+                <acceptor descriptor="tcp://${RUMI_APPBUILDER_ACCEPTOR_HOST::0.0.0.0}:${RUMI_APPBUILDER_ACCEPTOR_PORT::0}"/>
             </acceptors>
-            <provisioning>
-                <host>${HOST::.}</host>
-                <rootDirectory>${ROOT_DIR}</rootDirectory>
-                <dataDirectory>tlog</dataDirectory>
-                <jvm>
-                    <jvmParamSets>
-                        <jvmParamSet name="prefer-ipv4">
-                            <jvmParams>-Djava.net.preferIPv4Stack=true</jvmParams>
-                        </jvmParamSet>
-                        <jvmParamSet name="heap-size" order="-1">
-                            <jvmParams>${HEAP_SIZE_PARAMS::-Xms128m -Xmx512m}</jvmParams>
-                        </jvmParamSet>
-                    </jvmParamSets>
-                </jvm>
-            </provisioning>
             <apps>
                 <app name="appbuilder-rest" autoStart="true"/>
             </apps>
         </xvm>
     </xvms>
+
+    <!--
+      Profiles. The active profile is selected at launch time via
+      'set.nv.ddl.profiles=<name>' in conf/wrapper.env.vars.
+      'standalone' is the default for the dist tarball.
+      Additional profiles (e.g. 'cloud') will live here when we deploy
+      into an existing Rumi private cloud.
+    -->
+    <profiles>
+        <profile name="standalone">
+            <env>
+                <!-- No overrides for now: the standalone profile accepts all
+                     defaults baked into the subst params above. Adding a
+                     value here is how operators can pin behaviour per
+                     profile without touching env vars. -->
+            </env>
+        </profile>
+    </profiles>
 </model>

@@ -27,8 +27,8 @@ import com.neeve.aep.event.AepEngineStoppedEvent;
 import com.neeve.aep.event.AepMessagingPrestartEvent;
 import com.neeve.config.Config;
 import com.neeve.server.app.annotations.AppInjectionPoint;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.neeve.trace.Tracer;
+import com.neeve.util.UtlThrowable;
 
 /**
  * Rumi App Builder REST — Rumi AEP app entry point.
@@ -47,14 +47,14 @@ import org.slf4j.LoggerFactory;
  * configured at launch time.
  */
 public final class Main {
-    private static final Logger LOG = LoggerFactory.getLogger(Main.class);
-
+    private final Tracer _tracer;
     private final HttpServer _httpServer;
     private AepEngine _engine;
 
     public Main() {
-        final String host = Config.getValue("appbuilder.rest.host", "0.0.0.0");
-        final int port = Config.getValue("appbuilder.rest.port", 3200);
+        _tracer = Tracer.get("rumi.appbuilder.rest");
+        final String host = Config.getValue("rumi.appbuilder.rest.host", "0.0.0.0");
+        final int port = Config.getValue("rumi.appbuilder.rest.port", 3200);
         _httpServer = new HttpServer(host, port, new ResourceConfig());
     }
 
@@ -67,10 +67,11 @@ public final class Main {
     public void onMessagingPrestart(final AepMessagingPrestartEvent event) {
         try {
             _httpServer.start();
-            LOG.info("Rumi App Builder REST listening on http://{}:{}",
-                _httpServer.getHost(), _httpServer.getPort());
+            _tracer.log("Rumi App Builder REST listening on http://"
+                + _httpServer.getHost() + ":" + _httpServer.getPort(), Tracer.Level.INFO);
         } catch (Exception e) {
-            LOG.error("Could not start HTTP server", e);
+            _tracer.log(UtlThrowable.prepareStackTrace(e), Tracer.Level.SEVERE);
+            _tracer.log("Could not start HTTP server [" + e + "]", Tracer.Level.SEVERE);
             _engine.stop(e);
         }
     }
@@ -80,7 +81,7 @@ public final class Main {
         try {
             _httpServer.stop();
         } catch (Exception e) {
-            LOG.warn("Could not stop HTTP server cleanly: {}", e.getMessage());
+            _tracer.log("Could not stop HTTP server cleanly: " + e.getMessage(), Tracer.Level.WARNING);
         }
     }
 
