@@ -11,7 +11,7 @@
 # directory preserved across upgrades, no privileged install required.
 #
 # The __VERSION__ placeholder is replaced at publish time. During
-# local iteration, pass --local-dist <tarball> and --version <ver>.
+# local iteration, pass --from <tarball> and --version <ver>.
 set -u
 set -o pipefail
 
@@ -76,7 +76,7 @@ Install / upgrade options:
   --rest-url URL           REST service base URL the MCP proxies to
                            (default: http://127.0.0.1:3200).
   --version VER            Release version (default: ${DEFAULT_VERSION}).
-  --local-dist FILE        Use a local tarball instead of downloading.
+  --from FILE        Use a local tarball instead of downloading.
   --python PATH            Python 3.${MIN_PY_MINOR}+ interpreter to build the
                            venv against (default: python3 on PATH).
   --download-only          Download and exit without installing.
@@ -110,8 +110,8 @@ parse_args() {
             --rest-url=*)    REST_URL="${1#--rest-url=}"; shift ;;
             --version)       VERSION="$2"; shift 2 ;;
             --version=*)     VERSION="${1#--version=}"; shift ;;
-            --local-dist)    LOCAL_DIST="$2"; shift 2 ;;
-            --local-dist=*)  LOCAL_DIST="${1#--local-dist=}"; shift ;;
+            --from)    LOCAL_DIST="$2"; shift 2 ;;
+            --from=*)  LOCAL_DIST="${1#--from=}"; shift ;;
             --python)        PYTHON_BIN="$2"; shift 2 ;;
             --python=*)      PYTHON_BIN="${1#--python=}"; shift ;;
             --download-only) DOWNLOAD_ONLY="true"; shift ;;
@@ -181,7 +181,7 @@ current_version() {
 fetch_tarball() {
     local dest="$1"
     if [[ -n "${LOCAL_DIST}" ]]; then
-        [[ -f "${LOCAL_DIST}" ]] || die "--local-dist file not found: ${LOCAL_DIST}"
+        [[ -f "${LOCAL_DIST}" ]] || die "--from file not found: ${LOCAL_DIST}"
         info "Using local dist: ${LOCAL_DIST}"
         cp "${LOCAL_DIST}" "${dest}"
         if [[ -z "${VERSION}" ]]; then
@@ -191,7 +191,7 @@ fetch_tarball() {
         fi
         return
     fi
-    [[ -n "${VERSION}" ]] || die "No version to install. Pass --version VER or --local-dist FILE."
+    [[ -n "${VERSION}" ]] || die "No version to install. Pass --version VER or --from FILE."
     local url="${DEFAULT_DOWNLOAD_BASE}/${VERSION}/${ARTIFACT_ID}-${VERSION}.tar.gz"
     info "Downloading ${url}"
     case "${DOWNLOADER}" in

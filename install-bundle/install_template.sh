@@ -75,8 +75,8 @@ Install / upgrade options:
   --rest-port N            Port for the REST service (default: 3200).
   --mcp-port N             Port for the MCP server (default: 3201).
   --version VER            Release version (default: ${DEFAULT_VERSION}).
-  --rest-local-dist FILE   Use a local REST tarball instead of downloading.
-  --mcp-local-dist FILE    Use a local MCP tarball instead of downloading.
+  --from-rest FILE   Use a local REST tarball instead of downloading.
+  --from-mcp FILE    Use a local MCP tarball instead of downloading.
   --no-start               Install both without starting either.
   --force                  Skip confirmation prompts.
   --verbose                Verbose output.
@@ -105,8 +105,8 @@ parse_args() {
             --mcp-port=*)      MCP_PORT="${1#--mcp-port=}"; shift ;;
             --version)         VERSION="$2"; shift 2 ;;
             --version=*)       VERSION="${1#--version=}"; shift ;;
-            --rest-local-dist) REST_LOCAL_DIST="$2"; shift 2 ;;
-            --mcp-local-dist)  MCP_LOCAL_DIST="$2"; shift 2 ;;
+            --from-rest) REST_LOCAL_DIST="$2"; shift 2 ;;
+            --from-mcp)  MCP_LOCAL_DIST="$2"; shift 2 ;;
             --no-start)        NO_START="true"; shift ;;
             --force)           FORCE="true"; shift ;;
             --verbose)         VERBOSE="true"; shift ;;
@@ -161,14 +161,14 @@ do_install() {
     # 1. REST first (it's the backend the MCP proxies to).
     info "Installing REST service"
     local rest_flags=("${common_flags[@]}" --port "${REST_PORT}")
-    [[ -n "${REST_LOCAL_DIST}" ]] && rest_flags+=(--local-dist "${REST_LOCAL_DIST}")
+    [[ -n "${REST_LOCAL_DIST}" ]] && rest_flags+=(--from "${REST_LOCAL_DIST}")
     "${rest_installer}" "${rest_flags[@]}" || die "REST install failed."
 
     # 2. MCP second, wired to the REST install's port.
     info "Installing MCP server (wiring --rest-url to http://127.0.0.1:${REST_PORT})"
     local mcp_flags=("${common_flags[@]}" --port "${MCP_PORT}" \
         --rest-url "http://127.0.0.1:${REST_PORT}")
-    [[ -n "${MCP_LOCAL_DIST}" ]] && mcp_flags+=(--local-dist "${MCP_LOCAL_DIST}")
+    [[ -n "${MCP_LOCAL_DIST}" ]] && mcp_flags+=(--from "${MCP_LOCAL_DIST}")
     "${mcp_installer}" "${mcp_flags[@]}" || die "MCP install failed."
 
     info "Combined install complete."

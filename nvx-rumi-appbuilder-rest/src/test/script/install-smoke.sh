@@ -56,7 +56,7 @@ unset NVJRE
 echo "==> Installing into ${PREFIX}"
 "${MODULE_DIR}/install/install_template.sh" \
     --install-dir "${PREFIX}" \
-    --local-dist "${TARBALL}" \
+    --from "${TARBALL}" \
     --port "${PORT}" \
     --force \
     --verbose
@@ -73,7 +73,7 @@ touch "${STAMP_FILE}"
 echo "==> Re-running install to validate the upgrade path"
 "${MODULE_DIR}/install/install_template.sh" \
     --install-dir "${PREFIX}" \
-    --local-dist "${TARBALL}" \
+    --from "${TARBALL}" \
     --port "${PORT}" \
     --force \
     --verbose >/dev/null

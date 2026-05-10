@@ -8,7 +8,7 @@
 #
 # - Builds the REST and MCP tarballs locally.
 # - Runs the combined install.sh against a throwaway prefix with
-#   --rest-local-dist and --mcp-local-dist.
+#   --from-rest and --from-mcp.
 # - Confirms both services are up on their configured ports.
 # - Runs the combined uninstall; confirms data/ survives for both.
 set -euo pipefail
@@ -76,7 +76,7 @@ unset NVJRE
 echo "==> Installing REST into ${PREFIX}"
 "${REST_MODULE}/install/install_template.sh" \
     --install-dir "${PREFIX}" \
-    --local-dist "${REST_TARBALL}" \
+    --from "${REST_TARBALL}" \
     --port "${REST_PORT}" \
     --force >/dev/null
 curl -fsS -m 5 "http://127.0.0.1:${REST_PORT}/health" >/dev/null \
@@ -85,7 +85,7 @@ curl -fsS -m 5 "http://127.0.0.1:${REST_PORT}/health" >/dev/null \
 echo "==> Installing MCP into ${PREFIX}, wired to REST on ${REST_PORT}"
 "${MCP_MODULE}/install/install_template.sh" \
     --install-dir "${PREFIX}" \
-    --local-dist "${MCP_TARBALL}" \
+    --from "${MCP_TARBALL}" \
     --port "${MCP_PORT}" \
     --rest-url "http://127.0.0.1:${REST_PORT}" \
     --force >/dev/null

@@ -14,12 +14,12 @@
 #
 # Invocation:
 #   curl -sSL https://downloads.n5corp.com/rumi/appbuilder-rest/<ver>/install.sh | bash
-#   ./install.sh --local-dist /path/to/<tarball>.tar.gz
+#   ./install.sh --from /path/to/<tarball>.tar.gz
 #   ./install.sh --uninstall
 #
 # The __VERSION__ placeholder below is replaced by publish_installer.sh
 # when the installer is published. During local iteration, pass
-# --local-dist <file> and --version <ver> to bypass the download.
+# --from <file> and --version <ver> to bypass the download.
 set -u
 set -o pipefail
 
@@ -84,7 +84,7 @@ Install / upgrade options:
                            Default: <install-dir>/${PRODUCT}/data.
   --port N                 HTTP port for the REST service (default: 3200).
   --version VER            Release version to install (default: ${DEFAULT_VERSION}).
-  --local-dist FILE        Use a local tarball instead of downloading.
+  --from FILE        Use a local tarball instead of downloading.
   --download-only          Download the tarball and exit without installing.
   --no-start               Install / upgrade without starting the service.
   --force                  Skip confirmation prompts on destructive operations.
@@ -118,8 +118,8 @@ parse_args() {
             --port=*)         PORT="${1#--port=}"; shift ;;
             --version)        VERSION="$2"; shift 2 ;;
             --version=*)      VERSION="${1#--version=}"; shift ;;
-            --local-dist)     LOCAL_DIST="$2"; shift 2 ;;
-            --local-dist=*)   LOCAL_DIST="${1#--local-dist=}"; shift ;;
+            --from)     LOCAL_DIST="$2"; shift 2 ;;
+            --from=*)   LOCAL_DIST="${1#--from=}"; shift ;;
             --download-only)  DOWNLOAD_ONLY="true"; shift ;;
             --no-start)       NO_START="true"; shift ;;
             --force)          FORCE="true"; shift ;;
@@ -152,7 +152,7 @@ preflight() {
     if [[ -z "${LOCAL_DIST}" && "${MODE}" == "install" ]]; then
         if   command -v curl  >/dev/null 2>&1; then DOWNLOADER="curl"
         elif command -v wget  >/dev/null 2>&1; then DOWNLOADER="wget"
-        else die "Neither curl nor wget found on PATH; install one or use --local-dist."
+        else die "Neither curl nor wget found on PATH; install one or use --from."
         fi
         debug "Downloader: ${DOWNLOADER}"
     fi
@@ -208,7 +208,7 @@ fetch_tarball() {
     local dest="$1"
 
     if [[ -n "${LOCAL_DIST}" ]]; then
-        [[ -f "${LOCAL_DIST}" ]] || die "--local-dist file not found: ${LOCAL_DIST}"
+        [[ -f "${LOCAL_DIST}" ]] || die "--from file not found: ${LOCAL_DIST}"
         info "Using local dist: ${LOCAL_DIST}"
         cp "${LOCAL_DIST}" "${dest}"
         # Derive version from the filename if not supplied.
@@ -222,7 +222,7 @@ fetch_tarball() {
         return
     fi
 
-    [[ -n "${VERSION}" ]] || die "No version to install. Pass --version VER or --local-dist FILE."
+    [[ -n "${VERSION}" ]] || die "No version to install. Pass --version VER or --from FILE."
     local url="${DEFAULT_DOWNLOAD_BASE}/${VERSION}/${ARTIFACT_ID}-${VERSION}-${ARCH}.tar.gz"
     info "Downloading ${url}"
     case "${DOWNLOADER}" in
