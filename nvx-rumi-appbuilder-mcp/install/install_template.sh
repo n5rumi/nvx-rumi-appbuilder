@@ -124,7 +124,8 @@ parse_args() {
         esac
     done
     INSTALL_ROOT="${INSTALL_ROOT:-${DEFAULT_INSTALL_ROOT}}"
-    [[ "${VERSION}" == "__VERSION__" ]] && VERSION=""
+    # Note: sentinel is split so sed's __VERSION__ substitution doesn't replace it
+    [[ "${VERSION}" == "__""VERSION__" ]] && VERSION=""
 }
 
 # ---- Pre-flight ------------------------------------------------------
