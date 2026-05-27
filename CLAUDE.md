@@ -120,11 +120,13 @@ of the App Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
 
 - **`nvx-rumi-cli`** — direct consumer of the SDK via Maven dependency
   (`nvx-rumi-appbuilder-sdk`).
-- **`nvx-rumi-agent`** — consumes the MCP (or can go REST-direct if it
-  wants). Agent installer fetches and installs both the REST service and
-  the MCP server as sibling systemd units.
-- **Sutra** — consumes either the REST service or the MCP, depending on
-  whether it wants tool-call visibility through the Claude Agent SDK.
+- **Rumi Support Agent** (`nvx-rumi-agents/nvx-rumi-support-agent`) —
+  consumes the MCP (or can go REST-direct if it wants). Agent installer
+  fetches and installs both the REST service and the MCP server as
+  sibling systemd units.
+- **Sutra Agent** (`nvx-sutra/nvx-sutra-agent`, future) — same Dev MCP
+  consumer, but framed as a primary build surface rather than a fallback
+  tool.
 - **Rumi Management Agent** (`nvx-rumi-management/rumi-agent`) —
   architectural template for the REST service's packaging, lifecycle, and
   deployment surface.
