@@ -4,3 +4,11 @@
 **/.settings
 **/.classpath
 **/dependency-reduced-pom.xml
+
+# Python (nvx-rumi-appbuilder-mcp)
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+**/.pytest_cache
+**/.venv
+**/venv
