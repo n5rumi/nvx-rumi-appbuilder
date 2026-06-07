@@ -4,11 +4,20 @@
 
 ## Required runner setup
 
-- **Java 17+** on PATH (or via `JAVA_HOME`) for the REST build.
-- **Python 3.11+** + `python -m pip install build` for the MCP build.
-- **Maven** (matrix build across the four sandbox arches).
-- **Write access to the local downloads tree** (`DOWNLOADS_ROOT`, e.g. `~/downloads`) that fronts `downloads.n5corp.com` — the same one the agent/CLI release jobs publish into.
-- Network egress to `nexus.rumidata.io` (for `nvx-rumi:sandbox-<arch>:tar.gz`) and to PyPI (for Python deps pulled at MCP wheel build).
+The release runs inside a build-toolchain container (`ci/Dockerfile`) via
+`ci/release-in-docker.sh`, so the agent itself needs only:
+
+- **Docker** — to build the toolchain image and run the release in it.
+- **Write access to the local downloads tree** (`DOWNLOADS_ROOT`, e.g. `~/downloads`) that fronts `downloads.n5corp.com` — the same one the agent/CLI release jobs publish into. It is bind-mounted into the container so published artifacts land on the host tree, not the throwaway container.
+- Network egress (from the container) to `nexus.rumidata.io` (for `nvx-rumi:sandbox-<arch>:tar.gz`) and to PyPI (for the MCP wheel build backends).
+
+The container image carries Java 17, Maven, and Python 3.11 + `build`, so the
+host needs none of those — this is what lets the release run on the existing
+Amazon Linux 2 agents (whose `python3` is 3.7, with no modern OpenSSL).
+
+You can still run `ci/release.sh` directly on a host that already has Java 17 +
+Maven + Python 3.11 + `build` (e.g. an Amazon Linux 2023 agent) — the container
+wrapper is just the zero-host-setup path.
 
 ## TeamCity build config
 
@@ -21,13 +30,14 @@ Recommended name: `RumiGroup_AppBuilder_10release` (matches the existing Rumi gr
 | Name            | Value                                   | Notes |
 |-----------------|-----------------------------------------|-------|
 | `VERSION`         | `%build.appbuilder.version%.%build.counter%` (or manual override) | Release version. Stamped onto the Maven + Python coordinates and written into every tarball + install.sh. |
-| `DOWNLOADS_ROOT`  | `%env.DOWNLOADS_ROOT%` (e.g. `~/downloads`) | Local downloads tree on the agent that fronts downloads.n5corp.com. |
-| `JAVA_HOME`       | `%env.JDK_17%`                          | Provided by the runner. |
+| `DOWNLOADS_ROOT`  | `%env.DOWNLOADS_ROOT%` (e.g. `~/downloads`) | HOST downloads tree that fronts downloads.n5corp.com; bind-mounted into the build container. |
+
+(No `JAVA_HOME` parameter — Java 17 lives inside the toolchain container.)
 
 **Steps:**
 
-1. **Checkout** `nvx-rumi-appbuilder/develop` (or the release branch once 4.x branches land).
-2. **Run** `bash ci/release.sh` with the env vars above. The script invokes `mvn` for the matrix REST build and runs each `publish_installer.sh` in turn.
+1. **Checkout** the release branch (`1.0` for 1.0-RELEASE; `develop` for 1.0-SNAPSHOT).
+2. **Run** `bash ci/release-in-docker.sh` with the env vars above. It builds the `ci/Dockerfile` toolchain image and runs `ci/release.sh` inside it (Maven matrix REST build + MCP wheel + each `publish_installer.sh`), with the downloads tree + `~/.m2` bind-mounted from the host.
 3. **Tag** on success: `git tag v${VERSION} && git push origin v${VERSION}`.
 
 ## Smoke after publish
