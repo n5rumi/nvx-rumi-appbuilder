@@ -28,7 +28,12 @@ set -euo pipefail
 MODULE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${MODULE_DIR}"
 
-VERSION="$(python3 -c 'import tomllib, pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+# Prefer python3.11 (tomllib + the wheel build need >= 3.11; build hosts like
+# Amazon Linux 2 default python3 to 3.7). Override with PYTHON_BIN if needed.
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python3.11 || command -v python3 || true)}"
+[[ -n "${PYTHON_BIN}" && -x "${PYTHON_BIN}" ]] || { echo "No python3 on PATH (need 3.11+)"; exit 1; }
+
+VERSION="$("${PYTHON_BIN}" -c 'import tomllib, pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
 [[ -n "${VERSION}" ]] || { echo "Could not determine version from pyproject.toml"; exit 1; }
 
 TARGET="${MODULE_DIR}/target"
@@ -40,7 +45,7 @@ mkdir -p "${STAGING}"/{wheel,conf,scripts}
 
 # 1. Build the wheel.
 echo "==> Building wheel via python -m build"
-python3 -m build --wheel --outdir "${TARGET}/wheels" >/dev/null
+"${PYTHON_BIN}" -m build --wheel --outdir "${TARGET}/wheels" >/dev/null
 cp "${TARGET}/wheels/rumi_appbuilder_mcp-${VERSION}-py3-none-any.whl" "${STAGING}/wheel/"
 
 # 2. Copy the static bits.
