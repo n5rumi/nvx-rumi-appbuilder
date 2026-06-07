@@ -1,13 +1,13 @@
 # CI — App Builder Release Publishing
 
-`ci/release.sh` orchestrates a full release: it builds dist tarballs for the REST service (per-arch), the MCP server (arch-agnostic), and the combined bundle installer, then uploads everything to `s3://downloads.n5corp.com/rumi/appbuilder{-rest,-mcp,}/...` via the per-service `publish_installer.sh` scripts.
+`ci/release.sh` orchestrates a full release: it builds dist tarballs for the REST service (per-arch), the MCP server (arch-agnostic), and the combined bundle installer, then copies everything into the build agent's local downloads tree at `${DOWNLOADS_ROOT}/rumi/appbuilder{-rest,-mcp,}/...` via the per-service `publish_installer.sh` scripts. This is the same local-copy mechanism every other N5/Rumi/Datafye installer uses (the downloads tree is what fronts `downloads.n5corp.com`) — no S3/CDN client is involved.
 
 ## Required runner setup
 
 - **Java 17+** on PATH (or via `JAVA_HOME`) for the REST build.
 - **Python 3.11+** + `python -m pip install build` for the MCP build.
 - **Maven** (matrix build across the four sandbox arches).
-- **awscli v2** authenticated to a role with write access to `s3://downloads.n5corp.com`.
+- **Write access to the local downloads tree** (`DOWNLOADS_ROOT`, e.g. `~/downloads`) that fronts `downloads.n5corp.com` — the same one the agent/CLI release jobs publish into.
 - Network egress to `nexus.rumidata.io` (for `nvx-rumi:sandbox-<arch>:tar.gz`) and to PyPI (for Python deps pulled at MCP wheel build).
 
 ## TeamCity build config
@@ -20,9 +20,9 @@ Recommended name: `RumiGroup_AppBuilder_10release` (matches the existing Rumi gr
 
 | Name            | Value                                   | Notes |
 |-----------------|-----------------------------------------|-------|
-| `VERSION`       | `%build.counter%` (or manual override)  | Release version. Written into every tarball + install.sh. |
-| `S3_BUCKET`     | `s3://downloads.n5corp.com`             | Publish target. |
-| `JAVA_HOME`     | `%env.JDK_17%`                          | Provided by the runner. |
+| `VERSION`         | `%build.appbuilder.version%.%build.counter%` (or manual override) | Release version. Stamped onto the Maven + Python coordinates and written into every tarball + install.sh. |
+| `DOWNLOADS_ROOT`  | `%env.DOWNLOADS_ROOT%` (e.g. `~/downloads`) | Local downloads tree on the agent that fronts downloads.n5corp.com. |
+| `JAVA_HOME`       | `%env.JDK_17%`                          | Provided by the runner. |
 
 **Steps:**
 
@@ -54,8 +54,10 @@ bash /tmp/smoke-${VERSION}/rumi-appbuilder-rest/current/install.sh \
 
 ## Layout of published artifacts
 
+Relative to `${DOWNLOADS_ROOT}` (served at `https://downloads.n5corp.com`):
+
 ```
-s3://downloads.n5corp.com/rumi/
+rumi/
 ├── appbuilder/
 │   ├── <version>/install.sh            # combined-bundle installer
 │   └── latest/install.sh               # rolling pointer

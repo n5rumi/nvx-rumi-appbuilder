@@ -12,6 +12,11 @@
 #   2. MCP server dist tarball (arch-agnostic; pure Python)
 #   3. Combined bundle installer (thin orchestrator; no tarball of its own)
 #
+# Publishing uses the same local-copy mechanism as every other N5/Rumi/Datafye
+# installer: each per-service publisher copies its install.sh + tarballs into
+# the build agent's local downloads tree (which fronts downloads.n5corp.com).
+# No S3/CDN client is involved.
+#
 # Requires the three publishers already in the repo:
 #   nvx-rumi-appbuilder-rest/install/publish_installer.sh
 #   nvx-rumi-appbuilder-mcp/install/publish_installer.sh
@@ -19,11 +24,13 @@
 #
 # Required env:
 #   VERSION                    — release version, e.g. 1.0.0
-#   S3_BUCKET                  — e.g. s3://downloads.n5corp.com
+#   DOWNLOADS_ROOT             — local downloads tree on the build agent
+#                                (e.g. ~/downloads), fronting downloads.n5corp.com
 #   JAVA_HOME                  — Java 17+ (for REST build)
-#   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (or role on the runner)
 #
 # Optional env:
+#   DOWNLOAD_BASE_URL          — public base URL for the end-user hints printed
+#                                at the end. Default https://downloads.n5corp.com.
 #   RELEASE_ARCHES             — space-separated list of arches to
 #                                publish REST for. Default: all four.
 #   SKIP_REST=1                — skip REST publish (e.g. patch-only to MCP).
@@ -34,8 +41,10 @@
 set -euo pipefail
 
 : "${VERSION:?VERSION env var is required}"
-: "${S3_BUCKET:?S3_BUCKET env var is required}"
+: "${DOWNLOADS_ROOT:?DOWNLOADS_ROOT env var is required (local downloads tree on the build agent)}"
 : "${JAVA_HOME:?JAVA_HOME env var is required}"
+
+DOWNLOAD_BASE_URL="${DOWNLOAD_BASE_URL:-https://downloads.n5corp.com}"
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 REST_MODULE="${REPO_DIR}/nvx-rumi-appbuilder-rest"
@@ -51,6 +60,14 @@ fail()  { echo "!! $*" >&2; exit 1; }
 if [[ "${SKIP_REST:-}" != "1" ]]; then
     info "Building REST dist tarballs for [${RELEASE_ARCHES}]"
     cd "${REPO_DIR}"
+
+    # Stamp the release version onto the Maven coordinates so the produced
+    # tarballs are named nvx-rumi-appbuilder-rest-${VERSION}-<arch>.tar.gz
+    # (the build agent works on an ephemeral checkout, so this is not committed).
+    mvn -q -pl nvx-rumi-appbuilder-rest -am versions:set \
+        -DnewVersion="${VERSION}" -DgenerateBackupPoms=false \
+        || fail "Could not set Maven version to ${VERSION}"
+
     local_archives_dir="${REST_MODULE}/target/release"
     rm -rf "${local_archives_dir}"
     mkdir -p "${local_archives_dir}"
@@ -66,7 +83,7 @@ if [[ "${SKIP_REST:-}" != "1" ]]; then
     done
 
     info "Publishing REST installer + ${#RELEASE_ARCHES}-arch tarballs"
-    VERSION="${VERSION}" DIST_DIR="${local_archives_dir}" S3_BUCKET="${S3_BUCKET}" \
+    VERSION="${VERSION}" DIST_DIR="${local_archives_dir}" DOWNLOADS_ROOT="${DOWNLOADS_ROOT}" \
         "${REST_MODULE}/install/publish_installer.sh" \
         || fail "REST publish failed"
 else
@@ -77,11 +94,18 @@ fi
 
 if [[ "${SKIP_MCP:-}" != "1" ]]; then
     info "Building MCP dist tarball"
+    # Stamp the release version into pyproject.toml so build-dist.sh names the
+    # wheel + tarball with ${VERSION} (ephemeral checkout, not committed).
+    sed -i.bak -E "s/^version = \".*\"/version = \"${VERSION}\"/" \
+        "${MCP_MODULE}/pyproject.toml" \
+        && rm -f "${MCP_MODULE}/pyproject.toml.bak" \
+        || fail "Could not set MCP version to ${VERSION}"
+
     bash "${MCP_MODULE}/build/build-dist.sh" >/dev/null \
         || fail "MCP build failed"
 
     info "Publishing MCP installer + tarball"
-    VERSION="${VERSION}" DIST_DIR="${MCP_MODULE}/target" S3_BUCKET="${S3_BUCKET}" \
+    VERSION="${VERSION}" DIST_DIR="${MCP_MODULE}/target" DOWNLOADS_ROOT="${DOWNLOADS_ROOT}" \
         "${MCP_MODULE}/install/publish_installer.sh" \
         || fail "MCP publish failed"
 else
@@ -92,7 +116,7 @@ fi
 
 if [[ "${SKIP_BUNDLE:-}" != "1" ]]; then
     info "Publishing combined bundle installer"
-    VERSION="${VERSION}" S3_BUCKET="${S3_BUCKET}" \
+    VERSION="${VERSION}" DOWNLOADS_ROOT="${DOWNLOADS_ROOT}" \
         "${REPO_DIR}/install-bundle/publish_installer.sh" \
         || fail "Combined bundle publish failed"
 else
@@ -102,8 +126,8 @@ fi
 info "Release ${VERSION} published."
 echo
 echo "End-user URLs:"
-echo "  REST only:     curl -sSL ${S3_BUCKET/s3:\/\//https:\/\/}/rumi/appbuilder-rest/${VERSION}/install.sh | bash"
-echo "  MCP only:      curl -sSL ${S3_BUCKET/s3:\/\//https:\/\/}/rumi/appbuilder-mcp/${VERSION}/install.sh | bash"
-echo "  Combined:      curl -sSL ${S3_BUCKET/s3:\/\//https:\/\/}/rumi/appbuilder/${VERSION}/install.sh | bash"
+echo "  REST only:     curl -sSL ${DOWNLOAD_BASE_URL}/rumi/appbuilder-rest/${VERSION}/install.sh | bash"
+echo "  MCP only:      curl -sSL ${DOWNLOAD_BASE_URL}/rumi/appbuilder-mcp/${VERSION}/install.sh | bash"
+echo "  Combined:      curl -sSL ${DOWNLOAD_BASE_URL}/rumi/appbuilder/${VERSION}/install.sh | bash"
 echo
 echo "  Latest (rolling): replace ${VERSION} with 'latest' in any of the above."
