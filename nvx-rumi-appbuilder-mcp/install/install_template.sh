@@ -131,7 +131,11 @@ parse_args() {
 # ---- Pre-flight ------------------------------------------------------
 
 preflight() {
-    PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || true)}"
+    # Prefer python3.11 when present. Amazon Linux 2023 and RHEL 9 ship
+    # python3 = 3.9, which is below the MIN_PY_MINOR floor below — but they make
+    # python3.11 installable as a separate package, so probe for it first and
+    # fall back to a (presumably modern) python3 on developer machines.
+    PYTHON_BIN="${PYTHON_BIN:-$(command -v python3.11 || command -v python3 || true)}"
     [[ -n "${PYTHON_BIN}" && -x "${PYTHON_BIN}" ]] \
         || die "No python3 on PATH; pass --python /path/to/python3."
     local pyver
