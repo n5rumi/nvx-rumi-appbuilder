@@ -21,24 +21,23 @@ wrapper is just the zero-host-setup path.
 
 ## TeamCity build config
 
-Recommended name: `RumiGroup_AppBuilder_10release` (matches the existing Rumi group's naming convention).
+The 1.0-RELEASE build (`RumiGroup_Dev_2_AppBuilder_2_10_10release`) runs the
+release inside the toolchain container using TeamCity's native steps:
 
-**Triggers:** manual with a required `VERSION` parameter (matches the release workflow for the CLI + Management Agent).
+1. **Build App Builder toolchain image** — Docker runner (`build`) → `appbuilder-build-tools:local` from `ci/Dockerfile` (local, not pushed).
+2. **Release REST + MCP + bundle** — command `bash ci/release.sh /downloads`, with **"Run step within Docker container" = `appbuilder-build-tools:local`** and additional docker args `-v %downloads.root%:/downloads -v /home/teamcity/.m2:/root/.m2`. `ci/release.sh` takes the downloads tree as its argument (`/downloads`, the in-container mount point); the host side comes from the shared `downloads.root` parameter.
 
 **Parameters:**
 
-| Name            | Value                                   | Notes |
-|-----------------|-----------------------------------------|-------|
-| `VERSION`         | `%build.appbuilder.version%.%build.counter%` (or manual override) | Release version. Stamped onto the Maven + Python coordinates and written into every tarball + install.sh. |
-| `DOWNLOADS_ROOT`  | `%env.DOWNLOADS_ROOT%` (e.g. `~/downloads`) | HOST downloads tree that fronts downloads.n5corp.com; bind-mounted into the build container. |
+| Name | Value | Notes |
+|------|-------|-------|
+| `downloads.root` | `/home/teamcity/downloads` | **Defined on the TeamCity Root project**, inherited everywhere. The local downloads tree that fronts downloads.n5corp.com — the same one every other module's publish build writes into. Used as the host side of the `-v` mount. |
+| `VERSION` (`env.VERSION`) | `%build.number%` | Release version. Stamped onto the Maven + Python coordinates and written into every tarball + install.sh. |
 
-(No `JAVA_HOME` parameter — Java 17 lives inside the toolchain container.)
+(No `JAVA_HOME` / `DOWNLOADS_ROOT` build params — Java 17 comes from the image; the downloads root is passed to `ci/release.sh` as an argument.)
 
-**Steps:**
-
-1. **Checkout** the release branch (`1.0` for 1.0-RELEASE; `develop` for 1.0-SNAPSHOT).
-2. **Run** `bash ci/release-in-docker.sh` with the env vars above. It builds the `ci/Dockerfile` toolchain image and runs `ci/release.sh` inside it (Maven matrix REST build + MCP wheel + each `publish_installer.sh`), with the downloads tree + `~/.m2` bind-mounted from the host.
-3. **Tag** on success: `git tag v${VERSION} && git push origin v${VERSION}`.
+The SDK is also deployed to nexus by the preceding `SDK: …` Maven steps in the
+same build. On success, tag: `git tag v${VERSION} && git push origin v${VERSION}`.
 
 ## Smoke after publish
 

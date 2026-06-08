@@ -22,10 +22,17 @@
 #   nvx-rumi-appbuilder-mcp/install/publish_installer.sh
 #   install-bundle/publish_installer.sh
 #
+# Usage:
+#   ci/release.sh <downloads_root>
+#
+# Argument:
+#   <downloads_root>           — local downloads tree on the build agent
+#                                (e.g. ~/downloads), fronting downloads.n5corp.com.
+#                                Same role as the downloads_root arg the other
+#                                N5/Rumi/Datafye publish_installer scripts take.
+#
 # Required env:
 #   VERSION                    — release version, e.g. 1.0.0
-#   DOWNLOADS_ROOT             — local downloads tree on the build agent
-#                                (e.g. ~/downloads), fronting downloads.n5corp.com
 #   JAVA_HOME                  — Java 17+ (for REST build)
 #
 # Optional env:
@@ -40,8 +47,8 @@
 # Exit code is non-zero on the first failure.
 set -euo pipefail
 
+DOWNLOADS_ROOT="${1:?usage: ci/release.sh <downloads_root> (local downloads tree fronting downloads.n5corp.com)}"
 : "${VERSION:?VERSION env var is required}"
-: "${DOWNLOADS_ROOT:?DOWNLOADS_ROOT env var is required (local downloads tree on the build agent)}"
 : "${JAVA_HOME:?JAVA_HOME env var is required}"
 
 DOWNLOAD_BASE_URL="${DOWNLOAD_BASE_URL:-https://downloads.n5corp.com}"

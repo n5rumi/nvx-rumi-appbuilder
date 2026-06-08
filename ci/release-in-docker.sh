@@ -40,12 +40,11 @@ docker run --rm \
     -v "${DOWNLOADS_ROOT}":/downloads \
     -v "${M2_DIR}":/root/.m2 \
     -e VERSION="${VERSION}" \
-    -e DOWNLOADS_ROOT=/downloads \
     -e SKIP_REST="${SKIP_REST:-}" \
     -e SKIP_MCP="${SKIP_MCP:-}" \
     -e SKIP_BUNDLE="${SKIP_BUNDLE:-}" \
     -e RELEASE_ARCHES="${RELEASE_ARCHES:-}" \
     "${IMAGE}" \
-    bash ci/release.sh
+    bash ci/release.sh /downloads
 
 echo "==> Release ${VERSION} complete (artifacts under ${DOWNLOADS_ROOT}/rumi/appbuilder*)."
