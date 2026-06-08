@@ -11,21 +11,18 @@
 # a container.
 FROM python:3.11-bookworm
 
-# JDK 17 + Maven + the PEP 517 'build' frontend (for build/build-dist.sh).
+# JDK 17 + Maven (from Debian bookworm) + the PEP 517 'build' frontend that
+# build/build-dist.sh uses to produce the MCP wheel.
 #
-# Maven is installed from Apache, NOT apt: Debian bookworm ships Maven 3.9,
-# whose maven-default-http-blocker (added in 3.8.1) refuses the http:// Neeve/
-# Rumi nexus repos the nvx-os-parent POM hierarchy declares. Pin a pre-3.8.1
-# Maven so the container resolves those (open, http) repos the same way the
-# org's build agents (Maven 3.5.4) do.
-ARG MAVEN_VERSION=3.6.3
+# Debian's Maven is 3.9, whose maven-default-http-blocker (3.8.1+) refuses
+# http:// repos. That's fine: the build resolves everything over https — the
+# App Builder pom's repositories + pluginRepositories point at
+# https://nexus.n5corp.com/repository/maven-public/ — so the http neeve repos
+# in the agent settings.xml are never needed (and thus never block).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        openjdk-17-jdk-headless ca-certificates curl \
+        openjdk-17-jdk-headless maven ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && curl -fsSL "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" \
-        | tar -xz -C /opt \
-    && ln -sf "/opt/apache-maven-${MAVEN_VERSION}/bin/mvn" /usr/local/bin/mvn \
     && python3.11 -m pip install --no-cache-dir build
 
 # ci/release.sh requires JAVA_HOME; provide it from the image (the host's
