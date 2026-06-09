@@ -75,7 +75,10 @@ if [[ "${SKIP_REST:-}" != "1" ]]; then
         -DnewVersion="${VERSION}" -DgenerateBackupPoms=false \
         || fail "Could not set Maven version to ${VERSION}"
 
-    local_archives_dir="${REST_MODULE}/target/release"
+    # Collect the per-arch tarballs OUTSIDE the module's target/ — each arch's
+    # `clean package` wipes target/, so a staging dir under it would be deleted
+    # (taking earlier arches' tarballs with it).
+    local_archives_dir="${REPO_DIR}/.release-dist"
     rm -rf "${local_archives_dir}"
     mkdir -p "${local_archives_dir}"
 
