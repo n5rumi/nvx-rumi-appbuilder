@@ -73,9 +73,9 @@ rumi/
 ├── appbuilder-rest/
 │   ├── <version>/install.sh
 │   ├── <version>/nvx-rumi-appbuilder-rest-<version>-linux-x86-64.tar.gz
-│   ├── <version>/nvx-rumi-appbuilder-rest-<version>-linux-arm-64.tar.gz
 │   ├── <version>/nvx-rumi-appbuilder-rest-<version>-osx-x86-64.tar.gz
-│   ├── <version>/nvx-rumi-appbuilder-rest-<version>-osx-arm-64.tar.gz
+│   │   (one tarball per built arch — currently the x86 arches; arm bases
+│   │    aren't published yet)
 │   ├── latest/install.sh
 │   └── latest/version.txt
 └── appbuilder-mcp/

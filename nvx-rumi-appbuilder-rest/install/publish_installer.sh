@@ -42,11 +42,13 @@ trap "rm -rf '${WORK}'" EXIT
 sed "s/__VERSION__/${VERSION}/g" "${TEMPLATE}" > "${WORK}/install.sh"
 chmod +x "${WORK}/install.sh"
 
-# 2. Sanity-check: every expected arch tarball is present.
-for arch in linux-x86-64 linux-arm-64 osx-x86-64 osx-arm-64; do
-    f="${DIST_DIR}/${ARTIFACT}-${VERSION}-${arch}.tar.gz"
-    [[ -f "${f}" ]] || { echo "Missing tarball: ${f}" >&2; exit 1; }
-done
+# 2. Collect whatever per-arch tarballs the build produced. The arch set is
+#    not fixed — only the x86 sandbox bases are published today, so don't
+#    hardcode a list; require at least one.
+shopt -s nullglob
+tarballs=("${DIST_DIR}/${ARTIFACT}-${VERSION}-"*.tar.gz)
+shopt -u nullglob
+[[ ${#tarballs[@]} -gt 0 ]] || { echo "No dist tarballs ${ARTIFACT}-${VERSION}-*.tar.gz in ${DIST_DIR}" >&2; exit 1; }
 
 # 3. Copy into the local downloads tree (no S3/CDN client).
 readonly BASE="${DOWNLOADS_ROOT}/rumi/appbuilder-rest"
@@ -54,8 +56,8 @@ readonly DEST="${BASE}/${VERSION}"
 mkdir -p "${DEST}"
 cp "${WORK}/install.sh" "${DEST}/install.sh"
 chmod +x "${DEST}/install.sh"
-for arch in linux-x86-64 linux-arm-64 osx-x86-64 osx-arm-64; do
-    cp "${DIST_DIR}/${ARTIFACT}-${VERSION}-${arch}.tar.gz" "${DEST}/"
+for f in "${tarballs[@]}"; do
+    cp "${f}" "${DEST}/"
 done
 
 # 4. Flip the 'latest' symlink + version stamp.

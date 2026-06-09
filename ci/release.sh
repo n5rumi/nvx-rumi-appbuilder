@@ -38,8 +38,10 @@
 # Optional env:
 #   DOWNLOAD_BASE_URL          — public base URL for the end-user hints printed
 #                                at the end. Default https://downloads.n5corp.com.
-#   RELEASE_ARCHES             — space-separated list of arches to
-#                                publish REST for. Default: all four.
+#   RELEASE_ARCHES             — space-separated list of arches to publish REST
+#                                for. Default: the x86 arches (linux-x86-64
+#                                osx-x86-64). The arm sandbox bases aren't
+#                                published yet (no arm build machine).
 #   SKIP_REST=1                — skip REST publish (e.g. patch-only to MCP).
 #   SKIP_MCP=1                 — skip MCP publish.
 #   SKIP_BUNDLE=1              — skip combined bundle publish.
@@ -57,7 +59,11 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 REST_MODULE="${REPO_DIR}/nvx-rumi-appbuilder-rest"
 MCP_MODULE="${REPO_DIR}/nvx-rumi-appbuilder-mcp"
 
-RELEASE_ARCHES="${RELEASE_ARCHES:-linux-x86-64 linux-arm-64 osx-x86-64 osx-arm-64}"
+# Only the x86 sandbox bases (com.neeve:nvx-rumi:sandbox-<arch>) are published
+# today — there's no arm build machine, so linux-arm-64 / osx-arm-64 bases don't
+# exist. Default to the x86 arches; add the arm ones to RELEASE_ARCHES once their
+# bases are published.
+RELEASE_ARCHES="${RELEASE_ARCHES:-linux-x86-64 osx-x86-64}"
 
 info()  { echo "==> $*"; }
 fail()  { echo "!! $*" >&2; exit 1; }
