@@ -83,8 +83,28 @@ cd nvx-rumi-appbuilder-mcp
 pip install -e .
 ```
 
-Maven repositories are `nexus.rumidata.io` and `nexus.n5corp.com`. Parent
-of the App Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
+### Release / distribution
+
+The full release is orchestrated by `ci/release.sh <downloads_root>` —
+it builds the REST per-arch tarballs, the MCP wheel-in-tarball, and the
+combined bundle, then publishes each by copying into the build agent's
+local downloads tree (`${DOWNLOADS_ROOT}/rumi/appbuilder{,-rest,-mcp}/`)
+and flipping a `latest` symlink. There is **no `aws s3 cp`** — it's the
+same local-copy mechanism every other N5/Rumi/Datafye installer uses.
+
+The release runs **inside a build-toolchain container** (`ci/Dockerfile`:
+`python:3.11-bookworm` + OpenJDK 17 + Maven + the PEP 517 `build`
+frontend), so a TeamCity agent needs only Docker. `ci/release-in-docker.sh`
+is the local/manual convenience wrapper. `RELEASE_ARCHES` defaults to
+**`linux-x86-64 osx-x86-64`** (x86 only — no arm build machine, and the
+arm sandbox bases aren't published). See `ci/README.md` for the full
+TeamCity build config and published-artifact layout.
+
+Maven repositories (`<repositories>` and `<pluginRepositories>`) point at
+`https://nexus.n5corp.com/repository/maven-public/`. This must be **https**:
+the release builds inside a Maven 3.9 container whose default
+http-blocker (Maven 3.8.1+) refuses plain-http repos. Parent of the App
+Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
 
 ## Conventions
 
@@ -141,6 +161,9 @@ of the App Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
 
 - `develop` — active development
 - `main` — stable releases
+- `1.0` — the current release line; 1.0.x releases are cut here
+  (released `1.0.13` as of this writing). Release tags are
+  `rumi-appbuilder-<version>`.
 
 ## Git Commits
 

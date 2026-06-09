@@ -9,7 +9,7 @@ The release runs inside a build-toolchain container (`ci/Dockerfile`) via
 
 - **Docker** — to build the toolchain image and run the release in it.
 - **Write access to the local downloads tree** (`DOWNLOADS_ROOT`, e.g. `~/downloads`) that fronts `downloads.n5corp.com` — the same one the agent/CLI release jobs publish into. It is bind-mounted into the container so published artifacts land on the host tree, not the throwaway container.
-- Network egress (from the container) to `nexus.rumidata.io` (for `nvx-rumi:sandbox-<arch>:tar.gz`) and to PyPI (for the MCP wheel build backends).
+- Network egress (from the container) to `https://nexus.n5corp.com/repository/maven-public/` (for `nvx-rumi:sandbox-<arch>:tar.gz` and all other Maven artifacts — the pom resolves over https so the Maven 3.9 http-blocker never trips) and to PyPI (for the MCP wheel build backends).
 
 The container image carries Java 17, Maven, and Python 3.11 + `build`, so the
 host needs none of those — this is what lets the release run on the existing

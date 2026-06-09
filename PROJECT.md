@@ -247,12 +247,17 @@ Tracked under RUMI-282 with additional tickets to be filed. High-level:
    See `nvx-rumi-appbuilder-rest/PROJECT.md` for the design in detail.
 2. Python MCP scaffold — Python project, MCP SDK, tool-per-REST-endpoint
    mapping. See `nvx-rumi-appbuilder-mcp/PROJECT.md` for design.
-3. Packaging — single install bundle with JAR + Python venv + two
-   systemd units (`rumi-appbuilder-rest.service`,
-   `rumi-appbuilder-mcp.service`) with `After=` / `Requires=` so MCP
-   waits for REST.
-4. CI publish — mirror the Rumi Agent pattern; publish to
-   `downloads.n5corp.com/rumi/dev/{VERSION}/`.
+3. Packaging — each service publishes its own self-contained installer
+   (`appbuilder-rest`, `appbuilder-mcp`) plus a combined-bundle installer
+   (`appbuilder`) that fetches and installs both. REST ships as a native
+   per-arch tarball driven by `bin/xvm.sh` (not a JAR-only drop); MCP
+   ships as a wheel-in-tarball with its own venv.
+4. CI publish — `ci/release.sh <downloads_root>` builds all three and
+   copies them into the build agent's local downloads tree under
+   `rumi/appbuilder{,-rest,-mcp}/<version>/`, flipping a `latest`
+   symlink (no `aws s3 cp`). The release runs inside a build-toolchain
+   container (`ci/Dockerfile`), so a TeamCity agent needs only Docker.
+   See `ci/README.md`.
 
 ## Consumers
 
@@ -328,3 +333,66 @@ Both `ConfigInjector` and `ScriptInjector` detect duplicates before
 inserting. Running the builder twice with the same parameters won't
 corrupt the output. Idempotency is a design choice worth making early
 — it's much harder to retrofit than to build in from the start.
+
+## Lessons Learned (REST distribution & runtime)
+
+Lessons from getting the REST service to build, publish, and stop
+cleanly across machines and a containerized release.
+
+### Kill the wrapper, orphan the JVM
+
+The first stop logic killed the launcher pid. But `bin/xvm.sh` is a
+wrapper that *forks* the actual JVM, so killing the wrapper left the
+JVM running and holding the port — the next start would fail. The fix:
+stop via `xvm.sh appbuilder-rest --action stop`, which has
+`com.neeve.server.Main` discover the running XVM through its discovery
+descriptor, connect to its admin port, and tell the XVM to shut its own
+JVM down gracefully. The takeaway: when a process supervises a forked
+child, never reach for the parent's pid — ask the child to stop itself
+through whatever control channel it exposes. `scripts/start.sh` and
+`scripts/stop.sh` are now the single source of truth, and the installer
+delegates to them. (Note: the `scripts/launch` / `scripts/shutdown`
+XVM-DSL files are a *different* path — they drive the controller/xar
+Rumi Management deployment, not the direct `xvm.sh` launch.)
+
+### Discovery must be deterministic, and `loopback://` isn't it
+
+Stop-by-discovery only works if the stopper finds the same XVM the
+launcher started. Left unset, Rumi's discovery defaults to multicast on
+an auto-selected NIC — non-deterministic across machines and flaky in
+CI. The obvious-looking fix, `loopback://`, is wrong: that's an
+*intra-JVM* bus and can't span the separate REST, MCP, and admin-client
+JVMs. The right answer is multicast *bound to loopback*:
+`mcast://224.0.1.200:4090&localIfAddr=127.0.0.1` in the `standalone`
+profile, plus `-Djava.net.preferIPv4Stack=true` in the wrapper JVM
+params. **Caveat worth remembering:** loopback-bound multicast needs the
+`lo` interface to carry the MULTICAST flag. macOS `lo0` does by default;
+Amazon Linux 2023 `lo` usually does **not** — fix with
+`ip link set lo multicast on`.
+
+### macOS is always x86-64 (for now)
+
+There's no arm macOS build of the sandbox bases yet, and Apple Silicon
+runs the x86-64 build fine under Rosetta. So `detect_arch()` in the REST
+installer forces `cpu=x86-64` whenever the OS is macOS, and
+`RELEASE_ARCHES` defaults to the x86 pair (`linux-x86-64 osx-x86-64`).
+The lesson: don't publish arches you can't actually build — the arm
+sandbox bases (`nvx-rumi:sandbox-{linux,osx}-arm-64`) aren't published,
+so claiming arm support would just hand users a broken install.
+
+### Containerize the release toolchain, not the product
+
+The build agents are Amazon Linux 2 (Python 3.7, old OpenSSL, no Java
+17 / matching Maven). Rather than fight the host, the release runs
+inside `ci/Dockerfile` (`python:3.11-bookworm` + OpenJDK 17 + Maven +
+PEP 517 `build`); the agent needs only Docker. Two gotchas this surfaced:
+(1) Debian's Maven 3.9 carries the maven-default-http-blocker, so the
+pom's `repositories` *and* a freshly-added `pluginRepositories` had to
+move to **https** `nexus.n5corp.com` (Maven 3.6.3 was pinned in earlier
+iterations for the same reason). (2) Each per-arch `mvn clean` wipes the
+module `target/`, so the per-arch REST tarballs are staged in
+`${REPO_DIR}/.release-dist` *outside* `target/` — otherwise the next
+arch's clean would delete the previous arch's tarball. This is also why
+build hosts need `python3.11` explicitly: AL2023/RHEL9 ship
+`python3` = 3.9, below the MCP's `>=3.11` floor, so the MCP build and
+installer probe for `python3.11` first.
