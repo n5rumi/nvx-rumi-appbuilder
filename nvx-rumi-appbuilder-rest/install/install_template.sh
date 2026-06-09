@@ -367,44 +367,31 @@ ensure_data_dir() {
 start_service() {
     local link="$(current_link)"
     [[ -d "${link}" ]] || die "No install found at ${link}"
-    local xvm_script="${link}/bin/xvm.sh"
-    [[ -x "${xvm_script}" ]] || die "Launcher not executable: ${xvm_script}"
+    local start_script="${link}/scripts/start.sh"
+    [[ -x "${start_script}" ]] || die "start.sh not found: ${start_script}"
 
     info "Starting service (daemonized)"
-    mkdir -p "$(dirname "$(pid_file)")" "$(dirname "$(log_file)")"
-
-    # Launch in a detached subshell so the PID we record is the long-
-    # running wrapper, not this shell. The wrapper forks a JVM and
-    # manages restarts itself.
-    (
-        cd "${link}"
-        nohup "${xvm_script}" "${XVM_NAME}" >> "$(log_file)" 2>&1 &
-        echo $! > "$(pid_file)"
-    )
-    debug "PID $(cat "$(pid_file)") → $(log_file)"
+    mkdir -p "$(dirname "$(log_file)")"
+    # Delegate to the release's start.sh — the same script standalone users and
+    # the Sutra systemd unit use — directing its log into the install's data dir.
+    RUMI_APPBUILDER_REST_LOGFILE="$(log_file)" "${start_script}" >/dev/null
 }
 
 stop_service() {
     local link="$(current_link)"
-    local xvm_script="${link}/bin/xvm.sh"
-    local pf="$(pid_file)"
-
-    if [[ ! -x "${xvm_script}" ]]; then
-        debug "No xvm.sh at ${xvm_script}; nothing to stop."
-        rm -f "${pf}"
+    local stop_script="${link}/scripts/stop.sh"
+    if [[ ! -x "${stop_script}" ]]; then
+        debug "No stop.sh at ${stop_script}; nothing to stop."
+        rm -f "$(pid_file)"
         return 0
     fi
-
-    # The container is launched directly via xvm.sh, so it is stopped the same
-    # way: Main's '--action stop' discovers the running XVM, connects to its
-    # admin port, and issues a graceful shutdown — the XVM then stops its own
-    # JVM (no orphaned process). Killing the launcher pid does NOT do this,
-    # because the wrapper forks/detaches the JVM. (The scripts/launch|shutdown
-    # DSL is only for the controller / xar deployment path, not direct launch.)
+    # Delegate to the release's stop.sh: 'xvm --action stop' discovers the
+    # running XVM and shuts it down gracefully (the XVM stops its own JVM —
+    # killing the launcher pid would orphan it, since the wrapper forks the JVM).
     info "Stopping service (xvm --action stop)"
-    ( cd "${link}" && "${xvm_script}" "${XVM_NAME}" --action stop ) >> "$(log_file)" 2>&1 \
+    "${stop_script}" >> "$(log_file)" 2>&1 \
         || warn "Graceful stop reported an error (the XVM may not have been running)."
-    rm -f "${pf}"
+    rm -f "$(pid_file)"
 }
 
 health_check() {
@@ -433,9 +420,9 @@ print_urls() {
     echo "    ${BOLD}swagger${RESET}    http://127.0.0.1:${port}/swagger"
     echo "    ${BOLD}openapi${RESET}    http://127.0.0.1:${port}/openapi"
     echo
-    info "Manage the service with:"
-    echo "    $(current_link)/scripts/launch"
-    echo "    $(current_link)/scripts/shutdown"
+    info "Manage the service with (requires JAVA_HOME set to a Java 17+ runtime):"
+    echo "    ${BOLD}start${RESET}       $(current_link)/scripts/start.sh"
+    echo "    ${BOLD}stop${RESET}        $(current_link)/scripts/stop.sh"
     echo "    ${BOLD}tail${RESET}        tail -f $(log_file)"
     echo
 }
