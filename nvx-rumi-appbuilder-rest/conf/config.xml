@@ -60,10 +60,18 @@
     <profiles>
         <profile name="standalone">
             <env>
-                <!-- No overrides for now: the standalone profile accepts all
-                     defaults baked into the subst params above. Adding a
-                     value here is how operators can pin behaviour per
-                     profile without touching env vars. -->
+                <!-- Standalone runs on a single host, so bind discovery
+                     multicast to the loopback interface: deterministic, and it
+                     never selects a NIC that doesn't support multicast. (A
+                     loopback:// descriptor can't be used — that's an intra-JVM
+                     bus, and discovery must span the REST, MCP, and admin-client
+                     JVMs, e.g. for 'xvm.sh --action stop'.) A Rumi private cloud
+                     supplies its own discovery via a separate profile. -->
+                <nv>
+                    <discovery>
+                        <descriptor>mcast://224.0.1.200:4090&amp;localIfAddr=127.0.0.1</descriptor>
+                    </discovery>
+                </nv>
             </env>
         </profile>
     </profiles>
