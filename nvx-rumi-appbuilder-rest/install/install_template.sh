@@ -170,6 +170,9 @@ detect_arch() {
         aarch64|arm64) cpu="arm-64" ;;
         *)             die "Unsupported CPU: $(uname -m)" ;;
     esac
+    # macOS: no arm build is published yet, and Rosetta runs the x86-64 build on
+    # Apple Silicon, so always use x86-64 on osx until an arm dist exists.
+    if [[ "${os}" == "osx" ]]; then cpu="x86-64"; fi
     ARCH="${os}-${cpu}"
     debug "Detected arch: ${ARCH}"
 }
