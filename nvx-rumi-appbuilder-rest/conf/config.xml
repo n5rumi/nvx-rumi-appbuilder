@@ -65,7 +65,7 @@
                      never selects a NIC that doesn't support multicast. (A
                      loopback:// descriptor can't be used — that's an intra-JVM
                      bus, and discovery must span the REST, MCP, and admin-client
-                     JVMs, e.g. for 'xvm.sh --action stop'.) A Rumi private cloud
+                     JVMs, e.g. for the xvm.sh stop action.) A Rumi private cloud
                      supplies its own discovery via a separate profile. -->
                 <nv>
                     <discovery>
