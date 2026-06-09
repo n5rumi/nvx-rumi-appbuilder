@@ -27,6 +27,8 @@ set -o pipefail
 
 readonly INSTALLER_NAME="Rumi App Builder REST Installer"
 readonly PRODUCT="rumi-appbuilder-rest"
+# XVM (Rumi container) name this service launches/stops as via xvm.sh.
+readonly XVM_NAME="appbuilder-rest"
 readonly ARTIFACT_GROUP="com.neeve"
 readonly ARTIFACT_ID="nvx-rumi-appbuilder-rest"
 readonly DEFAULT_VERSION="__VERSION__"
@@ -376,39 +378,32 @@ start_service() {
     # manages restarts itself.
     (
         cd "${link}"
-        nohup "${xvm_script}" appbuilder-rest >> "$(log_file)" 2>&1 &
+        nohup "${xvm_script}" "${XVM_NAME}" >> "$(log_file)" 2>&1 &
         echo $! > "$(pid_file)"
     )
     debug "PID $(cat "$(pid_file)") → $(log_file)"
 }
 
 stop_service() {
+    local link="$(current_link)"
+    local xvm_script="${link}/bin/xvm.sh"
     local pf="$(pid_file)"
-    if [[ ! -f "${pf}" ]]; then
-        debug "No PID file at ${pf}; nothing to stop."
+
+    if [[ ! -x "${xvm_script}" ]]; then
+        debug "No xvm.sh at ${xvm_script}; nothing to stop."
+        rm -f "${pf}"
         return 0
     fi
-    local pid
-    pid="$(cat "${pf}" 2>/dev/null || true)"
-    [[ -z "${pid}" ]] && { rm -f "${pf}"; return 0; }
 
-    info "Stopping service (pid ${pid})"
-    # Kill the process tree under the recorded pid (wrapper + JVM).
-    if kill -0 "${pid}" 2>/dev/null; then
-        pkill -TERM -P "${pid}" 2>/dev/null || true
-        kill  -TERM "${pid}"   2>/dev/null || true
-    fi
-    # Wait up to 15s for a graceful exit.
-    local waited=0
-    while [[ ${waited} -lt 15 ]] && kill -0 "${pid}" 2>/dev/null; do
-        sleep 1
-        waited=$((waited + 1))
-    done
-    if kill -0 "${pid}" 2>/dev/null; then
-        warn "Service did not exit cleanly; sending KILL."
-        pkill -KILL -P "${pid}" 2>/dev/null || true
-        kill  -KILL "${pid}"   2>/dev/null || true
-    fi
+    # The container is launched directly via xvm.sh, so it is stopped the same
+    # way: Main's '--action stop' discovers the running XVM, connects to its
+    # admin port, and issues a graceful shutdown — the XVM then stops its own
+    # JVM (no orphaned process). Killing the launcher pid does NOT do this,
+    # because the wrapper forks/detaches the JVM. (The scripts/launch|shutdown
+    # DSL is only for the controller / xar deployment path, not direct launch.)
+    info "Stopping service (xvm --action stop)"
+    ( cd "${link}" && "${xvm_script}" "${XVM_NAME}" --action stop ) >> "$(log_file)" 2>&1 \
+        || warn "Graceful stop reported an error (the XVM may not have been running)."
     rm -f "${pf}"
 }
 
