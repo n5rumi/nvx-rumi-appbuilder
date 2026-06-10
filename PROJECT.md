@@ -390,6 +390,52 @@ than trying to auto-assign, because the scaffolder can't know the deployment
 topology — a token-substitution template can't do arithmetic on the instance
 index.
 
+## Runtime test harness (generated apps) — and what "builds ≠ runs" taught us
+
+Generated apps now ship an in-process test harness so a scaffolded system can be
+**run**, not just compiled: an `AbstractTest` (in the system module's
+`src/test`, using Rumi's `EmbeddedXVM` to boot services), a `test` config
+profile (loopback bus + `loopback://.&initWaitTime=0` discovery), and a
+`junit` + `maven-surefire` (Java-17 `--add-opens`) wiring in the system POM.
+Modelled on the Rumi sample apps (`nvx-apps`) and Paywhere. The
+`/test-the-builder` skill drives the whole loop: scaffold every service type +
+a custom connector, then build and run it through this harness.
+
+Standing the harness up exposed several bugs that `mvn package` had hidden,
+because **no generated app had ever actually been run** — the production
+launcher is lenient where the in-process path is strict:
+
+### X-DDL `xmlns=""` failed schema validation under EmbeddedXVM
+
+`ConfigInjector` parsed config fragments as namespace-less XML and appended them
+under the x-ddl document, so every injected element serialized with `xmlns=""`.
+The production launcher tolerated it; `EmbeddedXVM` schema-validates the DDL and
+rejected it (`cvc-complex-type.2.4.a: element 'bus' … x-ddl:bus expected`). Fix:
+inject/create config elements in the x-ddl namespace — wrap fragments in an
+x-ddl-namespaced root before parsing, and have `XmlDomUtils.getOrCreateChild`
+create children in the parent's namespace. Lesson: machine-generated XML must be
+namespace-correct, not just well-formed; a lenient consumer hides the defect
+until a strict one (a validating parser) loads it.
+
+### Rumi 4.0 needs BOTH javax and jakarta JAXB
+
+The engine never started: Rumi 4.0's config layer (`VMConfigurer`) uses
+`javax.xml.bind`, while its engine (`AepEngine`) wires Jackson's *jakarta*-xmlbind
+introspector (`jakarta.xml.bind.annotation.*`). The generated parent POM pinned
+only the javax-mapped `jakarta.xml.bind-api:2.3.2`, so the jakarta side was
+missing and `onMessagingStarted` died — for **every** generated app, webservice
+or not. Fix: ship both namespaces side by side — javax via the legacy
+`javax.xml.bind:jaxb-api` coordinate (so it doesn't collide with the
+`jakarta.xml.bind:jakarta.xml.bind-api:4.0` the engine needs). Lesson: the
+javax→jakarta JAXB split is per-Rumi-version; a runtime test is the only way to
+catch a dependency that compiles fine but isn't on the runtime classpath.
+
+### Smaller catches
+
+`--` is illegal inside an XML comment (broke a generated POM); the webservice
+default port 8080 collides with common local services (tests override it via the
+`...http.port` system property).
+
 ## Lessons Learned (REST distribution & runtime)
 
 Lessons from getting the REST service to build, publish, and stop

@@ -44,6 +44,23 @@
         </templates>
     </xvms>
     <profiles>
+        <!-- In-process integration testing (see src/test/.../AbstractTest.java).
+             Activated explicitly by tests via the nv.ddl.profiles=test property.
+             Uses a loopback message bus and loopback discovery so no broker or
+             networking is needed; per-service heartbeats already default off and
+             services run single-instance, non-clustered. -->
+        <profile name="test">
+            <env>
+                <ROOT_DIR>target/testbed</ROOT_DIR>
+                <APP_BUS_DESCRIPTOR>loopback://{{AppTokenName}}</APP_BUS_DESCRIPTOR>
+                <SERVICE_STORE_LOCATION>${ROOT_DIR}/store/${nv.ddl.targetxvm}</SERVICE_STORE_LOCATION>
+                <nv>
+                    <discovery.descriptor>loopback://.&amp;initWaitTime=0</discovery.descriptor>
+                </nv>
+                <{{AppTokenName}}>
+                </{{AppTokenName}}>
+            </env>
+        </profile>
         <profile name="cloud">
             <activation>
                 <properties>

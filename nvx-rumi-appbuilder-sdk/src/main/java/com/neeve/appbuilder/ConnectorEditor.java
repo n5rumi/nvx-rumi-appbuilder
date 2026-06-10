@@ -185,18 +185,17 @@ public final class ConnectorEditor {
         Element root = doc.getDocumentElement();
         Element buses = XmlDomUtils.getOrCreateChild(root, "buses");
 
-        // Create elements without a namespace to match the config fragments
-        // that ConfigInjector injects (the connector-service bus binding etc.),
-        // keeping the serialized output consistent. Rumi's X-DDL parser matches
-        // by local name and is namespace-insensitive here.
-        Element bus = doc.createElement("bus");
+        // Create elements in the document's (x-ddl) namespace so they don't
+        // serialize with an xmlns="" override that fails X-DDL schema validation.
+        final String ns = root.getNamespaceURI();
+        Element bus = doc.createElementNS(ns, "bus");
         bus.setAttribute("descriptor", ConnectorSupport.descriptor(c.className, ConnectorSupport.INBOUND_CHANNEL));
         bus.setAttribute("name", c.busName);
-        Element channels = doc.createElement("channels");
-        Element channel = doc.createElement("channel");
+        Element channels = doc.createElementNS(ns, "channels");
+        Element channel = doc.createElementNS(ns, "channel");
         channel.setAttribute("name", ConnectorSupport.INBOUND_CHANNEL);
         channel.setAttribute("id", "1");
-        Element qos = doc.createElement("qos");
+        Element qos = doc.createElementNS(ns, "qos");
         qos.setTextContent("BestEffort");
         channel.appendChild(qos);
         channels.appendChild(channel);
@@ -213,7 +212,7 @@ public final class ConnectorEditor {
         }
         Element messaging = XmlDomUtils.getOrCreateChild(app, "messaging");
         if (firstChildBusNamed(messaging, c.busName) != null) return false;
-        Element ref = doc.createElement("bus");
+        Element ref = doc.createElementNS(doc.getDocumentElement().getNamespaceURI(), "bus");
         ref.setAttribute("name", c.busName);
         messaging.appendChild(ref);
         return true;

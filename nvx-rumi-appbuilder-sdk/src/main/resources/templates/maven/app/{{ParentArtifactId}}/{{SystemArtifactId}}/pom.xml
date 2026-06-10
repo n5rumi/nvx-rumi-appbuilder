@@ -16,10 +16,31 @@
             <artifactId>{{RoeArtifactId}}</artifactId>
             <version>${project.version}</version>
         </dependency>
+
+        <!-- In-process integration testing (AbstractTest + the test profile).
+             The system module gains a dependency on every service module as
+             services are scaffolded, so its tests can boot any service via
+             EmbeddedXVM. -->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <!-- EmbeddedXVM reaches into JDK internals that Java 17 blocks by
+                 default, so the test JVM needs the add-opens flags below. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <argLine>-Xmx2g -Djava.net.preferIPv4Stack=true --add-opens=java.base/jdk.internal.ref=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.management/sun.management=ALL-UNNAMED</argLine>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>com.neeve</groupId>
                 <artifactId>nvx-rumi-xar-maven-plugin</artifactId>

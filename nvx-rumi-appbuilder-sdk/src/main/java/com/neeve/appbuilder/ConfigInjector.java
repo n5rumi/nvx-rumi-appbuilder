@@ -27,6 +27,9 @@ import java.nio.file.*;
 import java.util.*;
 
 class ConfigInjector {
+    /** X-DDL namespace for the system config document. */
+    static final String XDDL_NAMESPACE = "http://www.neeveresearch.com/schema/x-ddl";
+
     static void injectServiceConfig(Path appRoot, ServiceBuilder.ServiceParams params) throws Exception {
         // get the config file to inject into
         Path configPath = appRoot
@@ -106,9 +109,14 @@ class ConfigInjector {
             }
         }
 
-        // Parse the fragment as its own document and take the root element.
-        Document fragmentDoc = XmlDomUtils.parseXmlString(blockXml);
-        Node newNode = fragmentDoc.getDocumentElement();
+        // Parse the fragment inside an X-DDL-namespaced wrapper so the fragment
+        // subtree inherits the x-ddl default namespace. Otherwise the parsed
+        // (namespace-less) elements serialize with xmlns="" once appended under
+        // the x-ddl document, which fails X-DDL schema validation when the
+        // config is later loaded by a validating parser (e.g. EmbeddedXVM).
+        Document fragmentDoc = XmlDomUtils.parseXmlString(
+                "<nv-x-ddl-fragment xmlns=\"" + XDDL_NAMESPACE + "\">" + blockXml + "</nv-x-ddl-fragment>");
+        Node newNode = firstElementChild(fragmentDoc.getDocumentElement());
 
         // Dedup against existing direct children.
         NodeList children = parent.getChildNodes();
@@ -139,9 +147,20 @@ class ConfigInjector {
                 return elem;
             }
         }
-        Element profile = profiles.getOwnerDocument().createElement("profile");
+        Element profile = profiles.getOwnerDocument().createElementNS(profiles.getNamespaceURI(), "profile");
         profile.setAttribute("name", profileName);
         profiles.appendChild(profile);
         return profile;
+    }
+
+    /** First element child of {@code parent}, or {@code null} if it has none. */
+    private static Node firstElementChild(Node parent) {
+        NodeList kids = parent.getChildNodes();
+        for (int i = 0; i < kids.getLength(); i++) {
+            if (kids.item(i).getNodeType() == Node.ELEMENT_NODE) {
+                return kids.item(i);
+            }
+        }
+        return null;
     }
 }

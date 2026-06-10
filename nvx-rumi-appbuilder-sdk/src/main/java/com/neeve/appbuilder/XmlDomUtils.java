@@ -133,7 +133,11 @@ public final class XmlDomUtils {
                 return (Element) node;
             }
         }
-        Element child = parent.getOwnerDocument().createElement(tag);
+        // Create the child in the parent's namespace so it doesn't serialize
+        // with an xmlns="" override (which breaks X-DDL/X-ADML schema validation
+        // when the document is later loaded by a validating parser, e.g.
+        // EmbeddedXVM). createElementNS(null, ...) is equivalent to createElement.
+        Element child = parent.getOwnerDocument().createElementNS(parent.getNamespaceURI(), tag);
         if (tag.equals("templates")) {
             Node refNode = null;
             NodeList siblings = parent.getChildNodes();
