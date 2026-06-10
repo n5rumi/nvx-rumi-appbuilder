@@ -47,8 +47,8 @@ import static com.neeve.appbuilder.MessageIntrospector.parseIntOrNull;
  * Read-only introspection over a service's {@code state.xml}. Returns the
  * {@code <entity>} and {@code <collection>} declarations.
  *
- * <p>Only PROCESSOR services have a state.xml. For DRIVER and CSVWRITER
- * services (and for processors whose state.xml has been deleted), both
+ * <p>Only PROCESSOR and WEBSERVICE services have a state.xml. For DRIVER and
+ * CONNECTOR services (and for services whose state.xml has been deleted), both
  * methods return empty.
  */
 public final class StateIntrospector {

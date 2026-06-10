@@ -9,7 +9,8 @@ path into Rumi application scaffolding and modification:
   scaffolder logic lives. `ApplicationBuilder`, `ServiceBuilder`,
   `ConfigInjector`, `ScriptInjector`, `TemplateProcessor`,
   `FactoryIdCollector`, `TokenUtils`, plus the templates for Rumi apps
-  and the three service types (driver, processor, csvwriter).
+  and the service types (driver, processor, connector, webservice), and
+  `ConnectorEditor`/`ConnectorIntrospector` for snapping connectors in.
 - **`nvx-rumi-appbuilder-rest`** — a canonical Rumi REST service that
   wraps the SDK and exposes every operation as an HTTP endpoint. Runs
   as a long-lived process on the sandbox. Zero logic of its own — every
@@ -97,10 +98,18 @@ and returns a structured change set.
 |---|---|---|
 | `ServiceIntrospector.listServices` (new, B3) | `GET /v1/apps/{app_root}/services` | `service_list` |
 | `ServiceIntrospector.getService` (new, B3) | `GET /v1/apps/{app_root}/services/{name}` | `service_get` |
-| `ServiceBuilder.createService` (processor) | `POST /v1/apps/{app_root}/services/processor` | `service_add_processor` |
-| `ServiceBuilder.createService` (driver) | `POST /v1/apps/{app_root}/services/driver` | `service_add_driver` |
-| `ServiceBuilder.createService` (csvwriter) | `POST /v1/apps/{app_root}/services/csvwriter` | `service_add_csvwriter` |
+| `ServiceBuilder.createService` (processor) | `POST /v1/services` (type=processor) | `add_service` (type=processor) |
+| `ServiceBuilder.createService` (driver) | `POST /v1/services` (type=driver) | `add_service` (type=driver) |
+| `ServiceBuilder.createService` (connector) | `POST /v1/services` (type=connector) | `add_service` (type=connector) |
+| `ServiceBuilder.createService` (webservice) | `POST /v1/services` (type=webservice) | `add_service` (type=webservice) |
 | `ServiceRemover.removeService` (new, D5) | `DELETE /v1/apps/{app_root}/services/{name}` | `service_remove` |
+
+> The four service types are: **processor** (stateful, clusterable), **driver**
+> (stateless source), **connector** (a generic Rumi message-bus binding to an
+> external system — replaces the old single-purpose `csvwriter`), and
+> **webservice** (stateful + clusterable with an embedded HTTP server that talks
+> to the engine via `injectRequestAndWaitForReply`, modelled on nvx-accounts).
+> The REST/MCP layers take the type as a parameter to a single add operation.
 
 ### Message handler operations *(new — not in CLI today)*
 
@@ -110,6 +119,22 @@ and returns a structured change set.
 | `HandlerIntrospector.getHandler` (new, C2) | `GET /v1/apps/{app_root}/services/{s}/handlers/{m}` | `handler_get` |
 | `JavaSourceEditor.addHandler` (new, C3) | `POST /v1/apps/{app_root}/services/{s}/handlers` | `handler_add` |
 | `JavaSourceEditor.removeHandler` (new, C3) | `DELETE /v1/apps/{app_root}/services/{s}/handlers/{m}` | `handler_remove` |
+
+### Connector operations *(new — snap custom connectors into any service)*
+
+A connector is a user-authored Rumi message-bus binding (a class implementing
+`com.neeve.sma.spi.connector.Connector`) wired via a `connector://...&classname=...`
+bus binding plus a `<bus name>` reference in the owning app. Works on any
+service type. The add creates the Java class + bus binding + app reference;
+the remove reverts all three. Inbound message types are added separately via
+the message operations (kept composable — connector add mints no factory IDs).
+
+| SDK | REST | MCP tool |
+|---|---|---|
+| `ConnectorIntrospector.listConnectors` | `GET /v1/services/{s}/connectors` | `list_connectors` |
+| `ConnectorIntrospector.getConnector` | `GET /v1/services/{s}/connectors/{name}` | `get_connector` |
+| `ConnectorEditor.addConnector` | `POST /v1/services/{s}/connectors` | `add_connector` |
+| `ConnectorEditor.removeConnector` | `DELETE /v1/services/{s}/connectors/{name}` | `remove_connector` |
 
 ### Message type operations *(new — not in CLI today)*
 
@@ -333,6 +358,37 @@ Both `ConfigInjector` and `ScriptInjector` detect duplicates before
 inserting. Running the builder twice with the same parameters won't
 corrupt the output. Idempotency is a design choice worth making early
 — it's much harder to retrofit than to build in from the start.
+
+### Templates aren't compiled by our build — scaffold-then-`mvn package`
+
+The SDK's own `mvn install` compiles the *scaffolder*, never the *templates*.
+A template that references a non-existent API, picks a colliding name, or emits
+malformed XML sails through our build and only explodes in the user's generated
+app. The webservice template surfaced two such bugs the first time we actually
+scaffolded an app and ran `mvn package` on it:
+
+1. **`message` is a reserved field name.** An X-ADML field named `message`
+   generates `getMessage()`, which clashes with the `final getMessage()` in
+   Rumi's `MessageViewImpl` base class — a hard compile error in the generated
+   ADM code. We renamed the sample field to `text`. Lesson: ADM messages
+   inherit from `MessageViewImpl`, so avoid field names that collide with its
+   final accessors (`message`, and check before reusing common names).
+2. **`--` is illegal inside XML comments.** A template comment containing a
+   double-dash made the ADM model parser reject the whole `messages.xml`.
+
+Takeaway: any change to a service template must be validated by scaffolding a
+real app and running `mvn package` on it (see the Verification section / smoke
+test), not just by the SDK build going green.
+
+### Webservice HTTP port defaults per-service, collides per-instance
+
+The webservice template gives every service the same default HTTP port (8080),
+exposed as an overridable env property. That's fine for the common
+single-instance case but two webservices (or a clustered/partitioned one) will
+collide unless the operator overrides the port. We document the override rather
+than trying to auto-assign, because the scaffolder can't know the deployment
+topology — a token-substitution template can't do arithmetic on the instance
+index.
 
 ## Lessons Learned (REST distribution & runtime)
 

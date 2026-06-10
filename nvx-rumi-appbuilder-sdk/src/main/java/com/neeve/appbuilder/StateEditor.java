@@ -35,9 +35,9 @@ import static com.neeve.appbuilder.MessageIntrospector.ADML_NAMESPACE;
 
 /**
  * Add and remove {@code <entity>} declarations in a service's state.xml.
- * Symmetric with {@link MessageEditor}. Only processor services have a
- * state.xml; calling on a driver or csvwriter throws because there's
- * nothing to edit.
+ * Symmetric with {@link MessageEditor}. Only processor and webservice
+ * services have a state.xml; calling on a driver or connector throws because
+ * there's nothing to edit.
  *
  * <p>Entity IDs are local to the service's state factory — same
  * allocation behaviour as MessageEditor's message IDs.

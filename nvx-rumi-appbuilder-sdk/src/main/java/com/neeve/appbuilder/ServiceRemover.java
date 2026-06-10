@@ -343,7 +343,7 @@ public final class ServiceRemover {
         // Attempt to find the service type's script templates. If the module dir was already deleted
         // in step (1) above (which it is, on non-dry-run), we can't call resolveServiceType. Instead
         // try every type's template dir and process any that match.
-        List<String> candidateTypes = Arrays.asList("driver", "processor", "csvwriter");
+        List<String> candidateTypes = Arrays.asList("driver", "processor", "connector", "webservice");
         List<Path> touched = new ArrayList<>();
         String buildTool = tokens.get(TokenUtils.toToken("BuildTool"));
 

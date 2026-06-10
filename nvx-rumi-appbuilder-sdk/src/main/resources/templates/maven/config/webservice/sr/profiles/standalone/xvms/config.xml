@@ -1,0 +1,6 @@
+<xvm name="{{ServiceName}}-{{ServicePartition}}-{{ServiceInstance}}" enabled="${{{AppTokenName}}.local.xvm.{{ServicePackageName}}.enabled::true}">
+    <env>
+        <SERVICE_CLUSTER_REPLICATOR_LOCALIFADDR>{{AppTokenName}}.{{ServicePackageName}}.{{ServicePartition}}.{{ServiceInstance}}.${{{AppTokenName}}.zone::rumi.local}</SERVICE_CLUSTER_REPLICATOR_LOCALIFADDR>
+    </env>
+</xvm>
+

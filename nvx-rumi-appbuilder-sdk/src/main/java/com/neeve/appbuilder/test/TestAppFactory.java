@@ -93,10 +93,18 @@ public final class TestAppFactory {
         new ServiceBuilder().createService(params);
     }
 
-    /** Add a csvwriter service (non-clusterable, 1 partition). */
-    public static void addCsvwriter(Path appRoot, String serviceName) throws Exception {
+    /** Add a connector service (non-clusterable, 1 partition). */
+    public static void addConnector(Path appRoot, String serviceName) throws Exception {
         ServiceBuilder.ServiceParams params = new ServiceBuilder.ServiceParams(
-            appRoot.toString(), serviceName, ServiceType.CSVWRITER, null, false, 1);
+            appRoot.toString(), serviceName, ServiceType.CONNECTOR, null, false, 1);
+        new ServiceBuilder().createService(params);
+    }
+
+    /** Add a webservice service (clusterable, state-replicated, 1 partition, non-clustered). */
+    public static void addWebservice(Path appRoot, String serviceName) throws Exception {
+        ServiceBuilder.ServiceParams params = new ServiceBuilder.ServiceParams(
+            appRoot.toString(), serviceName, ServiceType.WEBSERVICE,
+            ServiceBuilder.ServiceHAModel.STATE_REPLICATION, false, 1);
         new ServiceBuilder().createService(params);
     }
 

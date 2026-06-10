@@ -1,0 +1,41 @@
+<xvm name="{{ServiceName}}-template">
+    <env>
+        <nv>
+            <file>
+                <usenative>false</usenative>
+            </file>
+        </nv>
+        <{{AppTokenName}}.{{ServicePackageName}}>
+            <http>
+                <!-- Embedded HTTP server port. Override per-instance to avoid
+                     collisions when running more than one instance. -->
+                <port>${{{AppTokenName}}.local.{{ServiceTokenName}}.http.port::{{ServiceHttpPort}}}</port>
+            </http>
+        </{{AppTokenName}}.{{ServicePackageName}}>
+    </env>
+    <acceptors>
+        <acceptor descriptor="tcp://${HOST::0.0.0.0}:0"/>
+    </acceptors>
+    <heartbeats enabled="${{{AppTokenName}}.local.telemetry.enable::${SERVICE_TELEMTRY_ENABLE::false}}" interval="${{{AppTokenName}}.local.telemetry.frequency::15}">
+        <collectIndividualThreadStats>false</collectIndividualThreadStats>
+        <includeMessageTypeStats>true</includeMessageTypeStats>
+    </heartbeats>
+    <provisioning>
+        <host>${SERVICE_HOST::.}</host>
+        <rootDirectory>${ROOT_DIR}</rootDirectory>
+        <dataDirectory>store</dataDirectory>
+        <jvm>
+            <jvmParamSets>
+                <jvmParamSet name="heap-size" order="-1">
+                    <jvmParams>${SERVICE_HEAP_SIZE_PARAMS}</jvmParams>
+                </jvmParamSet>
+                <jvmParamSet name="gc-tuning" order="0">
+                    <jvmParams>-server</jvmParams>
+                </jvmParamSet>
+                <jvmParamSet name="prefer-ipv4" order="1">
+                    <jvmParams>-Djava.net.preferIPv4Stack=true</jvmParams>
+                </jvmParamSet>
+            </jvmParamSets>
+        </jvm>
+    </provisioning>
+</xvm>

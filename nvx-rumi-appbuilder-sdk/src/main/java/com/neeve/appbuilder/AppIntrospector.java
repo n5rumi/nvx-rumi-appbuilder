@@ -135,7 +135,7 @@ public final class AppIntrospector {
 
     /**
      * Return the expected path to the service's top-level {@code Main.java}.
-     * Note: CSVWriter services also have a {@code connector/Main.java} under
+     * Note: connector services also have a {@code connector/Main.java} under
      * the same service module — use {@link #resolveConnectorMainJavaFile}
      * for that if needed. The top-level Main.java is where
      * {@code @EventHandler} methods live.
@@ -152,13 +152,24 @@ public final class AppIntrospector {
     }
 
     /**
-     * Return the expected path to a CSVWriter service's connector
-     * {@code Main.java}. Exists only for CSVWriter services; calling for
+     * Return the expected path to a CONNECTOR service's connector
+     * {@code Main.java}. Exists only for connector services; calling for
      * other service types yields a path that won't exist on disk.
      */
     public static Path resolveConnectorMainJavaFile(Path appRoot, String serviceName) throws IOException {
         Path mainJava = resolveMainJavaFile(appRoot, serviceName);
         return mainJava.getParent().resolve("connector").resolve("Main.java");
+    }
+
+    /**
+     * Return the expected path to a WEBSERVICE service's {@code HttpServer.java}.
+     * Exists only for webservice services; its presence is the signal used by
+     * {@link #resolveServiceType} to distinguish a webservice (which also has a
+     * state.xml) from a plain processor.
+     */
+    public static Path resolveHttpServerJavaFile(Path appRoot, String serviceName) throws IOException {
+        Path mainJava = resolveMainJavaFile(appRoot, serviceName);
+        return mainJava.getParent().resolve("HttpServer.java");
     }
 
     /**
@@ -170,8 +181,8 @@ public final class AppIntrospector {
 
     /**
      * Return the expected path to the service's {@code state.xml}. The
-     * file only exists for PROCESSOR services; {@link Files#exists} will
-     * return {@code false} for DRIVER and CSVWRITER services.
+     * file exists for PROCESSOR and WEBSERVICE services; {@link Files#exists}
+     * will return {@code false} for DRIVER and CONNECTOR services.
      */
     public static Path resolveStateXmlFile(Path appRoot, String serviceName) throws IOException {
         return resolveServiceModelsDir(appRoot, serviceName).resolve("state").resolve("state.xml");
@@ -187,20 +198,26 @@ public final class AppIntrospector {
     /**
      * Infer a service's type from its on-disk structure.
      *
-     * <p>Signals used, in order:
+     * <p>Signals used, in order (webservice is checked before processor
+     * because a webservice is also stateful and would otherwise look like a
+     * processor):
      *
      * <ul>
-     *   <li>If {@code state.xml} exists under the service's models dir, it's
-     *       a {@link ServiceBuilder.ServiceType#PROCESSOR PROCESSOR}.
+     *   <li>If {@code HttpServer.java} exists alongside the service's
+     *       top-level {@code Main.java}, it's a
+     *       {@link ServiceBuilder.ServiceType#WEBSERVICE WEBSERVICE}.
+     *   <li>Else if {@code state.xml} exists under the service's models dir,
+     *       it's a {@link ServiceBuilder.ServiceType#PROCESSOR PROCESSOR}.
      *   <li>Else if a {@code connector} subpackage exists alongside the
      *       service's top-level {@code Main.java}, it's a
-     *       {@link ServiceBuilder.ServiceType#CSVWRITER CSVWRITER}.
+     *       {@link ServiceBuilder.ServiceType#CONNECTOR CONNECTOR}.
      *   <li>Otherwise it's a {@link ServiceBuilder.ServiceType#DRIVER DRIVER}.
      * </ul>
      *
      * These signals match the templates that
-     * {@link ServiceBuilder#createService} uses: processors get a state
-     * model, CSVWriters get a connector subpackage, drivers get neither.
+     * {@link ServiceBuilder#createService} uses: webservices get an embedded
+     * {@code HttpServer}, processors get a state model, connectors get a
+     * connector subpackage, drivers get none of these.
      *
      * @throws IllegalArgumentException if the service module directory does
      *         not exist.
@@ -211,12 +228,15 @@ public final class AppIntrospector {
             throw new IllegalArgumentException(
                 "service '" + serviceName + "' not found under " + appRoot + " (expected module dir: " + moduleDir + ")");
         }
+        if (Files.exists(resolveHttpServerJavaFile(appRoot, serviceName))) {
+            return ServiceBuilder.ServiceType.WEBSERVICE;
+        }
         if (Files.exists(resolveStateXmlFile(appRoot, serviceName))) {
             return ServiceBuilder.ServiceType.PROCESSOR;
         }
         Path mainJava = resolveMainJavaFile(appRoot, serviceName);
         if (Files.isDirectory(mainJava.getParent().resolve("connector"))) {
-            return ServiceBuilder.ServiceType.CSVWRITER;
+            return ServiceBuilder.ServiceType.CONNECTOR;
         }
         return ServiceBuilder.ServiceType.DRIVER;
     }

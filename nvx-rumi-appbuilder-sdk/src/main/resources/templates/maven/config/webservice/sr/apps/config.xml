@@ -1,0 +1,1 @@
+<app name="{{ServiceName}}-{{ServicePartition}}" template="{{ServiceName}}-template"/>

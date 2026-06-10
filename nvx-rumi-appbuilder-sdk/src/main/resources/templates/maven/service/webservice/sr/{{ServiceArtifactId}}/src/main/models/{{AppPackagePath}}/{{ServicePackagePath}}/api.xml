@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<model xmlns="http://www.neeveresearch.com/schema/x-asml" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="{{ServiceName}}" namespace="{{AppPackageName}}.{{ServicePackageName}}">
+    <messages modelFile="{{AppPackagePath}}/roe/messages.xml"/>
+
+    <operations>
+    </operations>
+</model>

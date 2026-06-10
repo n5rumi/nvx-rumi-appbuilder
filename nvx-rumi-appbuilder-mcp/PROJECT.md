@@ -32,10 +32,10 @@ go REST-direct. Both paths reach the same code underneath.
 ## Tool Catalog
 
 1:1 with the REST endpoints — see `../PROJECT.md`. MCP tool names use
-the `<entity>_<verb>` convention: `app_create`, `service_add_processor`,
-`handler_add`, `message_remove`, `config_fragment_add`, etc. Every
-mutation tool takes `dry_run: bool = False` and returns a structured
-change set.
+the `<verb>_<entity>` convention: `add_service` (with a `type` arg of
+`processor|driver|connector|webservice`), `add_handler`, `remove_message`,
+`add_connector`/`remove_connector`, etc. Every mutation tool takes
+`dry_run: bool = False` and returns a structured change set.
 
 ## Runtime Namespace: `rumi-dev`
 

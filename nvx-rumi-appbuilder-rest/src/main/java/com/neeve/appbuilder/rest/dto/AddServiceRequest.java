@@ -28,9 +28,9 @@ import com.neeve.appbuilder.ServiceBuilder;
 /**
  * Request body for {@code POST /v1/services}.
  *
- * <p>{@code type} is one of {@code processor}, {@code driver}, {@code csvwriter}.
- * The HA/partition fields are only consumed for {@code processor}; the
- * other types ignore them.
+ * <p>{@code type} is one of {@code processor}, {@code driver}, {@code connector},
+ * {@code webservice}. The HA/partition fields are consumed by the clusterable
+ * types ({@code processor}, {@code webservice}); the other types ignore them.
  */
 public final class AddServiceRequest {
     private final String name;
@@ -55,7 +55,7 @@ public final class AddServiceRequest {
     public ServiceBuilder.ServiceParams toSdk(String appRoot) throws java.io.IOException {
         ServiceBuilder.ServiceType resolvedType = ServiceBuilder.ServiceType.valueOf(type.toUpperCase());
         ServiceBuilder.ServiceHAModel resolvedHa = null;
-        if (resolvedType == ServiceBuilder.ServiceType.PROCESSOR) {
+        if (resolvedType.isClusterable()) {
             resolvedHa = haModel == null
                 ? ServiceBuilder.ServiceHAModel.STATE_REPLICATION
                 : ServiceBuilder.ServiceHAModel.valueOf(haModel.toUpperCase());

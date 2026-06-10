@@ -1,0 +1,122 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>{{GroupId}}</groupId>
+    <artifactId>{{ServiceArtifactId}}</artifactId>
+    <packaging>jar</packaging>
+    <name>{{AppDisplayName}} {{ServiceDisplayName}}</name>
+
+    <parent>
+        <groupId>{{GroupId}}</groupId>
+        <artifactId>{{ParentArtifactId}}</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <properties>
+        <!-- Embedded HTTP server stack. Pinned here (rather than in the app
+             parent POM) so only webservice modules pull in Jetty/Jersey. -->
+        <jetty.version>12.0.7</jetty.version>
+        <jersey.version>3.1.5</jersey.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>{{GroupId}}</groupId>
+            <artifactId>{{RoeArtifactId}}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Jetty 12 (embedded servlet container) -->
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-server</artifactId>
+            <version>${jetty.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty.ee10</groupId>
+            <artifactId>jetty-ee10-servlet</artifactId>
+            <version>${jetty.version}</version>
+        </dependency>
+
+        <!-- Jersey 3.1 (JAX-RS, Jakarta EE 10) + Jackson JSON + HK2 -->
+        <dependency>
+            <groupId>org.glassfish.jersey.containers</groupId>
+            <artifactId>jersey-container-servlet</artifactId>
+            <version>${jersey.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish.jersey.inject</groupId>
+            <artifactId>jersey-hk2</artifactId>
+            <version>${jersey.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish.jersey.media</groupId>
+            <artifactId>jersey-media-json-jackson</artifactId>
+            <version>${jersey.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>com.neeve</groupId>
+                <artifactId>nvx-rumi-adm-maven-plugin</artifactId>
+                <version>${nvx.rumi.version}</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.neeve</groupId>
+                        <artifactId>nvx-rumi</artifactId>
+                        <version>${nvx.rumi.version}</version>
+                    </dependency>
+                </dependencies>
+                <executions>
+                    <execution>
+                        <id>State</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>adm-generate</goal>
+                        </goals>
+                        <configuration>
+                            <modelFile>${project.basedir}/src/main/models/{{AppPackagePath}}/{{ServicePackagePath}}/state/state.xml</modelFile>
+                            <encodingType>${nvx.rumi.encoding}</encodingType>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>Messages</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>adm-generate</goal>
+                        </goals>
+                        <configuration>
+                            <modelFile>${project.basedir}/src/main/models/{{AppPackagePath}}/{{ServicePackagePath}}/messages/messages.xml</modelFile>
+                            <encodingType>${nvx.rumi.encoding}</encodingType>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>com.neeve</groupId>
+                <artifactId>nvx-rumi-asm-maven-plugin</artifactId>
+                <version>${nvx.rumi.version}</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.neeve</groupId>
+                        <artifactId>nvx-rumi</artifactId>
+                        <version>${nvx.rumi.version}</version>
+                    </dependency>
+                </dependencies>
+                <executions>
+                    <execution>
+                        <id>Api</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>asm-generate</goal>
+                        </goals>
+                        <configuration>
+                            <modelFile>${project.basedir}/src/main/models/{{AppPackagePath}}/{{ServicePackagePath}}/api.xml</modelFile>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

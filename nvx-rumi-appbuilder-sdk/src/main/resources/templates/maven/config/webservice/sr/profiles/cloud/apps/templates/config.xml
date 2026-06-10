@@ -1,0 +1,7 @@
+<app name="{{ServiceName}}-template">
+    <storage>
+        <clustering>
+            <discoveryDescriptor>activemq://discovery.rumi.local:61616?wireFormat.maxInactivityDuration=0</discoveryDescriptor>
+        </clustering>
+    </storage>
+</app>

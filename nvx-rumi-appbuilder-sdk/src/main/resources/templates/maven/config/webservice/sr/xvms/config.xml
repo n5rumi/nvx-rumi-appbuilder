@@ -1,0 +1,6 @@
+<xvm name="{{ServiceName}}-{{ServicePartition}}-{{ServiceInstance}}" displayName="{{ServiceDisplayName}} {{ServicePartition}}-{{ServiceInstance}}" template="{{ServiceName}}-template" enabled="${{{AppTokenName}}.local.{{ServiceTokenName}}.xvm.enabled::true}">
+    <apps>
+        <app name="{{ServiceName}}-{{ServicePartition}}" autoStart="true"/>
+    </apps>
+</xvm>
+

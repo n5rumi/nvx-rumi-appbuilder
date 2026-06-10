@@ -115,7 +115,7 @@ public class ServiceIntrospectorTest {
             "<messages><message name=\"Tick\" id=\"1\"/></messages>" +
             "</model>");
 
-        // csv-out: CSVWRITER (has connector/ subdir)
+        // csv-out: CONNECTOR (has connector/ subdir)
         Files.createDirectories(appRoot.resolve("test-trading-csv-out"));
         Path csvOutMainJava = AppIntrospector.resolveMainJavaFile(appRoot, "csv-out");
         Files.createDirectories(csvOutMainJava.getParent().resolve("connector"));
@@ -142,7 +142,7 @@ public class ServiceIntrospectorTest {
 
         ServiceInfo csv = services.get(2);
         assertEquals("csv-out", csv.getName());
-        assertEquals(ServiceBuilder.ServiceType.CSVWRITER, csv.getType());
+        assertEquals(ServiceBuilder.ServiceType.CONNECTOR, csv.getType());
         assertTrue(csv.getStateEntities().isEmpty());
         assertEquals(0, csv.getMessages().size());
     }

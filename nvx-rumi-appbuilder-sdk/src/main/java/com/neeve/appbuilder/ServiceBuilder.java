@@ -30,8 +30,9 @@ import java.util.Map;
 public class ServiceBuilder {
     public enum ServiceType {
         DRIVER("driver", false),
-        CSVWRITER("csvwriter", false),
-        PROCESSOR("processor", true);
+        CONNECTOR("connector", false),
+        PROCESSOR("processor", true),
+        WEBSERVICE("webservice", true);
 
         private final String name;
         private final boolean clusterable;
@@ -137,6 +138,10 @@ public class ServiceBuilder {
             map.put(TokenUtils.toToken("ServiceType"), serviceType.getName());
             map.put(TokenUtils.toToken("ServiceHAModel"), serviceHAModel == null || serviceHAModel == ServiceHAModel.STATE_REPLICATION ? "StateReplication" : "EventSourcing");
             map.put(TokenUtils.toToken("ServiceArtifactId"), serviceArtifactId);
+            // Default HTTP port for webservice services. The generated config
+            // exposes this as an overridable env property; multi-instance
+            // deployments must override it to avoid port collisions.
+            map.put(TokenUtils.toToken("ServiceHttpPort"), "8080");
             return map;
         }
 

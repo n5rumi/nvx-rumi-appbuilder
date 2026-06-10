@@ -115,11 +115,35 @@ public class AppBuilderIntegrationTest {
     }
 
     @Test
-    public void addCsvwriter_thenIntrospect() throws Exception {
-        TestAppFactory.addCsvwriter(appRoot, "csv-out");
-        AppBuilderAssertions.assertServiceExists(appRoot, "csv-out");
-        ServiceInfo svc = ServiceIntrospector.getService(appRoot, "csv-out");
-        assertEquals(ServiceBuilder.ServiceType.CSVWRITER, svc.getType());
+    public void addConnector_thenIntrospect() throws Exception {
+        TestAppFactory.addConnector(appRoot, "sink-out");
+        AppBuilderAssertions.assertServiceExists(appRoot, "sink-out");
+        ServiceInfo svc = ServiceIntrospector.getService(appRoot, "sink-out");
+        assertEquals(ServiceBuilder.ServiceType.CONNECTOR, svc.getType());
+    }
+
+    @Test
+    public void addWebservice_thenIntrospect() throws Exception {
+        TestAppFactory.addWebservice(appRoot, "gateway");
+        AppBuilderAssertions.assertServiceExists(appRoot, "gateway");
+
+        ServiceInfo svc = ServiceIntrospector.getService(appRoot, "gateway");
+        assertEquals(ServiceBuilder.ServiceType.WEBSERVICE, svc.getType());
+
+        // Webservice ships the embedded HTTP server + a REST resource.
+        assertTrue("HttpServer.java scaffolded",
+            Files.exists(AppIntrospector.resolveHttpServerJavaFile(appRoot, "gateway")));
+        assertTrue("resources/WebMain.java scaffolded",
+            Files.exists(AppIntrospector.resolveMainJavaFile(appRoot, "gateway")
+                .getParent().resolve("resources").resolve("WebMain.java")));
+        // Stateful, like a processor: detection must NOT mistake it for one.
+        assertTrue("state.xml scaffolded",
+            Files.exists(AppIntrospector.resolveStateXmlFile(appRoot, "gateway")));
+
+        // The config carries the HTTP port env.
+        String config = Files.readString(
+            appRoot.resolve("test-trading-system").resolve("conf/config.xml"));
+        assertTrue("http port wired into config", config.contains("http.port"));
     }
 
     @Test
@@ -261,16 +285,16 @@ public class AppBuilderIntegrationTest {
     public void fullRollup_sanityCheck() throws Exception {
         TestAppFactory.addProcessor(appRoot, "order-processor");
         TestAppFactory.addDriver(appRoot, "feeder");
-        TestAppFactory.addCsvwriter(appRoot, "csv-out");
+        TestAppFactory.addConnector(appRoot, "sink-out");
 
         List<ServiceInfo> services = ServiceIntrospector.listServices(appRoot);
         assertEquals(3, services.size());
 
         // Add something via every editor. Drivers don't have their own
         // messages.xml (they reference messages from other services), so the
-        // new message goes to csv-out (csvwriter template includes messages.xml).
+        // new message goes to sink-out (connector template includes messages.xml).
         JavaSourceEditor.addHandler(appRoot, "feeder", "onTick", "Tick", null, false);
-        MessageEditor.addMessage(appRoot, "csv-out", "Tick",
+        MessageEditor.addMessage(appRoot, "sink-out", "Tick",
             List.of(new FieldDef("symbol", "String", Map.of())), false);
         StateEditor.addStateEntity(appRoot, "order-processor", "Position",
             Collections.emptyList(), false);
@@ -279,10 +303,10 @@ public class AppBuilderIntegrationTest {
         ServiceInfo feeder = ServiceIntrospector.getService(appRoot, "feeder");
         assertEquals(1, feeder.getHandlers().size());
 
-        // csvwriter template ships with built-in messages; our added "Tick" joins them.
-        ServiceInfo csvOut = ServiceIntrospector.getService(appRoot, "csv-out");
-        assertTrue("csv-out messages includes Tick",
-            csvOut.getMessages().stream().anyMatch(m -> "Tick".equals(m.getName())));
+        // connector template ships with built-in messages; our added "Tick" joins them.
+        ServiceInfo sinkOut = ServiceIntrospector.getService(appRoot, "sink-out");
+        assertTrue("sink-out messages includes Tick",
+            sinkOut.getMessages().stream().anyMatch(m -> "Tick".equals(m.getName())));
 
         ServiceInfo processor = ServiceIntrospector.getService(appRoot, "order-processor");
         assertEquals(2, processor.getStateEntities().size());  // Repository (from template) + Position
@@ -293,6 +317,6 @@ public class AppBuilderIntegrationTest {
             ElementSelector.byTagAndName("app", "trading-feeder-template"));
         AppBuilderAssertions.assertConfigFragmentPresent(appRoot,
             List.of("apps", "templates"),
-            ElementSelector.byTagAndName("app", "trading-csv-out-template"));
+            ElementSelector.byTagAndName("app", "trading-sink-out-template"));
     }
 }

@@ -52,9 +52,10 @@ full table. Summary:
 - `GET /v1/apps/{app_root}` — get app metadata
 - `GET /v1/apps/{app_root}/services` — list services
 - `GET /v1/apps/{app_root}/services/{name}` — get service detail
-- `POST /v1/apps/{app_root}/services/{type}` — add service (type ∈ `processor`, `driver`, `csvwriter`)
+- `POST /v1/services` — add service (type ∈ `processor`, `driver`, `connector`, `webservice`)
 - `DELETE /v1/apps/{app_root}/services/{name}` — remove service
 - `{GET,POST,DELETE} /v1/apps/{app_root}/services/{s}/handlers[/{m}]` — handler CRUD
+- `{GET,POST,DELETE} /v1/services/{s}/connectors[/{name}]` — connector snap-in CRUD
 - `{GET,POST,DELETE} /v1/apps/{app_root}/services/{s}/messages[/{m}]` — message type CRUD
 - `{GET,POST,DELETE} /v1/apps/{app_root}/services/{s}/state-entities[/{e}]` — state entity CRUD
 - `{GET,POST,DELETE} /v1/apps/{app_root}/config/fragments` — config fragment CRUD

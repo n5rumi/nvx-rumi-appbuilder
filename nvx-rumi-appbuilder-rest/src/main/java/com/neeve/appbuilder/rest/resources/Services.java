@@ -49,7 +49,7 @@ import java.util.List;
  */
 @Path("/v1/services")
 @Produces(MediaType.APPLICATION_JSON)
-@Tag(name = "Services", description = "Rumi service CRUD (processor, driver, csvwriter)")
+@Tag(name = "Services", description = "Rumi service CRUD (processor, driver, connector, webservice)")
 public class Services extends AbstractResource {
 
     @GET
@@ -73,7 +73,7 @@ public class Services extends AbstractResource {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Operation(summary = "Add a service to an app",
-               description = "Scaffolds a new service under the app. Type must be processor, driver, or csvwriter. HA model and partition settings only apply to processors.")
+               description = "Scaffolds a new service under the app. Type must be processor, driver, connector, or webservice. HA model and partition settings apply to the clusterable types (processor, webservice).")
     public ServiceInfo add(@QueryParam("app_root") String appRoot,
                            AddServiceRequest req) throws Exception {
         java.nio.file.Path root = requireAbsoluteAppRoot(appRoot);
@@ -82,7 +82,7 @@ public class Services extends AbstractResource {
             throw new IllegalArgumentException("service name is required");
         }
         if (req.getType() == null || req.getType().isBlank()) {
-            throw new IllegalArgumentException("service type is required (processor|driver|csvwriter)");
+            throw new IllegalArgumentException("service type is required (processor|driver|connector|webservice)");
         }
         ServiceBuilder.ServiceParams params = req.toSdk(root.toString());
         new ServiceBuilder().createService(params);

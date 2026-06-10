@@ -225,16 +225,16 @@ public class AppIntrospectorTest {
     }
 
     @Test
-    public void resolveServiceType_detectsCsvwriterByConnectorSubdir() throws Exception {
+    public void resolveServiceType_detectsConnectorByConnectorSubdir() throws Exception {
         Path appRoot = scaffoldAppRoot("trading", "com.example.trading");
-        Path moduleDir = appRoot.resolve("test-trading-csv-out");
+        Path moduleDir = appRoot.resolve("test-trading-sink-out");
         Files.createDirectories(moduleDir);
         // No state.xml, but connector/ subdir exists under the service's java package
-        Path mainJavaDir = AppIntrospector.resolveMainJavaFile(appRoot, "csvOut").getParent();
+        Path mainJavaDir = AppIntrospector.resolveMainJavaFile(appRoot, "sinkOut").getParent();
         Files.createDirectories(mainJavaDir.resolve("connector"));
 
-        assertEquals(ServiceBuilder.ServiceType.CSVWRITER,
-                AppIntrospector.resolveServiceType(appRoot, "csvOut"));
+        assertEquals(ServiceBuilder.ServiceType.CONNECTOR,
+                AppIntrospector.resolveServiceType(appRoot, "sinkOut"));
     }
 
     @Test

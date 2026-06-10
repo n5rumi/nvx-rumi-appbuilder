@@ -82,7 +82,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     @mcp.tool()
     def list_services(app_root: str) -> list[dict[str, Any]]:
-        """List every service (processor, driver, csvwriter) in an app."""
+        """List every service (processor, driver, connector, webservice) in an app."""
         return rest.get("/v1/services", {"app_root": app_root})
 
     @mcp.tool()
@@ -99,7 +99,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
         clustered: bool = False,
         partitions: int = 1,
     ) -> dict[str, Any]:
-        """Scaffold a new service. Type is processor|driver|csvwriter. ha_model and clustered/partitions apply to processors only."""
+        """Scaffold a new service. Type is processor|driver|connector|webservice. ha_model and clustered/partitions apply to the clusterable types (processor, webservice)."""
         return rest.post(
             "/v1/services",
             params={"app_root": app_root},
@@ -157,6 +157,41 @@ def build_server(base_url: str | None = None) -> FastMCP:
         """Remove an @EventHandler method from a service's Main.java."""
         return rest.delete(
             f"/v1/services/{service}/handlers/{method}",
+            params={"app_root": app_root, "dry_run": str(dry_run).lower()},
+        )
+
+    # ---- Connectors --------------------------------------------------
+
+    @mcp.tool()
+    def list_connectors(app_root: str, service: str) -> list[dict[str, Any]]:
+        """List the custom connectors (Rumi message-bus bindings) snapped into a service."""
+        return rest.get(f"/v1/services/{service}/connectors", {"app_root": app_root})
+
+    @mcp.tool()
+    def get_connector(app_root: str, service: str, name: str) -> dict[str, Any]:
+        """Return a single connector with its class, connector bus, and inbound channel."""
+        return rest.get(
+            f"/v1/services/{service}/connectors/{name}", {"app_root": app_root}
+        )
+
+    @mcp.tool()
+    def add_connector(
+        app_root: str, service: str, name: str, dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Snap a custom connector into a service: a Connector class, a connector:// bus binding, and the app messaging reference. Idempotent."""
+        return rest.post(
+            f"/v1/services/{service}/connectors",
+            params={"app_root": app_root, "dry_run": str(dry_run).lower()},
+            json={"name": name},
+        )
+
+    @mcp.tool()
+    def remove_connector(
+        app_root: str, service: str, name: str, dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Remove a connector: delete its Connector class, the bus binding, and the app messaging reference."""
+        return rest.delete(
+            f"/v1/services/{service}/connectors/{name}",
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},
         )
 

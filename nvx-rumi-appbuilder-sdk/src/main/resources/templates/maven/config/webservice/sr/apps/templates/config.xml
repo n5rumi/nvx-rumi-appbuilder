@@ -1,0 +1,31 @@
+<app name="{{ServiceName}}-template" mainClass="{{AppPackageName}}.{{ServicePackageName}}.Main">
+    <messaging>
+        <factories>
+            <factory name="{{AppPackageName}}.roe.Factory"/>
+            <factory name="{{AppPackageName}}.{{ServicePackageName}}.messages.MessageFactory"/>
+        </factories>
+        <bus name="{{BusName}}"/>
+    </messaging>
+    <storage>
+        <factories>
+            <factory name="{{AppPackageName}}.{{ServicePackageName}}.state.StateFactory"/>
+        </factories>
+        <persistence enabled="true">
+            <storeRoot>${SERVICE_STORE_LOCATION::store}</storeRoot>
+            <flushUsingMappedMemory>true</flushUsingMappedMemory>
+            <compaction>
+                <compactOnStart>true</compactOnStart>
+                <compactionThreshold>${SERVICE_COMPACTION_THRESHOLD::100m}</compactionThreshold>
+            </compaction>
+        </persistence>
+        <persistenceQuorum>${SERVICE_PERSISTENCE_QUORUM::1}</persistenceQuorum>
+        <clustering enabled="${SERVICE_CLUSTERING_ENABLED::false}">
+            <localIfAddr>${SERVICE_CLUSTER_REPLICATOR_LOCALIFADDR::0.0.0.0}</localIfAddr>
+        </clustering>
+        <detachedMemberInitialization>true</detachedMemberInitialization>
+    </storage>
+    <captureMessageTypeStats>${SERVICE_CAPTURE_MESSAGE_TYPE_STATS::true}</captureMessageTypeStats>
+    <messageTypeStatsLatenciesToCapture>${SERVICE_CAPTURE_MESSAGE_TYPE_STATS_LATENCIES::mproc}</messageTypeStatsLatenciesToCapture>
+    <performDuplicateChecking>${SERVICE_PERFORM_DUP_CHECKING::true}</performDuplicateChecking>
+</app>
+

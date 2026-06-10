@@ -1,0 +1,3 @@
+launch the {{ServiceName}}-{{ServicePartition}}-{{ServiceInstance}} xvm
+wait until the {{ServiceName}}-{{ServicePartition}} app in the {{ServiceName}}-{{ServicePartition}}-{{ServiceInstance}} xvm is appstartdone
+
