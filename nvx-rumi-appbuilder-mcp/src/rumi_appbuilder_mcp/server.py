@@ -234,6 +234,107 @@ def build_server(base_url: str | None = None) -> FastMCP:
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},
         )
 
+    # ---- Fields ------------------------------------------------------
+
+    @mcp.tool()
+    def add_field(
+        app_root: str,
+        service: str,
+        scope: str,
+        type: str,
+        name: str,
+        field_type: str,
+        attributes: dict[str, str] | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Add a field to a message or entity. scope is messages|state|roe; type is the message/entity name. The field gets a stable, never-reused id."""
+        return rest.post(
+            f"/v1/services/{service}/fields",
+            params={"app_root": app_root, "dry_run": str(dry_run).lower()},
+            json={"scope": scope, "type": type, "name": name, "fieldType": field_type, "attributes": attributes or {}},
+        )
+
+    @mcp.tool()
+    def delete_field(
+        app_root: str, service: str, scope: str, type: str, name: str, dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Delete a field. Its id is reserved forever (tombstone) so it is never reused. (A field's type can't change on the wire, so to 'retype' delete then add.)"""
+        return rest.delete(
+            f"/v1/services/{service}/fields",
+            params={"app_root": app_root, "scope": scope, "type": type, "name": name, "dry_run": str(dry_run).lower()},
+        )
+
+    @mcp.tool()
+    def deprecate_field(
+        app_root: str, service: str, scope: str, type: str, name: str, dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Deprecate a field: keep it, mark its accessors @Deprecated. Distinct from delete."""
+        return rest.post(
+            f"/v1/services/{service}/fields/deprecate",
+            params={"app_root": app_root, "scope": scope, "type": type, "name": name, "dry_run": str(dry_run).lower()},
+        )
+
+    @mcp.tool()
+    def rename_field(
+        app_root: str, service: str, scope: str, type: str, name: str, to: str, dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Rename a field (id unchanged; wire-safe). Hand-written Java referencing the old accessor still needs fixing."""
+        return rest.post(
+            f"/v1/services/{service}/fields/rename",
+            params={"app_root": app_root, "scope": scope, "type": type, "name": name, "to": to, "dry_run": str(dry_run).lower()},
+        )
+
+    # ---- API operations ---------------------------------------------
+
+    @mcp.tool()
+    def list_operations(app_root: str, service: str) -> list[dict[str, Any]]:
+        """List the request-reply API operations in a service's api.xml."""
+        return rest.get(f"/v1/services/{service}/operations", {"app_root": app_root})
+
+    @mcp.tool()
+    def get_operation(app_root: str, service: str, name: str) -> dict[str, Any]:
+        """Return a single API operation (its request and response messages)."""
+        return rest.get(f"/v1/services/{service}/operations/{name}", {"app_root": app_root})
+
+    @mcp.tool()
+    def add_operation(
+        app_root: str,
+        service: str,
+        name: str,
+        in_message: str,
+        out_message: str,
+        rest_path: str | None = None,
+        rest_method: str | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Add a request-reply API operation. in_message/out_message must be known messages (service or ROE). Idempotent on name."""
+        return rest.post(
+            f"/v1/services/{service}/operations",
+            params={"app_root": app_root, "dry_run": str(dry_run).lower()},
+            json={"name": name, "inMessage": in_message, "outMessage": out_message,
+                  "restPath": rest_path, "restMethod": rest_method},
+        )
+
+    @mcp.tool()
+    def remove_operation(
+        app_root: str, service: str, name: str, dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Remove an API operation (drops its generated client method)."""
+        return rest.delete(
+            f"/v1/services/{service}/operations/{name}",
+            params={"app_root": app_root, "dry_run": str(dry_run).lower()},
+        )
+
+    @mcp.tool()
+    def rename_operation(
+        app_root: str, service: str, name: str, to: str, dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Rename an API operation."""
+        return rest.post(
+            f"/v1/services/{service}/operations/{name}/rename",
+            params={"app_root": app_root, "to": to, "dry_run": str(dry_run).lower()},
+        )
+
     # ---- State entities ---------------------------------------------
 
     @mcp.tool()

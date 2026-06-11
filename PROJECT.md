@@ -436,6 +436,29 @@ catch a dependency that compiles fine but isn't on the runtime classpath.
 default port 8080 collides with common local services (tests override it via the
 `...http.port` system property).
 
+## Model editing: ids are never reused
+
+Field, message, entity and collection ids identify a type or field on the wire,
+so a removed id must never be re-handed-out — recycling it lets an old peer
+misinterpret a new one. `ModelIdAllocator` allocates
+`max(present ids ∪ reserved-tombstone ids) + 1`, monotonic; a deleted field is
+physically removed but leaves an `<!-- id=N reserved (removed name) -->`
+tombstone (the convention the hand-written models already use) so its id stays
+retired. The earlier `MessageEditor`/`StateEditor` allocators *gap-filled*
+(recycled the lowest free id) and each scanned only one element kind — a latent
+backward-compat hazard plus an entity↔collection id-collision risk, both fixed.
+
+Corollaries the model editors encode:
+- **No retype.** A field's type can't change on the wire; "change a field" is
+  delete (id retired) + add (new id). Deprecate is a *separate* op (keeps the
+  field, marks accessors `@Deprecated`). Rename is id-stable and wire-safe (but
+  hand-written Java referencing the old accessor still needs a manual fix).
+- **API operations reference ROE.** An `api.xml` `<operation>`'s
+  `inMessage`/`outMessage` resolve against the model its `<messages modelFile>`
+  points at — ROE by default. So operations pair with ROE messages; this only
+  surfaces when ASM codegen runs (the model-edit regression in `/test-the-builder`
+  runs ADM+ASM on the edited models to catch exactly this class of thing).
+
 ## Lessons Learned (REST distribution & runtime)
 
 Lessons from getting the REST service to build, publish, and stop

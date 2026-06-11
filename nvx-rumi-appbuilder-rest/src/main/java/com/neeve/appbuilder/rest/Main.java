@@ -121,6 +121,8 @@ public final class Main {
             register(com.neeve.appbuilder.rest.resources.Handlers.class);
             register(com.neeve.appbuilder.rest.resources.Connectors.class);
             register(com.neeve.appbuilder.rest.resources.Messages.class);
+            register(com.neeve.appbuilder.rest.resources.Fields.class);
+            register(com.neeve.appbuilder.rest.resources.Operations.class);
             register(com.neeve.appbuilder.rest.resources.StateEntities.class);
             register(com.neeve.appbuilder.rest.resources.Config.class);
             register(com.neeve.appbuilder.rest.resources.FactoryIds.class);
