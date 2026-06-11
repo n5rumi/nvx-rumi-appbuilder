@@ -164,12 +164,18 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
 - `1.0` — the current release line; 1.0.x releases are cut here
   (released `1.0.13` as of this writing). Release tags are
   `rumi-appbuilder-<version>`.
-- `feature/connector-and-webservice-services` — unmerged/unpushed in-flight
-  work off `1.0`: webservice + generic `connector` service types (csvwriter
-  renamed), connector snap-in, the in-process test harness + `/test-the-builder`
-  skill, and the model-editing operations (field/api-operation editing; the
-  never-reuse `ModelIdAllocator`). Remaining slices + locked design decisions
-  are tracked in `github/gtm/rumi/TODO.md` (the appbuilder model-editing epic).
+- `feature/connector-and-webservice-services` — **merged (fast-forward) into
+  both `1.0` and `main`, deleted, and pushed.** Its work is now on `1.0` and
+  `main`: webservice + generic `connector` service types (csvwriter renamed),
+  connector snap-in, the in-process test harness + `/test-the-builder` skill,
+  and the **complete model-editing epic** (slices 1–4). Model-editing operations
+  shipped: field and api-operation editing; ROE-scoped message add/remove;
+  embedded `<entity>` CRUD in ROE & service-message models; collections;
+  entity-level attributes (`asEmbedded`); field-type normalization (canonical
+  ADML scalar names); referential-safety-on-remove (blocks dangling
+  field/collection/operation/handler references unless forced); and app-global
+  factory-id never-reuse via the `.rumi-factory-ids` ledger. Ids are never
+  reused — removals leave an `id=N reserved` tombstone (`ModelIdAllocator`).
 
 ## Git Commits
 

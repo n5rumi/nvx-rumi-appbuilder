@@ -436,7 +436,43 @@ catch a dependency that compiles fine but isn't on the runtime classpath.
 default port 8080 collides with common local services (tests override it via the
 `...http.port` system property).
 
+### ADML type-reference rules learned at runtime
+
+Editing models by hand (or by code generator) means re-discovering rules the ADM
+parser enforces but rarely documents. Three came out of running edited models
+through ADM+ASM codegen in `/test-the-builder`, and they're worth memorizing
+because two of them are *exact opposites*:
+
+1. **Field scalar type names are capitalized** — `Long`, `Integer`, `String`,
+   etc. The parser aliases a few lowercase Java primitives (`int`, `char`) to
+   their canonical names, but **`long` is NOT aliased** and silently mis-parses.
+   So `AdmTypes.normalizeFieldType` now lowercases-then-canonicalizes every field
+   type (`long`→`Long`, `int`→`Integer`, …) in `ModelTypeWriter`/`FieldEditor`,
+   removing the foot-gun entirely.
+2. **An entity used as a message *field type* MUST have `asEmbedded="true"`** on
+   its `<entity>`. An embedded entity is serialized inline into the owning
+   message; without the flag the codegen won't treat it as embeddable.
+3. **An entity used as a *collection element* must NOT be `asEmbedded`**, and a
+   collection may only contain entity/message types — **never scalars**. This is
+   the exact inverse of rule 2: the same entity is `asEmbedded` when it's a
+   message field but plain when it's a collection element. Get the two confused
+   and the model compiles in one shape and fails in the other.
+
+The takeaway: model-editing operations can't be "just write the XML" — they have
+to encode the ADML type system's quirks, because a malformed-but-well-formed
+model sails past the SDK build and only explodes when real codegen runs over it.
+
 ## Model editing: ids are never reused
+
+The model-editing epic is **complete** — all phases/slices shipped (now on `1.0`
+and `main`). The operation catalog above is fully implemented: message
+add/remove (scope-aware: service-messages or the shared ROE model), embedded
+`<entity>` CRUD across ROE, service-state, and service-message models,
+collections (`StringMap`/…/`Queue`), entity-level attributes (notably
+`asEmbedded`), field-type normalization to canonical ADML scalar names,
+referential-safety-on-remove (with a `force` override), and app-global
+factory-id never-reuse via the `.rumi-factory-ids` ledger. No need to re-list
+the operations — every row in the catalog is wired SDK → REST → MCP.
 
 Field, message, entity and collection ids identify a type or field on the wire,
 so a removed id must never be re-handed-out — recycling it lets an old peer
@@ -458,6 +494,35 @@ Corollaries the model editors encode:
   points at — ROE by default. So operations pair with ROE messages; this only
   surfaces when ASM codegen runs (the model-edit regression in `/test-the-builder`
   runs ADM+ASM on the edited models to catch exactly this class of thing).
+
+### The factory-id ledger: record on add, never on remove
+
+The same "never reuse" discipline applies one level up, to **factory ids**,
+which must be unique across the whole system. `FactoryIdCollector` allocates the
+first gap in the used set — but a *removed* service frees its ids on disk, and a
+naive scan of the live model files would happily re-hand-out that gap to the next
+service. So the app keeps an append-only ledger, the `.rumi-factory-ids` sidecar
+at the app root. `collectUsedIds` unions the live model-file scan **with** the
+ledger, and `recordAllocatedIds(appRoot)` folds the present ids into the ledger
+after each `ServiceBuilder.createService` / `ApplicationBuilder.createApplication`
+write. The ledger is append-only — never pruned.
+
+The subtle, deliberate choice is **recording on *add*, not on *remove***.
+Recording on remove would be the obvious symmetric design, but it's fragile: if
+a service module is deleted out-of-band (someone `rm -rf`s the directory, or
+deletes it through plain git rather than `ServiceRemover`), the remove hook never
+fires and the id silently becomes reusable again. By folding ids into the ledger
+the moment they're *minted*, the id survives no matter how the module later
+disappears — `ServiceRemover` doesn't even touch the ledger, because it doesn't
+need to. The ledger is a high-water record of "ids this app has ever issued,"
+which is exactly the invariant we want.
+
+**Migration caveat:** services created *before* this feature shipped have no
+ledger entry. Their ids are captured by the live-file scan only while the service
+exists; if such a service is removed, its ids fall back to being reusable. The
+ledger only protects ids minted after a `createService`/`createApplication` that
+ran the recording step. (In practice the test-the-builder runtime check exercised
+the new path, so any app scaffolded going forward is covered from birth.)
 
 ## Lessons Learned (REST distribution & runtime)
 
