@@ -177,6 +177,35 @@ public class EndpointIntegrationTest {
     }
 
     @Test
+    public void messageEntities_and_roeMessageScope_roundTrip() throws Exception {
+        post("/v1/services?app_root=" + enc(appRoot),
+            "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}");
+
+        // Embedded entity in the service message model (scope defaults to messages).
+        HttpResponse<String> e = post("/v1/services/proc/message-entities?app_root=" + enc(appRoot),
+            "{\"name\":\"Money\",\"fields\":[{\"name\":\"amount\",\"type\":\"Long\"}]}");
+        assertEquals("POST message-entity: " + e.body(), 200, e.statusCode());
+        assertTrue(get("/v1/services/proc/message-entities?app_root=" + enc(appRoot)).body().contains("Money"));
+        assertTrue(get("/v1/services/proc/message-entities/Money?app_root=" + enc(appRoot)).body().contains("amount"));
+        assertEquals(200, delete("/v1/services/proc/message-entities/Money?app_root=" + enc(appRoot)).statusCode());
+
+        // State scope is rejected here — state entities have their own resource.
+        HttpResponse<String> badScope = post("/v1/services/proc/message-entities?app_root=" + enc(appRoot) + "&scope=state",
+            "{\"name\":\"Nope\"}");
+        assertEquals("state scope must 400 on message-entities: " + badScope.body(), 400, badScope.statusCode());
+
+        // Whole message added to the shared ROE model via scope=roe.
+        HttpResponse<String> m = post("/v1/services/proc/messages?app_root=" + enc(appRoot) + "&scope=roe",
+            "{\"name\":\"SharedEvent\",\"fields\":[{\"name\":\"ts\",\"type\":\"Long\"}]}");
+        assertEquals("POST roe message: " + m.body(), 200, m.statusCode());
+        // Visible under scope=roe...
+        assertTrue(get("/v1/services/proc/messages?app_root=" + enc(appRoot) + "&scope=roe").body().contains("SharedEvent"));
+        // ...but NOT in the service's own message model.
+        assertFalse(get("/v1/services/proc/messages?app_root=" + enc(appRoot)).body().contains("SharedEvent"));
+        assertEquals(200, delete("/v1/services/proc/messages/SharedEvent?app_root=" + enc(appRoot) + "&scope=roe").statusCode());
+    }
+
+    @Test
     public void config_fragments_listAndAdd() throws Exception {
         HttpResponse<String> list = get("/v1/config/fragments?app_root=" + enc(appRoot));
         assertEquals(200, list.statusCode());

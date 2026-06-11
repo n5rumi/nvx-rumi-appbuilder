@@ -126,6 +126,39 @@ async def test_add_message_sends_fields_list(mcp) -> None:
 
 
 @respx.mock
+async def test_add_message_forwards_roe_scope(mcp) -> None:
+    route = respx.post(f"{BASE}/v1/services/svc/messages").mock(
+        return_value=httpx.Response(200, json={"applied": True})
+    )
+    await mcp.call_tool(
+        "add_message",
+        {"app_root": "/ws/t", "service": "svc", "name": "SharedEvent", "scope": "roe"},
+    )
+    assert "scope=roe" in _query(route.calls.last.request)
+
+
+@respx.mock
+async def test_add_message_entity_routes_to_message_entities_path(mcp) -> None:
+    route = respx.post(f"{BASE}/v1/services/svc/message-entities").mock(
+        return_value=httpx.Response(200, json={"applied": True})
+    )
+    await mcp.call_tool(
+        "add_message_entity",
+        {
+            "app_root": "/ws/t",
+            "service": "svc",
+            "name": "Money",
+            "fields": [{"name": "amount", "type": "Long"}],
+            "scope": "messages",
+        },
+    )
+    body = route.calls.last.request.content
+    assert b"Money" in body
+    assert b"amount" in body
+    assert "scope=messages" in _query(route.calls.last.request)
+
+
+@respx.mock
 async def test_list_config_fragments_omits_profile_when_none(mcp) -> None:
     route = respx.get(f"{BASE}/v1/config/fragments").mock(
         return_value=httpx.Response(200, json=[])

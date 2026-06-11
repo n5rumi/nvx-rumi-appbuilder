@@ -106,6 +106,20 @@ public class StateEditorTest {
     }
 
     @Test
+    public void removeStateEntity_retiresId_neverReused() throws Exception {
+        StateEditor.addStateEntity(appRoot, "orderProcessor", "A", Collections.emptyList(), false); // id 1
+        StateEditor.addStateEntity(appRoot, "orderProcessor", "B", Collections.emptyList(), false); // id 2
+        StateEditor.removeStateEntity(appRoot, "orderProcessor", "B", false);
+
+        String xml = Files.readString(AppIntrospector.resolveStateXmlFile(appRoot, "orderProcessor"));
+        assertTrue("removed entity leaves a reserved tombstone", xml.contains("id=2 reserved"));
+
+        StateEditor.addStateEntity(appRoot, "orderProcessor", "C", Collections.emptyList(), false);
+        assertEquals("must not recycle the retired id 2", Integer.valueOf(3),
+            StateIntrospector.getStateEntity(appRoot, "orderProcessor", "C").getId());
+    }
+
+    @Test
     public void addStateEntity_dryRunDoesNotTouchDisk() throws Exception {
         String before = Files.readString(AppIntrospector.resolveStateXmlFile(appRoot, "orderProcessor"));
         ChangeSet r = StateEditor.addStateEntity(appRoot, "orderProcessor", "Order",

@@ -21,6 +21,8 @@
  */
 package com.neeve.appbuilder;
 
+import com.neeve.appbuilder.FieldEditor.ModelScope;
+import com.neeve.appbuilder.model.EntityDef;
 import com.neeve.appbuilder.model.MessageDef;
 import org.junit.After;
 import org.junit.Before;
@@ -151,5 +153,32 @@ public class MessageIntrospectorTest {
         assertNotNull(bar);
         assertEquals(1, bar.getFields().size());
         assertEquals("y", bar.getFields().get(0).getName());
+    }
+
+    @Test
+    public void listEntities_returnsEmbeddedEntitiesInMessageModel() throws Exception {
+        PhaseBTestSupport.writeMessagesXml(appRoot, "driver",
+            "<model xmlns=\"http://www.neeveresearch.com/schema/x-adml\">" +
+            "<messages><message name=\"Tick\" id=\"2\"/></messages>" +
+            "<entities>" +
+            "  <entity name=\"Money\" id=\"1\"><field name=\"amount\" type=\"Long\"/></entity>" +
+            "</entities>" +
+            "</model>");
+        List<EntityDef> entities =
+            MessageIntrospector.listEntities(appRoot, "driver", ModelScope.SERVICE_MESSAGES);
+        assertEquals(1, entities.size());
+        assertEquals("Money", entities.get(0).getName());
+        assertNotNull(MessageIntrospector.getEntity(appRoot, "driver", "Money", ModelScope.SERVICE_MESSAGES));
+        assertNull(MessageIntrospector.getEntity(appRoot, "driver", "Nope", ModelScope.SERVICE_MESSAGES));
+    }
+
+    @Test
+    public void scopedIntrospection_rejectsStateScope() throws Exception {
+        try {
+            MessageIntrospector.listMessages(appRoot, "driver", ModelScope.SERVICE_STATE);
+            fail("expected IllegalArgumentException for the state scope");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().toLowerCase().contains("state"));
+        }
     }
 }
