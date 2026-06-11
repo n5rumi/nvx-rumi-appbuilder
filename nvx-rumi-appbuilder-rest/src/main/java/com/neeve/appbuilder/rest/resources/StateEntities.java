@@ -81,17 +81,18 @@ public class StateEntities extends AbstractResource {
                          AddStateEntityRequest req) throws IOException {
         if (req == null) throw new IllegalArgumentException("request body is required");
         return StateEditor.addStateEntity(requireAbsoluteAppRoot(appRoot), service,
-            req.getName(), req.toSdkFields(), dryRun);
+            req.getName(), req.getAttributes(), req.toSdkFields(), dryRun);
     }
 
     @DELETE
     @Path("/{name}")
     @Operation(summary = "Remove a state entity",
-               description = "Removes the named entity from the service's state.xml.")
+               description = "Removes the named entity from the service's state.xml. Blocked when a field/collection in the model still references it, unless force=true.")
     public ChangeSet remove(@QueryParam("app_root") String appRoot,
                             @PathParam("svc") String service,
                             @PathParam("name") String name,
-                            @QueryParam("dry_run") @DefaultValue("false") boolean dryRun) throws IOException {
-        return StateEditor.removeStateEntity(requireAbsoluteAppRoot(appRoot), service, name, dryRun);
+                            @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
+                            @QueryParam("force") @DefaultValue("false") boolean force) throws IOException {
+        return StateEditor.removeStateEntity(requireAbsoluteAppRoot(appRoot), service, name, dryRun, force);
     }
 }

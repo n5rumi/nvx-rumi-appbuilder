@@ -159,6 +159,30 @@ async def test_add_message_entity_routes_to_message_entities_path(mcp) -> None:
 
 
 @respx.mock
+async def test_add_collection_sends_is_and_contains(mcp) -> None:
+    route = respx.post(f"{BASE}/v1/services/svc/collections").mock(
+        return_value=httpx.Response(200, json={"applied": True})
+    )
+    await mcp.call_tool(
+        "add_collection",
+        {"app_root": "/ws/t", "service": "svc", "name": "byId",
+         "is_": "StringMap", "contains": "Account"},
+    )
+    body = route.calls.last.request.content
+    assert b'"is": "StringMap"' in body or b'"is":"StringMap"' in body
+    assert b"Account" in body
+
+
+@respx.mock
+async def test_remove_state_entity_passes_force_flag(mcp) -> None:
+    route = respx.delete(f"{BASE}/v1/services/svc/state-entities/Account").mock(
+        return_value=httpx.Response(200, json={"applied": True})
+    )
+    await _call(mcp, "remove_state_entity", app_root="/ws/t", service="svc", name="Account", force=True)
+    assert "force=true" in _query(route.calls.last.request)
+
+
+@respx.mock
 async def test_list_config_fragments_omits_profile_when_none(mcp) -> None:
     route = respx.get(f"{BASE}/v1/config/fragments").mock(
         return_value=httpx.Response(200, json=[])

@@ -162,6 +162,28 @@ public class EntityEditorTest {
     }
 
     @Test
+    public void addEntity_withEntityAttributes_setsAsEmbedded() throws Exception {
+        EntityEditor.addEntity(appRoot, SVC, ModelScope.ROE_MESSAGES, "Money",
+            Map.of("asEmbedded", "true"),
+            List.of(new FieldDef("amount", "Long", Map.of())), false);
+        EntityDef money = MessageIntrospector.getEntity(appRoot, SVC, "Money", ModelScope.ROE_MESSAGES);
+        assertEquals("true", money.getAttributes().get("asEmbedded"));
+    }
+
+    @Test
+    public void addEntity_ignoresNameAndIdInAttributes() throws Exception {
+        EntityEditor.addEntity(appRoot, SVC, ModelScope.SERVICE_MESSAGES, "Real",
+            Map.of("name", "Evil", "id", "999", "asEmbedded", "true"),
+            List.of(), false);
+        // The param name wins; no entity called "Evil" exists.
+        assertNotNull(MessageIntrospector.getEntity(appRoot, SVC, "Real", ModelScope.SERVICE_MESSAGES));
+        assertNull(MessageIntrospector.getEntity(appRoot, SVC, "Evil", ModelScope.SERVICE_MESSAGES));
+        // The id is allocator-assigned (1 in a fresh message model), not the caller's 999.
+        assertEquals(Integer.valueOf(1),
+            MessageIntrospector.getEntity(appRoot, SVC, "Real", ModelScope.SERVICE_MESSAGES).getId());
+    }
+
+    @Test
     public void addEntity_dryRunDoesNotTouchDisk() throws Exception {
         Path roe = AppIntrospector.resolveRoeMessagesXmlFile(appRoot);
         String before = Files.readString(roe);

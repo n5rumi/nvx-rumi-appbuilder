@@ -206,6 +206,45 @@ public class EndpointIntegrationTest {
     }
 
     @Test
+    public void collections_roundTrip_and_entityReferentialSafety() throws Exception {
+        post("/v1/services?app_root=" + enc(appRoot),
+            "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}");
+
+        // A state entity and a collection that contains it.
+        post("/v1/services/proc/state-entities?app_root=" + enc(appRoot),
+            "{\"name\":\"Account\",\"fields\":[{\"name\":\"id\",\"type\":\"String\",\"attributes\":{\"isKey\":\"true\"}}]}");
+        HttpResponse<String> addC = post("/v1/services/proc/collections?app_root=" + enc(appRoot),
+            "{\"name\":\"byId\",\"is\":\"StringMap\",\"contains\":\"Account\"}");
+        assertEquals("POST collection: " + addC.body(), 200, addC.statusCode());
+        assertTrue(get("/v1/services/proc/collections?app_root=" + enc(appRoot)).body().contains("byId"));
+        assertTrue(get("/v1/services/proc/collections/byId?app_root=" + enc(appRoot)).body().contains("StringMap"));
+
+        // Removing the entity is blocked while the collection still references it.
+        HttpResponse<String> blocked = delete("/v1/services/proc/state-entities/Account?app_root=" + enc(appRoot));
+        assertEquals("referenced entity removal must be blocked: " + blocked.body(), 422, blocked.statusCode());
+        assertTrue(blocked.body().contains("byId"));
+        // force overrides.
+        assertEquals(200, delete("/v1/services/proc/state-entities/Account?app_root=" + enc(appRoot) + "&force=true").statusCode());
+        // Collection removal is unconditional.
+        assertEquals(200, delete("/v1/services/proc/collections/byId?app_root=" + enc(appRoot)).statusCode());
+    }
+
+    @Test
+    public void messageRemoval_blockedByEventHandler_unlessForced() throws Exception {
+        post("/v1/services?app_root=" + enc(appRoot),
+            "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}");
+        post("/v1/services/proc/messages?app_root=" + enc(appRoot),
+            "{\"name\":\"Req\",\"fields\":[{\"name\":\"x\",\"type\":\"int\"}]}");
+        post("/v1/services/proc/handlers?app_root=" + enc(appRoot),
+            "{\"method\":\"onReq\",\"messageType\":\"Req\"}");
+
+        HttpResponse<String> blocked = delete("/v1/services/proc/messages/Req?app_root=" + enc(appRoot));
+        assertEquals("message removal must be blocked by the handler: " + blocked.body(), 422, blocked.statusCode());
+        assertTrue(blocked.body().contains("onReq"));
+        assertEquals(200, delete("/v1/services/proc/messages/Req?app_root=" + enc(appRoot) + "&force=true").statusCode());
+    }
+
+    @Test
     public void config_fragments_listAndAdd() throws Exception {
         HttpResponse<String> list = get("/v1/config/fragments?app_root=" + enc(appRoot));
         assertEquals(200, list.statusCode());

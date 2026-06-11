@@ -61,6 +61,12 @@ final class ModelTypeWriter {
             if (fd.getType() != null && !fd.getAttributes().containsKey("type")) {
                 field.setAttribute("type", fd.getType());
             }
+            // Normalize the scalar type name to its canonical ADML spelling
+            // (e.g. long -> Long) so it survives ADM/ASM codegen; entity/message
+            // references and array types pass through untouched.
+            if (field.hasAttribute("type")) {
+                field.setAttribute("type", AdmTypes.normalizeFieldType(field.getAttribute("type")));
+            }
             // Append first, then allocate so the id scan sees prior siblings.
             type.appendChild(field);
             if (!field.hasAttribute("id")) {

@@ -31,7 +31,10 @@ import org.w3c.dom.NodeList;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static com.neeve.appbuilder.MessageIntrospector.ADML_NAMESPACE;
 
@@ -64,8 +67,29 @@ public final class EntityEditor {
     private EntityEditor() {}
 
     /**
-     * Add an {@code <entity>} to the model named by {@code scope}. Idempotent on
-     * entity name. {@code serviceName} is ignored for the ROE scope.
+     * Add an {@code <entity>} to the model named by {@code scope}, with no
+     * entity-level attributes. Idempotent on entity name.
+     */
+    public static ChangeSet addEntity(Path appRoot,
+                                      String serviceName,
+                                      FieldEditor.ModelScope scope,
+                                      String entityName,
+                                      List<FieldDef> fields,
+                                      boolean dryRun) throws IOException {
+        return addEntity(appRoot, serviceName, scope, entityName, Collections.emptyMap(), fields, dryRun);
+    }
+
+    /**
+     * Add an {@code <entity>} to the model named by {@code scope}, carrying the
+     * given entity-level attributes. Idempotent on entity name.
+     * {@code serviceName} is ignored for the ROE scope.
+     *
+     * <p>The most important entity-level attribute is {@code asEmbedded="true"}:
+     * an entity used as a {@code <field>} type within a message or another entity
+     * <em>must</em> be embedded, or ADM codegen rejects the referencing model.
+     * {@code name} and {@code id} in {@code entityAttrs} are ignored — the name
+     * comes from {@code entityName} and the id is always allocated by
+     * {@link ModelIdAllocator} (never reused).
      *
      * @return a ChangeSet; {@link ChangeSet#isNoop()} if an entity with the same
      *         name already exists in that model.
@@ -74,6 +98,7 @@ public final class EntityEditor {
                                       String serviceName,
                                       FieldEditor.ModelScope scope,
                                       String entityName,
+                                      Map<String, String> entityAttrs,
                                       List<FieldDef> fields,
                                       boolean dryRun) throws IOException {
         Path modelFile = resolveModelFile(appRoot, serviceName, scope);
@@ -87,6 +112,13 @@ public final class EntityEditor {
         Element entities = XmlDomUtils.getOrCreateChild(root, "entities");
 
         Element entity = doc.createElementNS(ADML_NAMESPACE, "entity");
+        if (entityAttrs != null) {
+            for (Map.Entry<String, String> e : entityAttrs.entrySet()) {
+                // name and id are owned by the editor — never let callers set them.
+                if ("name".equals(e.getKey()) || "id".equals(e.getKey())) continue;
+                entity.setAttribute(e.getKey(), e.getValue());
+            }
+        }
         entity.setAttribute("name", entityName);
         entity.setAttribute("id", String.valueOf(ModelIdAllocator.nextTypeId(doc)));
         ModelTypeWriter.appendFields(doc, entity, fields);
@@ -96,21 +128,50 @@ public final class EntityEditor {
     }
 
     /**
-     * Remove an {@code <entity>} from the model named by {@code scope}. The
-     * entity's id is retired via an {@code <!-- id=N reserved -->} tombstone so
-     * it is never reused. No-op if the entity is absent.
+     * Remove an {@code <entity>} from the model named by {@code scope}, with
+     * referential safety enforced (see the {@code force} overload).
      */
     public static ChangeSet removeEntity(Path appRoot,
                                          String serviceName,
                                          FieldEditor.ModelScope scope,
                                          String entityName,
                                          boolean dryRun) throws IOException {
+        return removeEntity(appRoot, serviceName, scope, entityName, dryRun, false);
+    }
+
+    /**
+     * Remove an {@code <entity>} from the model named by {@code scope}. The
+     * entity's id is retired via an {@code <!-- id=N reserved -->} tombstone so
+     * it is never reused. No-op if the entity is absent.
+     *
+     * <p>Unless {@code force} is true, removal is blocked when the entity is
+     * still referenced within the same model — by a {@code <field type=…>} on
+     * any message/entity, or by a {@code <collection contains=…>} — and an
+     * {@link IllegalStateException} naming the referrers is thrown. Remove the
+     * references first, or pass {@code force=true} to remove anyway (which leaves
+     * the model dangling until the references are fixed).
+     */
+    public static ChangeSet removeEntity(Path appRoot,
+                                         String serviceName,
+                                         FieldEditor.ModelScope scope,
+                                         String entityName,
+                                         boolean dryRun,
+                                         boolean force) throws IOException {
         Path modelFile = resolveModelFile(appRoot, serviceName, scope);
         Document doc = load(modelFile);
 
         Element target = findEntityElement(doc, entityName);
         if (target == null) {
             return ChangeSet.noop("no entity named '" + entityName + "' in " + scope + " model");
+        }
+
+        if (!force) {
+            List<String> refs = entityReferences(doc, entityName);
+            if (!refs.isEmpty()) {
+                throw new IllegalStateException("cannot remove entity '" + entityName
+                    + "': still referenced by " + String.join(", ", refs)
+                    + " (remove the references first, or force the removal)");
+            }
         }
 
         Comment tombstone = ModelIdAllocator.reservedTombstone(doc, target.getAttribute("id"), entityName);
@@ -143,6 +204,36 @@ public final class EntityEditor {
 
     private static boolean entityExists(Document doc, String entityName) {
         return findEntityElement(doc, entityName) != null;
+    }
+
+    /**
+     * Find in-model references to {@code entityName}: {@code <field type=…>} on
+     * any message/entity, and {@code <collection contains=…>}. Returns
+     * human-readable descriptions for the error message.
+     */
+    private static List<String> entityReferences(Document doc, String entityName) {
+        List<String> refs = new ArrayList<>();
+        NodeList fields = doc.getElementsByTagNameNS(ADML_NAMESPACE, "field");
+        for (int i = 0; i < fields.getLength(); i++) {
+            Element f = (Element) fields.item(i);
+            if (entityName.equals(f.getAttribute("type"))) {
+                String owner = "";
+                org.w3c.dom.Node parent = f.getParentNode();
+                if (parent instanceof Element) {
+                    Element p = (Element) parent;
+                    owner = " on " + p.getLocalName() + " '" + p.getAttribute("name") + "'";
+                }
+                refs.add("field '" + f.getAttribute("name") + "'" + owner);
+            }
+        }
+        NodeList collections = doc.getElementsByTagNameNS(ADML_NAMESPACE, "collection");
+        for (int i = 0; i < collections.getLength(); i++) {
+            Element c = (Element) collections.item(i);
+            if (entityName.equals(c.getAttribute("contains"))) {
+                refs.add("collection '" + c.getAttribute("name") + "'");
+            }
+        }
+        return refs;
     }
 
     private static Element findEntityElement(Document doc, String entityName) {

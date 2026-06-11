@@ -23,39 +23,37 @@ package com.neeve.appbuilder.rest.dto;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.neeve.appbuilder.model.FieldDef;
 
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
- * Request body for {@code POST /v1/services/{svc}/state-entities}.
+ * Request body for {@code POST /v1/services/{svc}/collections}.
  *
- * <p>{@code attributes} carries entity-level attributes (e.g.
- * {@code {"asEmbedded":"true"}} for an entity nested as a field of another
- * state entity); {@code name}/{@code id} there are ignored.
+ * <p>{@code is} is the collection kind ({@code StringMap}, {@code IntMap}, …,
+ * {@code Queue}); {@code contains} is the element type (an entity/message name
+ * or a scalar). {@code attributes} carries any extra collection-level
+ * attributes; {@code name}/{@code id} there are ignored.
  */
-public final class AddStateEntityRequest {
+public final class AddCollectionRequest {
     private final String name;
+    private final String is;
+    private final String contains;
     private final Map<String, String> attributes;
-    private final List<FieldSpec> fields;
 
     @JsonCreator
-    public AddStateEntityRequest(@JsonProperty("name") String name,
-                                 @JsonProperty("attributes") Map<String, String> attributes,
-                                 @JsonProperty("fields") List<FieldSpec> fields) {
+    public AddCollectionRequest(@JsonProperty("name") String name,
+                                @JsonProperty("is") String is,
+                                @JsonProperty("contains") String contains,
+                                @JsonProperty("attributes") Map<String, String> attributes) {
         this.name = name;
+        this.is = is;
+        this.contains = contains;
         this.attributes = attributes == null ? Collections.emptyMap() : attributes;
-        this.fields = fields == null ? Collections.emptyList() : fields;
     }
 
     public String getName() { return name; }
+    public String getIs() { return is; }
+    public String getContains() { return contains; }
     public Map<String, String> getAttributes() { return attributes; }
-    public List<FieldSpec> getFields() { return fields; }
-
-    public List<FieldDef> toSdkFields() {
-        return fields.stream().map(FieldSpec::toSdk).collect(Collectors.toList());
-    }
 }

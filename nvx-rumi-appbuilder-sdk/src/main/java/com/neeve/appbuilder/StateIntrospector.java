@@ -85,6 +85,17 @@ public final class StateIntrospector {
         return parseCollections(doc);
     }
 
+    /**
+     * Return the named {@code <collection>} declaration, or {@code null} if
+     * no collection with that name exists in the service's state.xml.
+     */
+    public static CollectionDef getCollection(Path appRoot, String serviceName, String name) throws IOException {
+        for (CollectionDef c : listCollections(appRoot, serviceName)) {
+            if (name.equals(c.getName())) return c;
+        }
+        return null;
+    }
+
     // --- internal -----------------------------------------------------
 
     private static Document loadStateXml(Path appRoot, String serviceName) throws IOException {

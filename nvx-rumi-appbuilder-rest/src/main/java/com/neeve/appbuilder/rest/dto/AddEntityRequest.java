@@ -27,6 +27,7 @@ import com.neeve.appbuilder.model.FieldDef;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -34,19 +35,26 @@ import java.util.stream.Collectors;
  * ({@code POST /v1/services/{svc}/message-entities}). Same {name, fields} shape
  * as the message- and state-entity add bodies; the target model is selected by
  * the resource's {@code scope} query parameter rather than carried here.
+ *
+ * <p>{@code attributes} carries entity-level attributes (e.g.
+ * {@code {"asEmbedded":"true"}}); {@code name}/{@code id} there are ignored.
  */
 public final class AddEntityRequest {
     private final String name;
+    private final Map<String, String> attributes;
     private final List<FieldSpec> fields;
 
     @JsonCreator
     public AddEntityRequest(@JsonProperty("name") String name,
+                            @JsonProperty("attributes") Map<String, String> attributes,
                             @JsonProperty("fields") List<FieldSpec> fields) {
         this.name = name;
+        this.attributes = attributes == null ? Collections.emptyMap() : attributes;
         this.fields = fields == null ? Collections.emptyList() : fields;
     }
 
     public String getName() { return name; }
+    public Map<String, String> getAttributes() { return attributes; }
     public List<FieldSpec> getFields() { return fields; }
 
     public List<FieldDef> toSdkFields() {

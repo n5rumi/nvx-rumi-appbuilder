@@ -87,7 +87,7 @@ public final class FieldEditor {
 
         Element field = doc.createElementNS(ADML_NAMESPACE, "field");
         field.setAttribute("name", fieldName);
-        if (fieldType != null) field.setAttribute("type", fieldType);
+        if (fieldType != null) field.setAttribute("type", AdmTypes.normalizeFieldType(fieldType));
         if (extraAttrs != null) {
             for (Map.Entry<String, String> e : extraAttrs.entrySet()) {
                 field.setAttribute(e.getKey(), e.getValue());

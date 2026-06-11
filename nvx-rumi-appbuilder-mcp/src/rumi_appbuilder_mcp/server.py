@@ -227,12 +227,13 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     @mcp.tool()
     def remove_message(
-        app_root: str, service: str, name: str, scope: str = "messages", dry_run: bool = False
+        app_root: str, service: str, name: str, scope: str = "messages",
+        force: bool = False, dry_run: bool = False
     ) -> dict[str, Any]:
-        """Remove a message type. scope is messages|roe. Its id is reserved (tombstone) so it is never reused."""
+        """Remove a message type. scope is messages|roe. Blocked if an api operation or @EventHandler in the service still references it — pass force=true to remove anyway. Its id is reserved (tombstone) so it is never reused."""
         return rest.delete(
             f"/v1/services/{service}/messages/{name}",
-            params={"app_root": app_root, "scope": scope, "dry_run": str(dry_run).lower()},
+            params={"app_root": app_root, "scope": scope, "force": str(force).lower(), "dry_run": str(dry_run).lower()},
         )
 
     # ---- Message-model embedded entities -----------------------------
@@ -256,23 +257,28 @@ def build_server(base_url: str | None = None) -> FastMCP:
         name: str,
         fields: list[dict[str, Any]] | None = None,
         scope: str = "messages",
+        as_embedded: bool = True,
+        attributes: dict[str, str] | None = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Add an embedded entity to a message model (a reusable type for message fields). scope is messages (service model, default) or roe (shared app-wide model). fields follow the same shape as add_message. Its local id is never reused."""
+        """Add an embedded entity to a message model (a reusable type for message fields). scope is messages (service model, default) or roe (shared app-wide model). fields follow the same shape as add_message. as_embedded defaults true — an entity used as a message field type MUST be embedded (set false only for a standalone type). attributes is extra entity-level attributes. Its local id is never reused."""
+        attrs = dict(attributes or {})
+        attrs.setdefault("asEmbedded", "true" if as_embedded else "false")
         return rest.post(
             f"/v1/services/{service}/message-entities",
             params={"app_root": app_root, "scope": scope, "dry_run": str(dry_run).lower()},
-            json={"name": name, "fields": fields or []},
+            json={"name": name, "attributes": attrs, "fields": fields or []},
         )
 
     @mcp.tool()
     def remove_message_entity(
-        app_root: str, service: str, name: str, scope: str = "messages", dry_run: bool = False
+        app_root: str, service: str, name: str, scope: str = "messages",
+        force: bool = False, dry_run: bool = False
     ) -> dict[str, Any]:
-        """Remove an embedded entity from a message model. scope is messages|roe. Its id is reserved (tombstone) so it is never reused."""
+        """Remove an embedded entity from a message model. scope is messages|roe. Blocked if a field/collection in the model still references it — pass force=true to remove anyway. Its id is reserved (tombstone) so it is never reused."""
         return rest.delete(
             f"/v1/services/{service}/message-entities/{name}",
-            params={"app_root": app_root, "scope": scope, "dry_run": str(dry_run).lower()},
+            params={"app_root": app_root, "scope": scope, "force": str(force).lower(), "dry_run": str(dry_run).lower()},
         )
 
     # ---- Fields ------------------------------------------------------
@@ -399,22 +405,64 @@ def build_server(base_url: str | None = None) -> FastMCP:
         service: str,
         name: str,
         fields: list[dict[str, Any]] | None = None,
+        attributes: dict[str, str] | None = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Add a state entity. fields follow the same shape as add_message; use attributes={"key": "true"} to mark key fields."""
+        """Add a state entity. fields follow the same shape as add_message; mark a key field with its attributes={"isKey": "true"}. attributes here is entity-level (e.g. {"asEmbedded": "true"} for an entity nested as a field of another state entity)."""
         return rest.post(
             f"/v1/services/{service}/state-entities",
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},
-            json={"name": name, "fields": fields or []},
+            json={"name": name, "attributes": attributes or {}, "fields": fields or []},
         )
 
     @mcp.tool()
     def remove_state_entity(
-        app_root: str, service: str, name: str, dry_run: bool = False
+        app_root: str, service: str, name: str, force: bool = False, dry_run: bool = False
     ) -> dict[str, Any]:
-        """Remove a state entity from a service's state.xml."""
+        """Remove a state entity from a service's state.xml. Blocked if a field/collection in the model still references it — pass force=true to remove anyway."""
         return rest.delete(
             f"/v1/services/{service}/state-entities/{name}",
+            params={"app_root": app_root, "force": str(force).lower(), "dry_run": str(dry_run).lower()},
+        )
+
+    # ---- Collections -------------------------------------------------
+
+    @mcp.tool()
+    def list_collections(app_root: str, service: str) -> list[dict[str, Any]]:
+        """List X-ADML collections (maps/queues) in the service's state model."""
+        return rest.get(f"/v1/services/{service}/collections", {"app_root": app_root})
+
+    @mcp.tool()
+    def get_collection(app_root: str, service: str, name: str) -> dict[str, Any]:
+        """Return a single state collection with its kind, element type, and local id."""
+        return rest.get(
+            f"/v1/services/{service}/collections/{name}", {"app_root": app_root}
+        )
+
+    @mcp.tool()
+    def add_collection(
+        app_root: str,
+        service: str,
+        name: str,
+        is_: str,
+        contains: str,
+        attributes: dict[str, str] | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Add a collection to the service's state model. is_ is the kind (StringMap|IntMap|LongMap|…|Queue); contains is the element type (an entity/message name or scalar). Its local id is never reused."""
+        return rest.post(
+            f"/v1/services/{service}/collections",
+            params={"app_root": app_root, "dry_run": str(dry_run).lower()},
+            json={"name": name, "is": is_, "contains": contains, "attributes": attributes or {}},
+        )
+
+    @mcp.tool()
+    def remove_collection(
+        app_root: str, service: str, name: str, dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Remove a collection from the service's state model. Its id is reserved (tombstone) so it is never reused."""
+        return rest.delete(
+            f"/v1/services/{service}/collections/{name}",
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},
         )
 

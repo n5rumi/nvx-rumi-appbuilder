@@ -27,7 +27,9 @@ import com.neeve.appbuilder.model.FieldDef;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Add and remove {@code <entity>} declarations in a service's state.xml.
@@ -55,9 +57,23 @@ public final class StateEditor {
                                            String entityName,
                                            List<FieldDef> fields,
                                            boolean dryRun) throws IOException {
+        return addStateEntity(appRoot, serviceName, entityName, Collections.emptyMap(), fields, dryRun);
+    }
+
+    /**
+     * Add a state {@code <entity>} carrying the given entity-level attributes
+     * (e.g. {@code asEmbedded="true"} for an entity nested as a field of another
+     * state entity). {@code name}/{@code id} in the map are ignored.
+     */
+    public static ChangeSet addStateEntity(Path appRoot,
+                                           String serviceName,
+                                           String entityName,
+                                           Map<String, String> entityAttrs,
+                                           List<FieldDef> fields,
+                                           boolean dryRun) throws IOException {
         requireStateModel(appRoot, serviceName);
         return EntityEditor.addEntity(appRoot, serviceName,
-            FieldEditor.ModelScope.SERVICE_STATE, entityName, fields, dryRun);
+            FieldEditor.ModelScope.SERVICE_STATE, entityName, entityAttrs, fields, dryRun);
     }
 
     /**
@@ -68,9 +84,21 @@ public final class StateEditor {
                                               String serviceName,
                                               String entityName,
                                               boolean dryRun) throws IOException {
+        return removeStateEntity(appRoot, serviceName, entityName, dryRun, false);
+    }
+
+    /**
+     * Remove a state {@code <entity>}. Unless {@code force} is true, blocked when
+     * the entity is still referenced by a field or collection in the model.
+     */
+    public static ChangeSet removeStateEntity(Path appRoot,
+                                              String serviceName,
+                                              String entityName,
+                                              boolean dryRun,
+                                              boolean force) throws IOException {
         requireStateModel(appRoot, serviceName);
         return EntityEditor.removeEntity(appRoot, serviceName,
-            FieldEditor.ModelScope.SERVICE_STATE, entityName, dryRun);
+            FieldEditor.ModelScope.SERVICE_STATE, entityName, dryRun, force);
     }
 
     // --- internal -----------------------------------------------------

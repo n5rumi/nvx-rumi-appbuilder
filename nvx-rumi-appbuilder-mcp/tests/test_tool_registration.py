@@ -59,6 +59,11 @@ EXPECTED_TOOLS: set[str] = {
     "get_state_entity",
     "add_state_entity",
     "remove_state_entity",
+    # Collections
+    "list_collections",
+    "get_collection",
+    "add_collection",
+    "remove_collection",
     # Config
     "get_config",
     "list_config_fragments",

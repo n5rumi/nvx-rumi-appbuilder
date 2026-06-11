@@ -21,8 +21,10 @@
  */
 package com.neeve.appbuilder;
 
+import com.neeve.appbuilder.model.ApiOperationDef;
 import com.neeve.appbuilder.model.ChangeSet;
 import com.neeve.appbuilder.model.FieldDef;
+import com.neeve.appbuilder.model.HandlerDef;
 import org.w3c.dom.Comment;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -30,6 +32,7 @@ import org.w3c.dom.Element;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 import static com.neeve.appbuilder.MessageIntrospector.ADML_NAMESPACE;
@@ -119,21 +122,50 @@ public final class MessageEditor {
     }
 
     /**
-     * Remove a {@code <message>} from the message model named by {@code scope}.
-     * The message's id is retired via an {@code <!-- id=N reserved -->} tombstone
-     * so it is never reused. No-op if the message is absent.
+     * Remove a {@code <message>} from the message model named by {@code scope},
+     * with referential safety enforced (see the {@code force} overload).
      */
     public static ChangeSet removeMessage(Path appRoot,
                                           String serviceName,
                                           FieldEditor.ModelScope scope,
                                           String messageName,
                                           boolean dryRun) throws IOException {
+        return removeMessage(appRoot, serviceName, scope, messageName, dryRun, false);
+    }
+
+    /**
+     * Remove a {@code <message>} from the message model named by {@code scope}.
+     * The message's id is retired via an {@code <!-- id=N reserved -->} tombstone
+     * so it is never reused. No-op if the message is absent.
+     *
+     * <p>Unless {@code force} is true, removal is blocked when {@code serviceName}
+     * still references the message — by an {@code api.xml} {@code <operation>}
+     * ({@code inMessage}/{@code outMessage}) or a {@code Main.java}
+     * {@code @EventHandler} — and an {@link IllegalStateException} naming the
+     * referrers is thrown. (The reference scan covers the named service only; a
+     * shared ROE message may be referenced by other services too.)
+     */
+    public static ChangeSet removeMessage(Path appRoot,
+                                          String serviceName,
+                                          FieldEditor.ModelScope scope,
+                                          String messageName,
+                                          boolean dryRun,
+                                          boolean force) throws IOException {
         Path modelFile = resolveMessageModelFile(appRoot, serviceName, scope);
         Document doc = loadMessagesDoc(modelFile);
 
         Element target = findMessageElement(doc, messageName);
         if (target == null) {
             return ChangeSet.noop("no message named '" + messageName + "' in " + scope + " model");
+        }
+
+        if (!force) {
+            List<String> refs = messageReferences(appRoot, serviceName, messageName);
+            if (!refs.isEmpty()) {
+                throw new IllegalStateException("cannot remove message '" + messageName
+                    + "': still referenced by " + String.join(", ", refs)
+                    + " (remove the references first, or force the removal)");
+            }
         }
 
         // Retire the type id with a tombstone so it is never re-handed-out.
@@ -160,6 +192,27 @@ public final class MessageEditor {
             throw new IOException("messages.xml not found at " + modelFile);
         }
         return modelFile;
+    }
+
+    /**
+     * Find references to {@code messageName} in {@code serviceName}: api.xml
+     * operations (inMessage/outMessage) and Main.java {@code @EventHandler}
+     * methods. Returns human-readable descriptions for the error message.
+     */
+    private static List<String> messageReferences(Path appRoot, String serviceName,
+                                                  String messageName) throws IOException {
+        List<String> refs = new ArrayList<>();
+        for (ApiOperationDef op : ApiIntrospector.listOperations(appRoot, serviceName)) {
+            if (messageName.equals(op.getInMessage()) || messageName.equals(op.getOutMessage())) {
+                refs.add("api operation '" + op.getName() + "'");
+            }
+        }
+        for (HandlerDef h : HandlerIntrospector.listHandlers(appRoot, serviceName)) {
+            if (messageName.equals(h.getMessageType())) {
+                refs.add("@EventHandler '" + h.getMethodName() + "'");
+            }
+        }
+        return refs;
     }
 
     private static Document loadMessagesDoc(Path messagesXml) throws IOException {

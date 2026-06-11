@@ -43,7 +43,9 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Embedded {@code <entity>} declarations in a message model — entities defined
@@ -85,28 +87,33 @@ public class MessageEntities extends AbstractResource {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Operation(summary = "Add an embedded entity to a message model",
-               description = "Adds a new embedded entity (scope=messages|roe; default messages). Its local id is allocated automatically and never reused.")
+               description = "Adds a new embedded entity (scope=messages|roe; default messages). Defaults asEmbedded=true (an entity used as a message field type must be embedded); pass attributes.asEmbedded=false to override. Its local id is allocated automatically and never reused.")
     public ChangeSet add(@QueryParam("app_root") String appRoot,
                          @PathParam("svc") String service,
                          @QueryParam("scope") @DefaultValue("messages") String scope,
                          @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
                          AddEntityRequest req) throws IOException {
         if (req == null) throw new IllegalArgumentException("request body is required");
+        // Embedded entities in a message model exist to be field types, so they
+        // must be asEmbedded. Default it on unless the caller set it explicitly.
+        Map<String, String> attrs = new LinkedHashMap<>(req.getAttributes());
+        attrs.putIfAbsent("asEmbedded", "true");
         return EntityEditor.addEntity(requireAbsoluteAppRoot(appRoot), service,
-            parseScope(scope), req.getName(), req.toSdkFields(), dryRun);
+            parseScope(scope), req.getName(), attrs, req.toSdkFields(), dryRun);
     }
 
     @DELETE
     @Path("/{name}")
     @Operation(summary = "Remove an embedded entity",
-               description = "Removes the named embedded entity (scope=messages|roe). Its id is reserved (tombstone) so it is never reused.")
+               description = "Removes the named embedded entity (scope=messages|roe). Blocked when a field/collection in the model still references it, unless force=true. Its id is reserved (tombstone) so it is never reused.")
     public ChangeSet remove(@QueryParam("app_root") String appRoot,
                             @PathParam("svc") String service,
                             @PathParam("name") String name,
                             @QueryParam("scope") @DefaultValue("messages") String scope,
-                            @QueryParam("dry_run") @DefaultValue("false") boolean dryRun) throws IOException {
+                            @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
+                            @QueryParam("force") @DefaultValue("false") boolean force) throws IOException {
         return EntityEditor.removeEntity(requireAbsoluteAppRoot(appRoot), service,
-            parseScope(scope), name, dryRun);
+            parseScope(scope), name, dryRun, force);
     }
 
     /** Parse a message-model scope (messages|roe); state entities use {@link StateEntities}. */

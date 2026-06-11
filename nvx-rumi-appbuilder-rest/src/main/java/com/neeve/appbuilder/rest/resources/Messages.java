@@ -97,13 +97,14 @@ public class Messages extends AbstractResource {
     @DELETE
     @Path("/{name}")
     @Operation(summary = "Remove a message type",
-               description = "Removes the named message (scope=messages|roe). Its id is reserved (tombstone) so it is never reused.")
+               description = "Removes the named message (scope=messages|roe). Blocked (409-style) when an api operation or @EventHandler in the service still references it, unless force=true. Its id is reserved (tombstone) so it is never reused.")
     public ChangeSet remove(@QueryParam("app_root") String appRoot,
                             @PathParam("svc") String service,
                             @PathParam("name") String name,
                             @QueryParam("scope") @DefaultValue("messages") String scope,
-                            @QueryParam("dry_run") @DefaultValue("false") boolean dryRun) throws IOException {
+                            @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
+                            @QueryParam("force") @DefaultValue("false") boolean force) throws IOException {
         return MessageEditor.removeMessage(requireAbsoluteAppRoot(appRoot), service,
-            AddFieldRequest.parseScope(scope), name, dryRun);
+            AddFieldRequest.parseScope(scope), name, dryRun, force);
     }
 }
