@@ -21,6 +21,7 @@
  */
 package com.neeve.appbuilder;
 
+import com.neeve.appbuilder.model.EntityDef;
 import com.neeve.appbuilder.model.FieldDef;
 import com.neeve.appbuilder.model.MessageDef;
 import org.w3c.dom.Document;
@@ -38,12 +39,15 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Read-only introspection over a service's {@code messages.xml}. Returns
- * the {@code <message>} declarations with their fields, attributes, and
- * optional ids.
+ * Read-only introspection over an X-ADML message model — a service's private
+ * {@code messages.xml} or the shared app-wide ROE model (selected via
+ * {@link FieldEditor.ModelScope}). Returns the {@code <message>} declarations
+ * with their fields/attributes/ids, and the model's <em>embedded</em>
+ * {@code <entity>} declarations (entities defined alongside the messages, used
+ * as field types).
  *
  * <p>If the file doesn't exist (which shouldn't happen for a well-formed
- * service — every service type scaffolds a messages.xml), both methods
+ * service — every service type scaffolds a messages.xml), the methods
  * return empty. Callers that want existence assertion can check
  * {@link Files#exists} on the result of
  * {@link AppIntrospector#resolveMessagesXmlFile}.
@@ -54,30 +58,83 @@ public final class MessageIntrospector {
     private MessageIntrospector() {}
 
     /**
-     * Return every {@code <message>} declaration in the service's
-     * messages.xml, in document order.
+     * Return every {@code <message>} declaration in the service's private
+     * message model, in document order.
      */
     public static List<MessageDef> listMessages(Path appRoot, String serviceName) throws IOException {
-        Path messagesXml = AppIntrospector.resolveMessagesXmlFile(appRoot, serviceName);
-        if (!Files.exists(messagesXml)) return Collections.emptyList();
-        Document doc;
-        try {
-            doc = XmlDomUtils.parseXmlDocument(messagesXml);
-        } catch (Exception e) {
-            throw new IOException("failed to parse " + messagesXml, e);
-        }
-        return parseMessages(doc);
+        return listMessages(appRoot, serviceName, FieldEditor.ModelScope.SERVICE_MESSAGES);
     }
 
     /**
-     * Return the named {@code <message>} declaration, or {@code null} if
-     * no message with that name exists in the service's messages.xml.
+     * Return every {@code <message>} declaration in the message model named by
+     * {@code scope} ({@link FieldEditor.ModelScope#SERVICE_MESSAGES} or
+     * {@link FieldEditor.ModelScope#ROE_MESSAGES}), in document order.
+     * {@code serviceName} is ignored for the ROE scope.
+     */
+    public static List<MessageDef> listMessages(Path appRoot, String serviceName,
+                                                FieldEditor.ModelScope scope) throws IOException {
+        Document doc = loadMessageModel(appRoot, serviceName, scope);
+        return doc == null ? Collections.emptyList() : parseMessages(doc);
+    }
+
+    /**
+     * Return the named {@code <message>} declaration in the service's private
+     * message model, or {@code null} if absent.
      */
     public static MessageDef getMessage(Path appRoot, String serviceName, String messageName) throws IOException {
-        for (MessageDef m : listMessages(appRoot, serviceName)) {
+        return getMessage(appRoot, serviceName, messageName, FieldEditor.ModelScope.SERVICE_MESSAGES);
+    }
+
+    /**
+     * Return the named {@code <message>} declaration in the message model named
+     * by {@code scope}, or {@code null} if no such message exists.
+     */
+    public static MessageDef getMessage(Path appRoot, String serviceName, String messageName,
+                                        FieldEditor.ModelScope scope) throws IOException {
+        for (MessageDef m : listMessages(appRoot, serviceName, scope)) {
             if (messageName.equals(m.getName())) return m;
         }
         return null;
+    }
+
+    /**
+     * Return every embedded {@code <entity>} declaration in the message model
+     * named by {@code scope}, in document order. These are entities defined
+     * alongside the messages (used as message field types), distinct from a
+     * service's state entities ({@link StateIntrospector}).
+     */
+    public static List<EntityDef> listEntities(Path appRoot, String serviceName,
+                                               FieldEditor.ModelScope scope) throws IOException {
+        Document doc = loadMessageModel(appRoot, serviceName, scope);
+        return doc == null ? Collections.emptyList() : StateIntrospector.parseEntities(doc);
+    }
+
+    /**
+     * Return the named embedded {@code <entity>} in the message model named by
+     * {@code scope}, or {@code null} if absent.
+     */
+    public static EntityDef getEntity(Path appRoot, String serviceName, String entityName,
+                                      FieldEditor.ModelScope scope) throws IOException {
+        for (EntityDef e : listEntities(appRoot, serviceName, scope)) {
+            if (entityName.equals(e.getName())) return e;
+        }
+        return null;
+    }
+
+    /** Load the message model for a scope, or {@code null} if the file is absent. Rejects the state scope. */
+    private static Document loadMessageModel(Path appRoot, String serviceName,
+                                             FieldEditor.ModelScope scope) throws IOException {
+        if (scope == FieldEditor.ModelScope.SERVICE_STATE) {
+            throw new IllegalArgumentException(
+                "message introspection targets a message model, not the state model (scope " + scope + ")");
+        }
+        Path modelFile = FieldEditor.resolveModelFile(appRoot, serviceName, scope);
+        if (!Files.exists(modelFile)) return null;
+        try {
+            return XmlDomUtils.parseXmlDocument(modelFile);
+        } catch (Exception e) {
+            throw new IOException("failed to parse " + modelFile, e);
+        }
     }
 
     static List<MessageDef> parseMessages(Document doc) {

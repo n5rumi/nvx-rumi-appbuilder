@@ -23,6 +23,7 @@ package com.neeve.appbuilder;
 
 import com.neeve.appbuilder.model.ChangeSet;
 import com.neeve.appbuilder.model.FieldDef;
+import org.w3c.dom.Comment;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
@@ -34,23 +35,27 @@ import java.util.List;
 import static com.neeve.appbuilder.MessageIntrospector.ADML_NAMESPACE;
 
 /**
- * Add and remove {@code <message>} declarations in a service's
- * messages.xml. Symmetric with {@link StateEditor} over state.xml.
+ * Add and remove whole {@code <message>} declarations in an X-ADML message
+ * model — either a service's private {@code messages.xml} or the app-wide
+ * shared ROE message model (selected via {@link FieldEditor.ModelScope}).
+ * Symmetric with {@link EntityEditor} over {@code <entity>} declarations.
  *
- * <p>Message IDs are local to the service's message factory — they are
- * not drawn from the app-wide factory-id pool managed by
- * {@link FactoryIdCollector}. Adds pick the next available id by scanning
- * the service's existing messages; removes leave the id unused (the
- * scan-at-next-add picks it up automatically).
+ * <p>Message IDs are local to the model's factory — they are not drawn from
+ * the app-wide factory-id pool managed by {@link FactoryIdCollector}. Allocation
+ * goes through {@link ModelIdAllocator}: a new message gets the high-water-mark
+ * type id, and a removed message leaves an {@code <!-- id=N reserved -->}
+ * tombstone so its id is <em>never re-handed-out</em> (a recycled type id would
+ * let an old peer misinterpret a new message on the wire).
  *
- * <p>Adds are identity-matched on {@code messageName}: adding a message
- * with a name that already exists is a noop.
+ * <p>Adds are identity-matched on {@code messageName}: adding a message with a
+ * name that already exists is a noop.
  */
 public final class MessageEditor {
     private MessageEditor() {}
 
     /**
-     * Add a {@code <message>} declaration to the service's messages.xml.
+     * Add a {@code <message>} to the service's private message model
+     * ({@link FieldEditor.ModelScope#SERVICE_MESSAGES}).
      *
      * @param fields the {@code <field>} declarations to add under the
      *        message. Each field's name and type become the corresponding
@@ -64,14 +69,30 @@ public final class MessageEditor {
                                        String messageName,
                                        List<FieldDef> fields,
                                        boolean dryRun) throws IOException {
-        Path messagesXml = AppIntrospector.resolveMessagesXmlFile(appRoot, serviceName);
-        if (!Files.exists(messagesXml)) {
-            throw new IOException("messages.xml not found at " + messagesXml);
-        }
-        Document doc = loadMessagesDoc(messagesXml);
+        return addMessage(appRoot, serviceName, FieldEditor.ModelScope.SERVICE_MESSAGES,
+            messageName, fields, dryRun);
+    }
+
+    /**
+     * Add a {@code <message>} to the message model named by {@code scope}
+     * ({@link FieldEditor.ModelScope#SERVICE_MESSAGES SERVICE_MESSAGES} or
+     * {@link FieldEditor.ModelScope#ROE_MESSAGES ROE_MESSAGES} — the shared
+     * app-wide model). {@code serviceName} is ignored for the ROE scope.
+     *
+     * @return a ChangeSet; {@link ChangeSet#isNoop()} if a message with the
+     *         same name already exists in that model.
+     */
+    public static ChangeSet addMessage(Path appRoot,
+                                       String serviceName,
+                                       FieldEditor.ModelScope scope,
+                                       String messageName,
+                                       List<FieldDef> fields,
+                                       boolean dryRun) throws IOException {
+        Path modelFile = resolveMessageModelFile(appRoot, serviceName, scope);
+        Document doc = loadMessagesDoc(modelFile);
 
         if (MessageIntrospector.parseMessages(doc).stream().anyMatch(m -> messageName.equals(m.getName()))) {
-            return ChangeSet.noop("message '" + messageName + "' already exists on service " + serviceName);
+            return ChangeSet.noop("message '" + messageName + "' already exists in " + scope + " model");
         }
 
         Element root = doc.getDocumentElement();
@@ -80,67 +101,66 @@ public final class MessageEditor {
         Element message = doc.createElementNS(ADML_NAMESPACE, "message");
         message.setAttribute("name", messageName);
         message.setAttribute("id", String.valueOf(ModelIdAllocator.nextTypeId(doc)));
-        for (FieldDef fd : fields) {
-            Element field = doc.createElementNS(ADML_NAMESPACE, "field");
-            for (var entry : fd.getAttributes().entrySet()) {
-                field.setAttribute(entry.getKey(), entry.getValue());
-            }
-            // Ensure name/type are set even if caller's attribute map omitted them.
-            if (fd.getName() != null && !fd.getAttributes().containsKey("name")) {
-                field.setAttribute("name", fd.getName());
-            }
-            if (fd.getType() != null && !fd.getAttributes().containsKey("type")) {
-                field.setAttribute("type", fd.getType());
-            }
-            // Assign a stable, never-reused field id if the caller didn't supply one.
-            message.appendChild(field);
-            if (!field.hasAttribute("id")) {
-                field.setAttribute("id", String.valueOf(ModelIdAllocator.nextFieldId(message)));
-            }
-        }
+        ModelTypeWriter.appendFields(doc, message, fields);
         messages.appendChild(message);
 
-        ChangeSet.Builder cs = ChangeSet.builder().addModified(messagesXml);
-        if (dryRun) return cs.applied(false).build();
-        try {
-            XmlDomUtils.saveXmlDocument(doc, messagesXml);
-        } catch (Exception e) {
-            throw new IOException("failed to write " + messagesXml, e);
-        }
-        return cs.applied(true).build();
+        return writeBack(doc, modelFile, dryRun);
     }
 
     /**
-     * Remove the named {@code <message>} from messages.xml.
+     * Remove a {@code <message>} from the service's private message model.
      */
     public static ChangeSet removeMessage(Path appRoot,
                                           String serviceName,
                                           String messageName,
                                           boolean dryRun) throws IOException {
-        Path messagesXml = AppIntrospector.resolveMessagesXmlFile(appRoot, serviceName);
-        if (!Files.exists(messagesXml)) {
-            throw new IOException("messages.xml not found at " + messagesXml);
-        }
-        Document doc = loadMessagesDoc(messagesXml);
+        return removeMessage(appRoot, serviceName, FieldEditor.ModelScope.SERVICE_MESSAGES,
+            messageName, dryRun);
+    }
+
+    /**
+     * Remove a {@code <message>} from the message model named by {@code scope}.
+     * The message's id is retired via an {@code <!-- id=N reserved -->} tombstone
+     * so it is never reused. No-op if the message is absent.
+     */
+    public static ChangeSet removeMessage(Path appRoot,
+                                          String serviceName,
+                                          FieldEditor.ModelScope scope,
+                                          String messageName,
+                                          boolean dryRun) throws IOException {
+        Path modelFile = resolveMessageModelFile(appRoot, serviceName, scope);
+        Document doc = loadMessagesDoc(modelFile);
 
         Element target = findMessageElement(doc, messageName);
         if (target == null) {
-            return ChangeSet.noop("no message named '" + messageName + "' on service " + serviceName);
+            return ChangeSet.noop("no message named '" + messageName + "' in " + scope + " model");
         }
 
+        // Retire the type id with a tombstone so it is never re-handed-out.
+        Comment tombstone = ModelIdAllocator.reservedTombstone(doc, target.getAttribute("id"), messageName);
+        if (tombstone != null) {
+            target.getParentNode().insertBefore(tombstone, target);
+        }
         XmlDomUtils.removeElement(target);
 
-        ChangeSet.Builder cs = ChangeSet.builder().addModified(messagesXml);
-        if (dryRun) return cs.applied(false).build();
-        try {
-            XmlDomUtils.saveXmlDocument(doc, messagesXml);
-        } catch (Exception e) {
-            throw new IOException("failed to write " + messagesXml, e);
-        }
-        return cs.applied(true).build();
+        return writeBack(doc, modelFile, dryRun);
     }
 
     // --- internal -----------------------------------------------------
+
+    /** Resolve the message model file for a scope; rejects the state scope. */
+    private static Path resolveMessageModelFile(Path appRoot, String serviceName,
+                                                FieldEditor.ModelScope scope) throws IOException {
+        if (scope == FieldEditor.ModelScope.SERVICE_STATE) {
+            throw new IllegalArgumentException(
+                "messages live in a message model, not the state model (scope " + scope + ")");
+        }
+        Path modelFile = FieldEditor.resolveModelFile(appRoot, serviceName, scope);
+        if (!Files.exists(modelFile)) {
+            throw new IOException("messages.xml not found at " + modelFile);
+        }
+        return modelFile;
+    }
 
     private static Document loadMessagesDoc(Path messagesXml) throws IOException {
         try {
@@ -159,5 +179,16 @@ public final class MessageEditor {
             if (messageName.equals(m.getAttribute("name"))) return m;
         }
         return null;
+    }
+
+    private static ChangeSet writeBack(Document doc, Path modelFile, boolean dryRun) throws IOException {
+        ChangeSet.Builder cs = ChangeSet.builder().addModified(modelFile);
+        if (dryRun) return cs.applied(false).build();
+        try {
+            XmlDomUtils.saveXmlDocument(doc, modelFile);
+        } catch (Exception e) {
+            throw new IOException("failed to write " + modelFile, e);
+        }
+        return cs.applied(true).build();
     }
 }

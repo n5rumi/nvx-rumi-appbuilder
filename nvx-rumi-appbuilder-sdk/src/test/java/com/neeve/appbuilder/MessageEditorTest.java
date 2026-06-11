@@ -21,6 +21,7 @@
  */
 package com.neeve.appbuilder;
 
+import com.neeve.appbuilder.FieldEditor.ModelScope;
 import com.neeve.appbuilder.model.ChangeSet;
 import com.neeve.appbuilder.model.FieldDef;
 import com.neeve.appbuilder.model.MessageDef;
@@ -156,5 +157,49 @@ public class MessageEditorTest {
             List.of(new FieldDef("id", "String", Map.of("key", "true"))), false);
         MessageEditor.removeMessage(appRoot, "feeder", "PlaceOrder", false);
         assertTrue(MessageIntrospector.listMessages(appRoot, "feeder").isEmpty());
+    }
+
+    @Test
+    public void removeMessage_retiresId_neverReused() throws Exception {
+        MessageEditor.addMessage(appRoot, "feeder", "A", Collections.emptyList(), false); // id 1
+        MessageEditor.addMessage(appRoot, "feeder", "B", Collections.emptyList(), false); // id 2
+        MessageEditor.removeMessage(appRoot, "feeder", "B", false);
+
+        String xml = Files.readString(AppIntrospector.resolveMessagesXmlFile(appRoot, "feeder"));
+        assertTrue("removed message leaves a reserved tombstone", xml.contains("id=2 reserved"));
+
+        MessageEditor.addMessage(appRoot, "feeder", "C", Collections.emptyList(), false);
+        assertEquals("must not recycle the retired id 2", Integer.valueOf(3),
+            MessageIntrospector.getMessage(appRoot, "feeder", "C").getId());
+    }
+
+    @Test
+    public void addMessage_toRoeScope_landsInRoeModel() throws Exception {
+        // Stand up an empty ROE message model alongside the service one.
+        Path roe = AppIntrospector.resolveRoeMessagesXmlFile(appRoot);
+        Files.createDirectories(roe.getParent());
+        Files.writeString(roe,
+            "<model xmlns=\"http://www.neeveresearch.com/schema/x-adml\">" +
+            "<factories><factory name=\"Factory\" id=\"1\"/></factories>" +
+            "<messages/><entities/></model>");
+
+        MessageEditor.addMessage(appRoot, "feeder", ModelScope.ROE_MESSAGES, "SharedEvent",
+            List.of(new FieldDef("ts", "long", Map.of())), false);
+
+        assertNotNull("added to the shared ROE model",
+            MessageIntrospector.getMessage(appRoot, "feeder", "SharedEvent", ModelScope.ROE_MESSAGES));
+        // The service's own message model is untouched.
+        assertNull(MessageIntrospector.getMessage(appRoot, "feeder", "SharedEvent"));
+    }
+
+    @Test
+    public void addMessage_rejectsStateScope() throws Exception {
+        try {
+            MessageEditor.addMessage(appRoot, "feeder", ModelScope.SERVICE_STATE, "Nope",
+                Collections.emptyList(), false);
+            fail("expected IllegalArgumentException for the state scope");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().toLowerCase().contains("state"));
+        }
     }
 }

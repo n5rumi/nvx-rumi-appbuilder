@@ -164,6 +164,12 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
 - `1.0` — the current release line; 1.0.x releases are cut here
   (released `1.0.13` as of this writing). Release tags are
   `rumi-appbuilder-<version>`.
+- `feature/connector-and-webservice-services` — unmerged/unpushed in-flight
+  work off `1.0`: webservice + generic `connector` service types (csvwriter
+  renamed), connector snap-in, the in-process test harness + `/test-the-builder`
+  skill, and the model-editing operations (field/api-operation editing; the
+  never-reuse `ModelIdAllocator`). Remaining slices + locked design decisions
+  are tracked in `github/gtm/rumi/TODO.md` (the appbuilder model-editing epic).
 
 ## Git Commits
 

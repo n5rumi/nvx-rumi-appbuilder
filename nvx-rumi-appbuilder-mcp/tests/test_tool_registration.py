@@ -28,11 +28,32 @@ EXPECTED_TOOLS: set[str] = {
     "get_handler",
     "add_handler",
     "remove_handler",
+    # Connectors
+    "list_connectors",
+    "get_connector",
+    "add_connector",
+    "remove_connector",
     # Messages
     "list_messages",
     "get_message",
     "add_message",
     "remove_message",
+    # Message-model embedded entities
+    "list_message_entities",
+    "get_message_entity",
+    "add_message_entity",
+    "remove_message_entity",
+    # Fields
+    "add_field",
+    "delete_field",
+    "deprecate_field",
+    "rename_field",
+    # API operations
+    "list_operations",
+    "get_operation",
+    "add_operation",
+    "remove_operation",
+    "rename_operation",
     # State entities
     "list_state_entities",
     "get_state_entity",

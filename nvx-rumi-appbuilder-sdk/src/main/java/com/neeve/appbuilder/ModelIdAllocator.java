@@ -21,6 +21,7 @@
  */
 package com.neeve.appbuilder;
 
+import org.w3c.dom.Comment;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -104,6 +105,19 @@ final class ModelIdAllocator {
         }
         max = Math.max(max, maxReservedIdUnder(typeElement));
         return max + 1;
+    }
+
+    /**
+     * Build the {@code <!-- id=N reserved (removed NAME) -->} tombstone comment
+     * that retires an id when its element is physically removed. The same format
+     * the hand-written Rumi models use and that {@link #RESERVED_ID} parses back
+     * out, so a removed id is never re-handed-out by {@link #nextTypeId} or
+     * {@link #nextFieldId}. Returns {@code null} when {@code id} is absent/blank
+     * (nothing to reserve).
+     */
+    static Comment reservedTombstone(Document doc, String id, String removedName) {
+        if (id == null || id.isBlank()) return null;
+        return doc.createComment(" id=" + id + " reserved (removed " + removedName + ") ");
     }
 
     // --- internal -----------------------------------------------------

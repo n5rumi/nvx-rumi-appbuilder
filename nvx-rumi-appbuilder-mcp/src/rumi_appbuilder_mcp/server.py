@@ -198,15 +198,15 @@ def build_server(base_url: str | None = None) -> FastMCP:
     # ---- Messages ----------------------------------------------------
 
     @mcp.tool()
-    def list_messages(app_root: str, service: str) -> list[dict[str, Any]]:
-        """List X-ADML message types defined in the service's messages.xml."""
-        return rest.get(f"/v1/services/{service}/messages", {"app_root": app_root})
+    def list_messages(app_root: str, service: str, scope: str = "messages") -> list[dict[str, Any]]:
+        """List X-ADML message types. scope is messages (the service's own model, default) or roe (the shared app-wide model)."""
+        return rest.get(f"/v1/services/{service}/messages", {"app_root": app_root, "scope": scope})
 
     @mcp.tool()
-    def get_message(app_root: str, service: str, name: str) -> dict[str, Any]:
-        """Return a single message type with its fields and local ID."""
+    def get_message(app_root: str, service: str, name: str, scope: str = "messages") -> dict[str, Any]:
+        """Return a single message type with its fields and local ID. scope is messages|roe."""
         return rest.get(
-            f"/v1/services/{service}/messages/{name}", {"app_root": app_root}
+            f"/v1/services/{service}/messages/{name}", {"app_root": app_root, "scope": scope}
         )
 
     @mcp.tool()
@@ -215,23 +215,64 @@ def build_server(base_url: str | None = None) -> FastMCP:
         service: str,
         name: str,
         fields: list[dict[str, Any]] | None = None,
+        scope: str = "messages",
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Add a message type. fields is a list of {name, type, attributes?} objects; attributes is a string->string map (e.g. {"key": "true"})."""
+        """Add a message type. scope is messages (service model, default) or roe (shared app-wide model). fields is a list of {name, type, attributes?} objects; attributes is a string->string map (e.g. {"key": "true"}). The local id is never reused."""
         return rest.post(
             f"/v1/services/{service}/messages",
-            params={"app_root": app_root, "dry_run": str(dry_run).lower()},
+            params={"app_root": app_root, "scope": scope, "dry_run": str(dry_run).lower()},
             json={"name": name, "fields": fields or []},
         )
 
     @mcp.tool()
     def remove_message(
-        app_root: str, service: str, name: str, dry_run: bool = False
+        app_root: str, service: str, name: str, scope: str = "messages", dry_run: bool = False
     ) -> dict[str, Any]:
-        """Remove a message type from a service's messages.xml."""
+        """Remove a message type. scope is messages|roe. Its id is reserved (tombstone) so it is never reused."""
         return rest.delete(
             f"/v1/services/{service}/messages/{name}",
-            params={"app_root": app_root, "dry_run": str(dry_run).lower()},
+            params={"app_root": app_root, "scope": scope, "dry_run": str(dry_run).lower()},
+        )
+
+    # ---- Message-model embedded entities -----------------------------
+
+    @mcp.tool()
+    def list_message_entities(app_root: str, service: str, scope: str = "messages") -> list[dict[str, Any]]:
+        """List embedded X-ADML entities in a message model (entities used as message field types). scope is messages|roe. (State entities are separate — see list_state_entities.)"""
+        return rest.get(f"/v1/services/{service}/message-entities", {"app_root": app_root, "scope": scope})
+
+    @mcp.tool()
+    def get_message_entity(app_root: str, service: str, name: str, scope: str = "messages") -> dict[str, Any]:
+        """Return a single embedded entity from a message model with its fields and local id. scope is messages|roe."""
+        return rest.get(
+            f"/v1/services/{service}/message-entities/{name}", {"app_root": app_root, "scope": scope}
+        )
+
+    @mcp.tool()
+    def add_message_entity(
+        app_root: str,
+        service: str,
+        name: str,
+        fields: list[dict[str, Any]] | None = None,
+        scope: str = "messages",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Add an embedded entity to a message model (a reusable type for message fields). scope is messages (service model, default) or roe (shared app-wide model). fields follow the same shape as add_message. Its local id is never reused."""
+        return rest.post(
+            f"/v1/services/{service}/message-entities",
+            params={"app_root": app_root, "scope": scope, "dry_run": str(dry_run).lower()},
+            json={"name": name, "fields": fields or []},
+        )
+
+    @mcp.tool()
+    def remove_message_entity(
+        app_root: str, service: str, name: str, scope: str = "messages", dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Remove an embedded entity from a message model. scope is messages|roe. Its id is reserved (tombstone) so it is never reused."""
+        return rest.delete(
+            f"/v1/services/{service}/message-entities/{name}",
+            params={"app_root": app_root, "scope": scope, "dry_run": str(dry_run).lower()},
         )
 
     # ---- Fields ------------------------------------------------------

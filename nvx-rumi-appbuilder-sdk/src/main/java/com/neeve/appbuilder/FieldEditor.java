@@ -115,10 +115,9 @@ public final class FieldEditor {
             return ChangeSet.noop("no field '" + fieldName + "' on " + typeName);
         }
 
-        String id = field.getAttribute("id");
         // Leave a tombstone at the field's position so the id stays reserved.
-        if (id != null && !id.isBlank()) {
-            Comment tombstone = doc.createComment(" id=" + id + " reserved (removed " + fieldName + ") ");
+        Comment tombstone = ModelIdAllocator.reservedTombstone(doc, field.getAttribute("id"), fieldName);
+        if (tombstone != null) {
             type.insertBefore(tombstone, field);
         }
         type.removeChild(field);
@@ -169,7 +168,14 @@ public final class FieldEditor {
 
     // --- internal -----------------------------------------------------
 
-    private static Path resolveModelFile(Path appRoot, String serviceName, ModelScope scope) throws IOException {
+    /**
+     * Resolve the X-ADML model file backing a {@link ModelScope}. Package-visible
+     * so the type-level editors ({@link MessageEditor}, {@link EntityEditor}) and
+     * {@link MessageIntrospector} resolve the same files the field editor does.
+     * For {@link ModelScope#ROE_MESSAGES} the {@code serviceName} is ignored — the
+     * ROE model is app-level and shared by every service.
+     */
+    static Path resolveModelFile(Path appRoot, String serviceName, ModelScope scope) throws IOException {
         switch (scope) {
             case SERVICE_MESSAGES: return AppIntrospector.resolveMessagesXmlFile(appRoot, serviceName);
             case SERVICE_STATE:    return AppIntrospector.resolveStateXmlFile(appRoot, serviceName);

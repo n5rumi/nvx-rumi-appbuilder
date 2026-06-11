@@ -23,24 +23,23 @@ package com.neeve.appbuilder;
 
 import com.neeve.appbuilder.model.ChangeSet;
 import com.neeve.appbuilder.model.FieldDef;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static com.neeve.appbuilder.MessageIntrospector.ADML_NAMESPACE;
-
 /**
  * Add and remove {@code <entity>} declarations in a service's state.xml.
- * Symmetric with {@link MessageEditor}. Only processor and webservice
- * services have a state.xml; calling on a driver or connector throws because
- * there's nothing to edit.
+ * The state-only facade over {@link EntityEditor}: it fixes the scope to
+ * {@link FieldEditor.ModelScope#SERVICE_STATE} and adds a
+ * processor-friendly error when the service has no state model. Only processor
+ * and webservice services have a state.xml; calling on a driver or connector
+ * throws because there's nothing to edit.
  *
- * <p>Entity IDs are local to the service's state factory — same
- * allocation behaviour as MessageEditor's message IDs.
+ * <p>Entity IDs are local to the service's state factory; allocation and id
+ * retirement (never-reuse tombstones) are handled by {@link EntityEditor} /
+ * {@link ModelIdAllocator}.
  */
 public final class StateEditor {
     private StateEditor() {}
@@ -56,100 +55,32 @@ public final class StateEditor {
                                            String entityName,
                                            List<FieldDef> fields,
                                            boolean dryRun) throws IOException {
-        Path stateXml = AppIntrospector.resolveStateXmlFile(appRoot, serviceName);
-        if (!Files.exists(stateXml)) {
-            throw new IOException("state.xml not found at " + stateXml
-                + " (is this a processor service?)");
-        }
-        Document doc = loadStateDoc(stateXml);
-
-        if (StateIntrospector.parseEntities(doc).stream().anyMatch(e -> entityName.equals(e.getName()))) {
-            return ChangeSet.noop("entity '" + entityName + "' already exists on service " + serviceName);
-        }
-
-        Element root = doc.getDocumentElement();
-        Element entities = XmlDomUtils.getOrCreateChild(root, "entities");
-
-        Element entity = doc.createElementNS(ADML_NAMESPACE, "entity");
-        entity.setAttribute("name", entityName);
-        entity.setAttribute("id", String.valueOf(ModelIdAllocator.nextTypeId(doc)));
-        for (FieldDef fd : fields) {
-            Element field = doc.createElementNS(ADML_NAMESPACE, "field");
-            for (var entry : fd.getAttributes().entrySet()) {
-                field.setAttribute(entry.getKey(), entry.getValue());
-            }
-            if (fd.getName() != null && !fd.getAttributes().containsKey("name")) {
-                field.setAttribute("name", fd.getName());
-            }
-            if (fd.getType() != null && !fd.getAttributes().containsKey("type")) {
-                field.setAttribute("type", fd.getType());
-            }
-            // Assign a stable, never-reused field id if the caller didn't supply one.
-            entity.appendChild(field);
-            if (!field.hasAttribute("id")) {
-                field.setAttribute("id", String.valueOf(ModelIdAllocator.nextFieldId(entity)));
-            }
-        }
-        entities.appendChild(entity);
-
-        ChangeSet.Builder cs = ChangeSet.builder().addModified(stateXml);
-        if (dryRun) return cs.applied(false).build();
-        try {
-            XmlDomUtils.saveXmlDocument(doc, stateXml);
-        } catch (Exception e) {
-            throw new IOException("failed to write " + stateXml, e);
-        }
-        return cs.applied(true).build();
+        requireStateModel(appRoot, serviceName);
+        return EntityEditor.addEntity(appRoot, serviceName,
+            FieldEditor.ModelScope.SERVICE_STATE, entityName, fields, dryRun);
     }
 
     /**
-     * Remove the named {@code <entity>} from state.xml.
+     * Remove the named {@code <entity>} from state.xml. The entity's id is
+     * retired via a tombstone so it is never reused.
      */
     public static ChangeSet removeStateEntity(Path appRoot,
                                               String serviceName,
                                               String entityName,
                                               boolean dryRun) throws IOException {
-        Path stateXml = AppIntrospector.resolveStateXmlFile(appRoot, serviceName);
-        if (!Files.exists(stateXml)) {
-            throw new IOException("state.xml not found at " + stateXml);
-        }
-        Document doc = loadStateDoc(stateXml);
-
-        Element target = findEntityElement(doc, entityName);
-        if (target == null) {
-            return ChangeSet.noop("no entity named '" + entityName + "' on service " + serviceName);
-        }
-
-        XmlDomUtils.removeElement(target);
-
-        ChangeSet.Builder cs = ChangeSet.builder().addModified(stateXml);
-        if (dryRun) return cs.applied(false).build();
-        try {
-            XmlDomUtils.saveXmlDocument(doc, stateXml);
-        } catch (Exception e) {
-            throw new IOException("failed to write " + stateXml, e);
-        }
-        return cs.applied(true).build();
+        requireStateModel(appRoot, serviceName);
+        return EntityEditor.removeEntity(appRoot, serviceName,
+            FieldEditor.ModelScope.SERVICE_STATE, entityName, dryRun);
     }
 
     // --- internal -----------------------------------------------------
 
-    private static Document loadStateDoc(Path stateXml) throws IOException {
-        try {
-            return XmlDomUtils.parseXmlDocument(stateXml);
-        } catch (Exception e) {
-            throw new IOException("failed to parse " + stateXml, e);
+    /** Fail with a processor-friendly message when the service has no state model. */
+    private static void requireStateModel(Path appRoot, String serviceName) throws IOException {
+        Path stateXml = AppIntrospector.resolveStateXmlFile(appRoot, serviceName);
+        if (!Files.exists(stateXml)) {
+            throw new IOException("state.xml not found at " + stateXml
+                + " (is this a processor service?)");
         }
-    }
-
-    private static Element findEntityElement(Document doc, String entityName) {
-        Element root = doc.getDocumentElement();
-        if (!ADML_NAMESPACE.equals(root.getNamespaceURI())) return null;
-        org.w3c.dom.NodeList entities = doc.getElementsByTagNameNS(ADML_NAMESPACE, "entity");
-        for (int i = 0; i < entities.getLength(); i++) {
-            Element e = (Element) entities.item(i);
-            if (entityName.equals(e.getAttribute("name"))) return e;
-        }
-        return null;
     }
 }
