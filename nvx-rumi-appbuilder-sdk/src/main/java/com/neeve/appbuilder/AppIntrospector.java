@@ -196,6 +196,22 @@ public final class AppIntrospector {
     }
 
     /**
+     * Return the expected path to the app's shared ROE {@code messages.xml}
+     * (the "realm of entities" model under the roe module). App-level, not
+     * service-scoped — the same file is imported by every service.
+     */
+    public static Path resolveRoeMessagesXmlFile(Path appRoot) throws IOException {
+        ApplicationBuilder.AppParams params = loadAppParams(appRoot);
+        String roeArtifactId = params.getTokenMap().get(TokenUtils.toToken("RoeArtifactId"));
+        String appPkgPath = params.getTokenMap().get(TokenUtils.toToken("AppPackagePath"));
+        return appRoot.resolve(roeArtifactId)
+                .resolve("src/main/models")
+                .resolve(appPkgPath)
+                .resolve("roe")
+                .resolve("messages.xml");
+    }
+
+    /**
      * Infer a service's type from its on-disk structure.
      *
      * <p>Signals used, in order (webservice is checked before processor
