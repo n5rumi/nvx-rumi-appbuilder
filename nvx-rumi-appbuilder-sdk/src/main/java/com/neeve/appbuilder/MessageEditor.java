@@ -79,7 +79,7 @@ public final class MessageEditor {
 
         Element message = doc.createElementNS(ADML_NAMESPACE, "message");
         message.setAttribute("name", messageName);
-        message.setAttribute("id", String.valueOf(nextMessageId(doc)));
+        message.setAttribute("id", String.valueOf(ModelIdAllocator.nextTypeId(doc)));
         for (FieldDef fd : fields) {
             Element field = doc.createElementNS(ADML_NAMESPACE, "field");
             for (var entry : fd.getAttributes().entrySet()) {
@@ -92,7 +92,11 @@ public final class MessageEditor {
             if (fd.getType() != null && !fd.getAttributes().containsKey("type")) {
                 field.setAttribute("type", fd.getType());
             }
+            // Assign a stable, never-reused field id if the caller didn't supply one.
             message.appendChild(field);
+            if (!field.hasAttribute("id")) {
+                field.setAttribute("id", String.valueOf(ModelIdAllocator.nextFieldId(message)));
+            }
         }
         messages.appendChild(message);
 
@@ -144,22 +148,6 @@ public final class MessageEditor {
         } catch (Exception e) {
             throw new IOException("failed to parse " + messagesXml, e);
         }
-    }
-
-    /**
-     * Next available message-local id. Scans the service's existing
-     * {@code <message>} elements; fills gaps first, otherwise returns
-     * max + 1 (or 1 if empty).
-     */
-    private static int nextMessageId(Document doc) {
-        var messages = MessageIntrospector.parseMessages(doc);
-        java.util.Set<Integer> used = new java.util.HashSet<>();
-        for (var m : messages) {
-            if (m.getId() != null) used.add(m.getId());
-        }
-        int candidate = 1;
-        while (used.contains(candidate)) candidate++;
-        return candidate;
     }
 
     private static Element findMessageElement(Document doc, String messageName) {

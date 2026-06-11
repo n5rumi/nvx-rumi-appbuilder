@@ -72,7 +72,7 @@ public final class StateEditor {
 
         Element entity = doc.createElementNS(ADML_NAMESPACE, "entity");
         entity.setAttribute("name", entityName);
-        entity.setAttribute("id", String.valueOf(nextEntityId(doc)));
+        entity.setAttribute("id", String.valueOf(ModelIdAllocator.nextTypeId(doc)));
         for (FieldDef fd : fields) {
             Element field = doc.createElementNS(ADML_NAMESPACE, "field");
             for (var entry : fd.getAttributes().entrySet()) {
@@ -84,7 +84,11 @@ public final class StateEditor {
             if (fd.getType() != null && !fd.getAttributes().containsKey("type")) {
                 field.setAttribute("type", fd.getType());
             }
+            // Assign a stable, never-reused field id if the caller didn't supply one.
             entity.appendChild(field);
+            if (!field.hasAttribute("id")) {
+                field.setAttribute("id", String.valueOf(ModelIdAllocator.nextFieldId(entity)));
+            }
         }
         entities.appendChild(entity);
 
@@ -136,17 +140,6 @@ public final class StateEditor {
         } catch (Exception e) {
             throw new IOException("failed to parse " + stateXml, e);
         }
-    }
-
-    private static int nextEntityId(Document doc) {
-        var entities = StateIntrospector.parseEntities(doc);
-        java.util.Set<Integer> used = new java.util.HashSet<>();
-        for (var e : entities) {
-            if (e.getId() != null) used.add(e.getId());
-        }
-        int candidate = 1;
-        while (used.contains(candidate)) candidate++;
-        return candidate;
     }
 
     private static Element findEntityElement(Document doc, String entityName) {

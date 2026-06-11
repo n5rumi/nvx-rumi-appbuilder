@@ -95,7 +95,10 @@ public class MessageEditorTest {
     }
 
     @Test
-    public void addMessage_fillsIdGapBeforeIncrementing() throws Exception {
+    public void addMessage_neverReusesIdGaps() throws Exception {
+        // A gap at id=2 typically means a message was removed; its id must be
+        // retired, not recycled (wire-format backward compatibility). The new
+        // message gets max+1, never the gap.
         PhaseBTestSupport.writeMessagesXml(appRoot, "feeder",
             "<model xmlns=\"http://www.neeveresearch.com/schema/x-adml\">" +
             "<messages>" +
@@ -104,7 +107,22 @@ public class MessageEditorTest {
             "</messages></model>");
         MessageEditor.addMessage(appRoot, "feeder", "B", Collections.emptyList(), false);
         MessageDef b = MessageIntrospector.getMessage(appRoot, "feeder", "B");
-        assertEquals(Integer.valueOf(2), b.getId());
+        assertEquals("must not recycle the freed id 2", Integer.valueOf(4), b.getId());
+    }
+
+    @Test
+    public void addMessage_honorsReservedTombstones() throws Exception {
+        // A deleted message leaves an "id=N reserved" tombstone comment so its
+        // id is never re-handed-out, even though the element is physically gone.
+        PhaseBTestSupport.writeMessagesXml(appRoot, "feeder",
+            "<model xmlns=\"http://www.neeveresearch.com/schema/x-adml\">" +
+            "<messages>" +
+            "  <message name=\"A\" id=\"2\"/>" +
+            "  <!-- id=5 reserved (removed OldMsg) -->" +
+            "</messages></model>");
+        MessageEditor.addMessage(appRoot, "feeder", "B", Collections.emptyList(), false);
+        MessageDef b = MessageIntrospector.getMessage(appRoot, "feeder", "B");
+        assertEquals("must skip the reserved id 5", Integer.valueOf(6), b.getId());
     }
 
     @Test
