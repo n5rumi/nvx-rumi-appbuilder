@@ -293,6 +293,10 @@ public class ServiceBuilder {
         // update the parent pom
         updateParentPom(appRoot, params);
 
+        // record the factory ids this service now owns into the app-global ledger
+        // so they are never reused even after the service is later removed.
+        FactoryIdCollector.recordAllocatedIds(appRoot);
+
         // done
         return this;
     }

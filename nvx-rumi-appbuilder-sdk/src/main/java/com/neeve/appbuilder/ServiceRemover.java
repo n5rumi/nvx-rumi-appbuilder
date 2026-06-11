@@ -45,12 +45,12 @@ import java.util.stream.Stream;
  *
  * <ol>
  *   <li>Snapshot the factory IDs the service owns (so the ChangeSet can
- *       report them as released).
+ *       report which ids the removed service held).
  *   <li>Delete the service's module directory (state.xml, messages.xml,
  *       pom.xml, Main.java, templates, any custom files under the
- *       module). This step automatically frees the factory IDs from the
- *       app's perspective — {@link FactoryIdCollector}'s scan is
- *       source-of-truth.
+ *       module). The factory IDs are <em>not</em> returned to the pool —
+ *       {@link FactoryIdCollector} retains them in its app-global ledger so
+ *       they are never reused (a recycled factory id is a wire-compat hazard).
  *   <li>Remove the module entry from the parent POM.
  *   <li>Remove the service dependency block from the system module POM.
  *   <li>Remove config fragments injected for this service (app/xvm

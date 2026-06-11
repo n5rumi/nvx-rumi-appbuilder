@@ -339,6 +339,9 @@ public class ApplicationBuilder {
         }
         TemplateProcessor.applyTemplate(templateDir, appDir, params.getTokenMap());
         AppParams.write(appRoot, params);
+        // Seed the app-global factory-id ledger with the ids the scaffold created
+        // (e.g. the shared ROE factory) so they are never reused.
+        FactoryIdCollector.recordAllocatedIds(appRoot);
         return this;
     }
 

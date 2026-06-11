@@ -21,6 +21,8 @@
  */
 package com.neeve.appbuilder;
 
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
@@ -28,6 +30,9 @@ import org.w3c.dom.NodeList;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -38,6 +43,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Stream;
 
 /**
@@ -59,6 +65,17 @@ public final class FactoryIdCollector {
     private static final String MODELS_DIR = "src/main/models";
     private static final String MODEL_NAMESPACE = "http://www.neeveresearch.com/schema/x-adml";
     private static final int MAX_FACTORY_ID = Short.MAX_VALUE;
+
+    /**
+     * App-root sidecar holding every factory id ever allocated in the app — the
+     * append-only "retired-and-live" ledger that makes allocation never-reuse.
+     * Factory ids are app-global and must never be recycled (an old peer or a
+     * persisted store could misread a reused id), but a removed service's model
+     * files are deleted, so a pure file scan would offer the freed id as a gap.
+     * The ledger remembers ids past the deletion; it is unioned into the scan at
+     * allocation time and never pruned on removal.
+     */
+    private static final String LEDGER_FILE = ".rumi-factory-ids";
 
     private FactoryIdCollector() {}
 
@@ -147,10 +164,10 @@ public final class FactoryIdCollector {
      * always held the same ID (edge case of corrupted state) — this method
      * throws {@link IllegalStateException} listing the remaining owners.
      *
-     * <p>After a successful call the ID is eligible for reuse by
-     * {@link #nextAvailableId(Path)}'s gap-fill behaviour. No explicit
-     * pool bookkeeping is required; the "pool" is always implicit in the
-     * app's model files.
+     * <p>The released id is <em>not</em> returned to the allocation pool: factory
+     * ids are never reused (see {@link #recordAllocatedIds(Path)} and
+     * {@link #LEDGER_FILE}). This method only asserts the factory element is gone
+     * from the model files; the id stays retired via the ledger.
      */
     public static void release(Path appRoot, int id) throws IOException {
         Map<Integer, String> used = listUsedIds(appRoot);
@@ -161,9 +178,60 @@ public final class FactoryIdCollector {
         }
     }
 
+    /**
+     * Fold every factory id currently present in the app's model files into the
+     * persistent ledger ({@link #LEDGER_FILE}), so those ids stay reserved even
+     * after their owning service is removed and its files deleted. Append-only
+     * and idempotent. Builders call this right after writing new factories (app
+     * scaffold, service add); removal deliberately never prunes the ledger.
+     *
+     * @return the ledger contents after the update (sorted, ascending).
+     */
+    public static List<Integer> recordAllocatedIds(Path appRoot) throws IOException {
+        Set<Integer> ledger = new TreeSet<>(readLedger(appRoot));
+        if (ledger.addAll(scanFactoryIdsInFiles(appRoot))) {
+            writeLedger(appRoot, ledger);
+        }
+        return new ArrayList<>(ledger);
+    }
+
     // ---- internal -----------------------------------------------------
 
+    private static Set<Integer> readLedger(Path appRoot) throws IOException {
+        Path ledgerFile = appRoot.resolve(LEDGER_FILE);
+        if (!Files.exists(ledgerFile)) return new HashSet<>();
+        try (Reader r = Files.newBufferedReader(ledgerFile, StandardCharsets.UTF_8)) {
+            List<Integer> ids = new Gson().fromJson(r, new TypeToken<List<Integer>>() {}.getType());
+            return ids == null ? new HashSet<>() : new HashSet<>(ids);
+        } catch (Exception e) {
+            throw new IOException("failed to read factory-id ledger " + ledgerFile, e);
+        }
+    }
+
+    private static void writeLedger(Path appRoot, Set<Integer> ids) throws IOException {
+        Path ledgerFile = appRoot.resolve(LEDGER_FILE);
+        List<Integer> sorted = new ArrayList<>(ids);
+        Collections.sort(sorted);
+        try (Writer w = Files.newBufferedWriter(ledgerFile, StandardCharsets.UTF_8)) {
+            new Gson().toJson(sorted, w);
+        } catch (Exception e) {
+            throw new IOException("failed to write factory-id ledger " + ledgerFile, e);
+        }
+    }
+
+    /**
+     * Ids that allocation must avoid: every factory id present in a model file
+     * <em>plus</em> every id recorded in the {@link #LEDGER_FILE} ledger (which
+     * includes ids whose owning service has since been removed). This union is
+     * what makes the gap-fill allocation never reuse a removed id.
+     */
     private static Set<Integer> collectUsedIds(Path appRoot) throws IOException {
+        Set<Integer> ids = scanFactoryIdsInFiles(appRoot);
+        ids.addAll(readLedger(appRoot));
+        return ids;
+    }
+
+    private static Set<Integer> scanFactoryIdsInFiles(Path appRoot) throws IOException {
         Set<Integer> usedIds = new HashSet<>();
         try (Stream<Path> walk = Files.walk(appRoot)) {
             walk.filter(path -> path.toString().endsWith(".xml"))

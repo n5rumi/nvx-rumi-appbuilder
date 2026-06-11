@@ -178,6 +178,79 @@ public class FactoryIdCollectorTest {
         FactoryIdCollector.release(appRoot, 2);
     }
 
+    // ---- app-global never-reuse ledger (slice 4) -----------------------
+
+    @Test
+    public void recordAllocatedIds_writesLedger_andRetiresRemovedIds() throws Exception {
+        writeModel("svc-a/src/main/models/messages/messages.xml", 1);
+        writeModel("svc-b/src/main/models/state/state.xml", 2);
+        writeModel("svc-c/src/main/models/messages/messages.xml", 3);
+        assertEquals(List.of(1, 2, 3), FactoryIdCollector.recordAllocatedIds(appRoot));
+        assertTrue("ledger sidecar is written", Files.exists(appRoot.resolve(".rumi-factory-ids")));
+
+        // Remove svc-b's model (its files are gone), leaving a 2-shaped gap.
+        Files.deleteIfExists(appRoot.resolve("svc-b/src/main/models/state/state.xml"));
+
+        // Without the ledger this would gap-fill to 2; the ledger retires it.
+        assertEquals("removed id must not be reused", 4, FactoryIdCollector.nextAvailableId(appRoot));
+    }
+
+    @Test
+    public void ledger_protectsAgainstOutOfBandDeletion() throws Exception {
+        writeModel("svc-a/src/main/models/messages/messages.xml", 1);
+        writeModel("svc-b/src/main/models/messages/messages.xml", 2);
+        FactoryIdCollector.recordAllocatedIds(appRoot);
+
+        // Delete the whole module out of band (not via ServiceRemover).
+        try (Stream<Path> w = Files.walk(appRoot.resolve("svc-b"))) {
+            w.sorted((a, b) -> b.getNameCount() - a.getNameCount())
+             .forEach(p -> { try { Files.deleteIfExists(p); } catch (IOException ignored) {} });
+        }
+        assertEquals("ledger survives out-of-band deletion", 3, FactoryIdCollector.nextAvailableId(appRoot));
+    }
+
+    @Test
+    public void recordAllocatedIds_isAppendOnly_neverPrunes() throws Exception {
+        writeModel("svc-a/src/main/models/messages/messages.xml", 5);
+        FactoryIdCollector.recordAllocatedIds(appRoot);
+        // Delete the only model, then record again — the ledger keeps the id.
+        Files.deleteIfExists(appRoot.resolve("svc-a/src/main/models/messages/messages.xml"));
+        assertEquals(List.of(5), FactoryIdCollector.recordAllocatedIds(appRoot));
+
+        // Allocation is first-gap (frugal): it offers the lowest NEVER-used ids
+        // (1..4) and the next above the high-water mark (6,7) — but never the
+        // retired 5, even though it's now absent from every model file.
+        List<Integer> avail = FactoryIdCollector.collectAvailableFactoryIds(appRoot, 6);
+        assertFalse("retired id 5 must never be offered", avail.contains(5));
+        assertEquals(List.of(1, 2, 3, 4, 6, 7), avail);
+    }
+
+    @Test
+    public void scaffold_addRemoveAdd_doesNotRecycleFactoryIds() throws Exception {
+        Path parent = Files.createTempDirectory("fid-e2e-");
+        try {
+            Path app = com.neeve.appbuilder.test.TestAppFactory.newApp("demo")
+                .packageName("com.example.demo").scaffoldAt(parent);
+            // Baseline = ids owned by the scaffold itself (e.g. the shared ROE factory).
+            java.util.Set<Integer> baseline = new java.util.HashSet<>(FactoryIdCollector.listUsedIds(app).keySet());
+
+            com.neeve.appbuilder.test.TestAppFactory.addProcessor(app, "alpha");
+            java.util.Set<Integer> alphaOwned = new java.util.HashSet<>(FactoryIdCollector.listUsedIds(app).keySet());
+            alphaOwned.removeAll(baseline);
+            assertFalse("alpha allocates its own factory ids", alphaOwned.isEmpty());
+
+            ServiceRemover.removeService(app, "alpha", false);
+            com.neeve.appbuilder.test.TestAppFactory.addProcessor(app, "beta");
+            java.util.Set<Integer> betaOwned = new java.util.HashSet<>(FactoryIdCollector.listUsedIds(app).keySet());
+            betaOwned.removeAll(baseline);
+
+            betaOwned.retainAll(alphaOwned);
+            assertTrue("beta must not reuse any of alpha's retired factory ids: " + betaOwned, betaOwned.isEmpty());
+        } finally {
+            com.neeve.appbuilder.test.TestAppFactory.deleteRecursive(parent);
+        }
+    }
+
     // ---- fixtures -----------------------------------------------------
 
     private void writeModel(String relativePath, int factoryId) throws IOException {
