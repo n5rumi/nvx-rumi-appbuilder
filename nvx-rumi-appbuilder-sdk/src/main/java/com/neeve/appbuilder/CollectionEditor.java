@@ -98,7 +98,10 @@ public final class CollectionEditor {
         }
         collection.setAttribute("name", name);
         collection.setAttribute("is", is);
-        collection.setAttribute("contains", AdmTypes.normalizeFieldType(contains));
+        // 'contains' is a type reference — a collection may only hold entity (or
+        // message) types, never scalars — so it is written verbatim, not run
+        // through scalar normalization.
+        collection.setAttribute("contains", contains);
         collection.setAttribute("id", String.valueOf(ModelIdAllocator.nextTypeId(doc)));
         collections.appendChild(collection);
 

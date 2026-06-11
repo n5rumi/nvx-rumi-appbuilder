@@ -64,12 +64,14 @@ public class CollectionEditorTest {
 
     @Test
     public void addCollection_onState_appears() throws Exception {
-        ChangeSet r = CollectionEditor.addCollection(appRoot, SVC, "ordersBySym", "StringMap", "String", false);
+        // 'contains' is a type reference (entity/message); the editor is low-level
+        // and writes it verbatim — codegen, not the editor, enforces it's an entity.
+        ChangeSet r = CollectionEditor.addCollection(appRoot, SVC, "ordersBySym", "StringMap", "Account", false);
         assertTrue(r.isApplied());
         CollectionDef c = coll("ordersBySym");
         assertNotNull(c);
         assertEquals("StringMap", c.getAttributes().get("is"));
-        assertEquals("String", c.getAttributes().get("contains"));
+        assertEquals("Account", c.getAttributes().get("contains"));
         // Repository entity already holds type id 1, so the collection gets 2.
         assertEquals(Integer.valueOf(2), c.getId());
     }
@@ -82,15 +84,17 @@ public class CollectionEditorTest {
     }
 
     @Test
-    public void addCollection_normalizesScalarContains() throws Exception {
-        CollectionEditor.addCollection(appRoot, SVC, "counts", "StringMap", "long", false);
-        assertEquals("Long", coll("counts").getAttributes().get("contains"));
+    public void addCollection_writesContainsVerbatim() throws Exception {
+        // 'contains' is an entity/message reference, not a scalar, so it is NOT
+        // run through scalar normalization — it is written exactly as given.
+        CollectionEditor.addCollection(appRoot, SVC, "byAcct", "StringMap", "Account", false);
+        assertEquals("Account", coll("byAcct").getAttributes().get("contains"));
     }
 
     @Test
     public void addCollection_isIdempotent() throws Exception {
-        CollectionEditor.addCollection(appRoot, SVC, "q", "Queue", "String", false);
-        ChangeSet r = CollectionEditor.addCollection(appRoot, SVC, "q", "Queue", "String", false);
+        CollectionEditor.addCollection(appRoot, SVC, "q", "Queue", "Account", false);
+        ChangeSet r = CollectionEditor.addCollection(appRoot, SVC, "q", "Queue", "Account", false);
         assertTrue(r.isNoop());
         assertEquals(1, StateIntrospector.listCollections(appRoot, SVC).size());
     }
@@ -109,14 +113,14 @@ public class CollectionEditorTest {
 
     @Test
     public void removeCollection_retiresId_neverReused() throws Exception {
-        CollectionEditor.addCollection(appRoot, SVC, "a", "Queue", "String", false); // id 2
-        CollectionEditor.addCollection(appRoot, SVC, "b", "Queue", "String", false); // id 3
+        CollectionEditor.addCollection(appRoot, SVC, "a", "Queue", "Account", false); // id 2
+        CollectionEditor.addCollection(appRoot, SVC, "b", "Queue", "Account", false); // id 3
         CollectionEditor.removeCollection(appRoot, SVC, "b", false);
 
         String xml = Files.readString(AppIntrospector.resolveStateXmlFile(appRoot, SVC));
         assertTrue("removed collection leaves a reserved tombstone", xml.contains("id=3 reserved"));
 
-        CollectionEditor.addCollection(appRoot, SVC, "c", "Queue", "String", false);
+        CollectionEditor.addCollection(appRoot, SVC, "c", "Queue", "Account", false);
         assertEquals("must not recycle the retired id 3", Integer.valueOf(4), coll("c").getId());
     }
 
