@@ -12,8 +12,15 @@ authors = [
     { name = "N5 Technologies, Inc." }
 ]
 license = { text = "Apache-2.0" }
+# mcp is CAPPED below 2.0: mcp 2.0.0 removed `mcp.server.fastmcp` (the FastMCP
+# entrypoint server.py imports), and the floor is >=1.10 because the older
+# FastMCP `Tool.from_function` (<=1.9.x) crashes registering tools that use
+# union/Optional annotations (e.g. `str | None`) with
+# "issubclass() arg 1 must be a class". Verified: mcp 1.29.0 registers all tools
+# cleanly; 1.9.4 and 2.0.0 both fail. The old unbounded `mcp>=1.4.0` let an AMI
+# bake resolve mcp 2.0.0 and the Dev MCP crash-looped on every baked box.
 dependencies = [
-    "mcp>=1.4.0",
+    "mcp>=1.10,<2",
     "httpx>=0.27",
     "pydantic>=2.6",
 ]
