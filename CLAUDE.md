@@ -46,6 +46,12 @@ fragments. Inspect what's there.
   Resource class structure modelled on `datafye-api-rest`.
 - **MCP**: Python 3.11+, official MCP SDK. Hand-written or
   auto-generated from the REST service's OpenAPI spec (TBD).
+  **`mcp` is pinned `>=1.10,<2`** in `nvx-rumi-appbuilder-mcp/pyproject.toml`:
+  `mcp 2.0.0` removed `mcp.server.fastmcp` (the FastMCP entrypoint `server.py`
+  imports) and `<=1.9.x` has an older `Tool.from_function` that crashes on
+  union/`Optional` tool params. The prior unbounded `mcp>=1.4.0` let AMI bakes
+  resolve `mcp 2.0.0`, crash-looping the Dev MCP on every baked agent box.
+  `httpx`/`pydantic` are likewise capped (`<1`/`<3`).
 
 ## Project Structure
 
