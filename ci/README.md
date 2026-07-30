@@ -39,6 +39,33 @@ release inside the toolchain container using TeamCity's native steps:
 The SDK is also deployed to nexus by the preceding `SDK: …` Maven steps in the
 same build. On success, tag: `git tag v${VERSION} && git push origin v${VERSION}`.
 
+## TeamCity snapshot build config
+
+The 1.0-SNAPSHOT build (`RumiGroup_Dev_2_AppBuilder_2_10_10snapshot`) is
+VCS-triggered off the `1.0` branch and has three steps:
+
+1. **SDK + REST: Build & Deploy** — Maven `clean deploy -U` over the whole reactor.
+2. **REST: Package dist** — Maven `clean package -pl nvx-rumi-appbuilder-rest -Pdist -Darch=linux-x86-64 -DskipTests`.
+3. **MCP: Validate syntax** — command-line `python3 -m compileall -q nvx-rumi-appbuilder-mcp/src`.
+
+**Both App Builder build configs pin `teamcity.agent.name = Default Agent`.**
+The release build needs it for the downloads tree; the snapshot build needs it
+because **step 3 requires a `python3` on `PATH`, and only two of the four
+authorized agents have one**:
+
+| Agent | `python3` |
+|---|---|
+| Default Agent | ✅ `/usr/bin/python3` |
+| Lab Agent1 (Perf1) | ❌ python2 only |
+| Lab Agent2 (Perf1) | ❌ python2 only |
+| OSX Agent | ✅ `/usr/bin/python3` |
+
+Without the pin the snapshot build passes or fails purely on where the scheduler
+happens to place it — on a lab agent step 3 dies with `python3: command not
+found` / exit 127 while the Java steps go green. If you add a step with a new
+host-tool dependency, check it against the agent inventory (or add a matching
+agent requirement) rather than relying on placement luck.
+
 ## Smoke after publish
 
 Once the build reports success, a lightweight integration check:

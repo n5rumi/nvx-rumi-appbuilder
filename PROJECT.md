@@ -570,6 +570,28 @@ The lesson: don't publish arches you can't actually build — the arm
 sandbox bases (`nvx-rumi:sandbox-{linux,osx}-arm-64`) aren't published,
 so claiming arm support would just hand users a broken install.
 
+### An unpinned CI step is a landmine that fires on an unrelated commit
+
+The snapshot build's third step validates the MCP sources with `python3 -m
+compileall`. The build config had **no agent requirements**, and only two of the
+four authorized TeamCity agents carry a `python3` (the two lab/perf agents are
+python2-only). For five consecutive builds the scheduler happened to pick the
+Default Agent and everything was green — then a **docs-only commit** (six added
+lines of markdown, no code) landed on a lab agent and the build went red with
+`python3: command not found`, exit 127, after 216 Java tests had already passed.
+
+Two things worth carrying forward. First, the *diagnostic* one: when a build
+fails on a commit that cannot possibly have caused it, stop reading the diff and
+start diffing the *environment* — compare the agent, the toolchain, and the
+parameters against the last green run. The revision is the most visible variable
+but it isn't always the one that changed. Second, the *preventive* one: any CI
+step that shells out to a host tool has an implicit host dependency, and an
+implicit dependency with no agent requirement to enforce it isn't a working
+build, it's a build that hasn't been unlucky yet. Both App Builder configs now
+pin `teamcity.agent.name = Default Agent` — the release build for the downloads
+tree, the snapshot build for `python3`. See `ci/README.md` for the agent
+inventory.
+
 ### Containerize the release toolchain, not the product
 
 The build agents are Amazon Linux 2 (Python 3.7, old OpenSSL, no Java
