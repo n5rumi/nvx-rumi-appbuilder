@@ -168,8 +168,14 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
 - `develop` — active development
 - `main` — stable releases
 - `1.0` — the current release line; 1.0.x releases are cut here
-  (released `1.0.13` as of this writing). Release tags are
+  (released `1.0.16` as of this writing). Release tags are
   `rumi-appbuilder-<version>`.
+- **The three branches are kept in lockstep.** After pushing to `develop`,
+  fast-forward `1.0` and `main` to it and push both.
+- ⚠️ **The snapshot build tracks `1.0`, not `develop`.** The VCS root for
+  `RumiGroup_Dev_..._10snapshot` resolves `build.appbuilder.branch = 1.0`,
+  so a push to `develop` alone triggers **nothing** — no build, no error,
+  silence. Always fast-forward `1.0` (and `main`) after pushing `develop`.
 - `feature/connector-and-webservice-services` — **merged (fast-forward) into
   both `1.0` and `main`, deleted, and pushed.** Its work is now on `1.0` and
   `main`: webservice + generic `connector` service types (csvwriter renamed),
@@ -182,6 +188,30 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
   field/collection/operation/handler references unless forced); and app-global
   factory-id never-reuse via the `.rumi-factory-ids` ledger. Ids are never
   reused — removals leave an `id=N reserved` tombstone (`ModelIdAllocator`).
+
+## Milestone Version Bumps
+
+When picking up a new Rumi milestone, **only `nvx.rumi.version` in
+`nvx-rumi-appbuilder-rest/pom.xml` changes.** Everything else in that
+`<properties>` block is effectively locked:
+
+| Property | Locked at |
+|---|---|
+| `jetty.version` | `12.0.16` |
+| `jersey.version` | `3.1.11` |
+| `jackson.version` | `2.18.2` |
+| `swagger.version` | `2.2.36` |
+| `slf4j.version` | `2.0.16` |
+
+⚠️ **`mvn versions:update-properties` pulls pre-release artifacts here.**
+There is no version-range restriction configured (no `rulesUri`, no
+`ignoredVersions`), so the plugin happily selects milestone and alpha
+builds. On the 4.0.637 run it proposed jersey `4.0.0-M2` (a **milestone**)
+and slf4j `2.1.0-alpha1` (an **alpha**), alongside jetty `12.1.11`,
+jackson `2.22.1`, and swagger `2.2.52`. All were reverted.
+
+**Review the full `git diff` before committing a version bump** — the bump
+commit should touch exactly one line.
 
 ## Git Commits
 

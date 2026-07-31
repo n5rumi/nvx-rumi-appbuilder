@@ -608,3 +608,45 @@ arch's clean would delete the previous arch's tarball. This is also why
 build hosts need `python3.11` explicitly: AL2023/RHEL9 ship
 `python3` = 3.9, below the MCP's `>=3.11` floor, so the MCP build and
 installer probe for `python3.11` first.
+
+### A build that watches a different branch fails by saying nothing
+
+Cutting the 4.0.637 milestone (July 2026, App Builder 1.0.16), the version
+bump went to `develop` and was pushed. Then: nothing. No build queued, no
+red build, no email. The snapshot config's VCS root resolves
+`build.appbuilder.branch = 1.0`, and `develop` simply isn't a branch it
+watches. The fix is one line of git — fast-forward `1.0` and `main` to
+`develop` and push them, which this repo does anyway since the three
+branches are kept in lockstep.
+
+The lesson is about the *failure mode*, not the branch name. A VCS trigger
+that watches a branch you didn't push to doesn't fail — it declines to
+happen. Nothing turns red, so there's no signal to chase; you find out
+later, when someone asks why the artifact everyone assumed was published
+isn't there. A build that fails loudly is a gift by comparison: it names
+itself and hands you a log. Silence is the expensive failure, which is why
+"did the push actually trigger a build?" belongs in the release checklist
+right next to "did the build go green?" — the first question is the one you
+forget to ask.
+
+### `versions:update-properties` will happily hand you an alpha
+
+The other trap on that same milestone bump. Running
+`mvn versions:update-properties` to pick up the new `nvx.rumi.version`
+also rewrote five unrelated properties in
+`nvx-rumi-appbuilder-rest/pom.xml`: jetty `12.0.16` → `12.1.11`, jackson
+`2.18.2` → `2.22.1`, swagger `2.2.36` → `2.2.52`, and — the two that
+matter — jersey `3.1.11` → **`4.0.0-M2`**, a milestone build, and slf4j
+`2.0.16` → **`2.1.0-alpha1`**, an alpha. A jersey major-version jump alone
+would have moved the REST service onto a different Jakarta baseline.
+
+The plugin isn't misbehaving; it's doing exactly what it was told, because
+nothing told it otherwise. There's no `rulesUri` and no `ignoredVersions`
+here, so "latest" means the newest thing in the repository, pre-release
+artifacts included. Two habits fall out of that. First, treat this REST
+pom's dependency versions as **locked** — a milestone bump changes
+`nvx.rumi.version` and nothing else, so the commit is a one-line diff.
+Second, and more general: never let a tool that rewrites your build files
+commit unreviewed. Read the full `git diff` before staging, every time.
+The five reverted lines cost thirty seconds to spot in a diff and would
+have cost an afternoon to spot in a stack trace.
