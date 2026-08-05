@@ -263,6 +263,10 @@ unpack of the `x-ddl`, `x-adml` and `x-asml` schemas (RUMI-377). The schemas
 are no longer checked in, so they follow that one line automatically and
 cannot drift.
 
+`mvn -Pneeve versions:update-properties` makes that edit correctly — the root
+POM configures the plugin so it updates this property and nothing else. Confirm
+the line actually moved before committing; see the caveats below for why.
+
 Everything else in `nvx-rumi-appbuilder-rest/pom.xml`'s `<properties>` block
 is effectively locked:
 
@@ -279,7 +283,8 @@ move*. A deliberate security bump is a different thing and is expected: jetty
 and jackson were bumped for RUMI-381 to clear 14 Dependabot alerts. Two rules
 make that safe. Stay within the same minor line, so the bump cannot cross a
 Jakarta baseline the way jersey `4.0.0-M2` would. And edit the properties by
-hand — never reach for `versions:update-properties`, for the reason below.
+hand — `versions:update-properties` is now configured so it *cannot* reach
+them, for the reason below.
 
 ⚠️ **The webservice service template has its own `jetty.version`**, in
 `nvx-rumi-appbuilder-sdk/src/main/resources/templates/maven/service/webservice/sr/{{ServiceArtifactId}}/pom.xml`.
@@ -289,12 +294,38 @@ pin before anyone noticed. `ci/verify-generated-app.sh` is what proves such a
 bump has not broken generated apps: it boots a scaffolded webservice and
 exercises the HTTP round trip.
 
-⚠️ **`mvn versions:update-properties` pulls pre-release artifacts here.**
-There is no version-range restriction configured (no `rulesUri`, no
-`ignoredVersions`), so the plugin happily selects milestone and alpha
-builds. On the 4.0.637 run it proposed jersey `4.0.0-M2` (a **milestone**)
-and slf4j `2.1.0-alpha1` (an **alpha**), alongside jetty `12.1.11`,
-jackson `2.22.1`, and swagger `2.2.52`. All were reverted.
+### Why the versions plugin is configured the way it is
+
+The root POM's `pluginManagement` constrains `versions-maven-plugin` to a
+single property. Both halves of that configuration are load-bearing.
+
+⚠️ **Auto-linking cannot find `nvx.rumi.version` on its own.** The property is
+declared in the root POM, but the dependency that uses it
+(`com.neeve:nvx-rumi`) is declared in `nvx-rumi-appbuilder-rest`. The plugin
+associates properties with dependencies *within a project*, so at the
+aggregator it saw a property with nothing to link and skipped it — silently,
+with `BUILD SUCCESS` and no mention of the property at all. The failure mode is
+nasty precisely because it is quiet: on the 4.0.640 milestone the bump appeared
+to succeed while leaving App Builder pinned to 4.0.637, and only a manual check
+of the diff caught it. The explicit `<properties>` association is that missing
+link. **A silent no-op looks exactly like a no-op that was correct** — after a
+milestone bump, confirm the property actually moved rather than trusting the
+exit code.
+
+⚠️ **`versions-maven-plugin` is pinned at 2.1 by `nvx-os-parent`**, which
+predates `ignoredVersions`, so it cannot be told to skip pre-releases and will
+happily select milestone and alpha artifacts. On the 4.0.637 run it proposed
+jersey `4.0.0-M2` (a **milestone**) and slf4j `2.1.0-alpha1` (an **alpha**),
+alongside jetty `12.1.11`, jackson `2.22.1`, and swagger `2.2.52`; on 4.0.640 it
+proposed the same again. `<includeProperties>nvx.rumi.version</includeProperties>`
+is the fix available at 2.1 — rather than filtering out bad *versions*, it
+narrows the plugin to the one *property* a milestone is allowed to move. The
+locked pins are now unreachable by the goal, so they can no longer be swept into
+a bump commit by accident.
+
+The trade-off: `versions:display-property-updates` honours the same parameter,
+so it will no longer report available jetty/jackson/etc. updates. Dependabot is
+the mechanism for that visibility, and it is what drove RUMI-381.
 
 **Review the full `git diff` before committing a version bump** — the bump
 commit should touch exactly one line.

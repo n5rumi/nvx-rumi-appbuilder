@@ -57,6 +57,44 @@
                         <release>11</release>
                     </configuration>
                 </plugin>
+
+                <!-- Makes `versions:update-properties` do the milestone bump, and
+                     only the milestone bump.
+
+                     Two problems this solves. First, nvx.rumi.version lives here
+                     in the parent while the dependency that uses it
+                     (com.neeve:nvx-rumi) lives in the REST module, so the plugin's
+                     auto-linking found nothing to associate at the aggregator and
+                     silently left the property alone — a milestone bump appeared to
+                     succeed while pinning the previous milestone. The explicit
+                     association below is that missing link.
+
+                     Second, everything else here is deliberately hand-managed. The
+                     pinned plugin (2.1, from nvx-os-parent) predates ignoredVersions,
+                     so it happily proposes milestone and alpha artifacts — it has
+                     offered jersey 4.0.0-M2 and slf4j 2.1.0-alpha1. includeProperties
+                     confines it to the one property a milestone is allowed to move;
+                     the locked jetty/jersey/jackson/swagger/slf4j pins in
+                     nvx-rumi-appbuilder-rest stay hand-edited, as documented in
+                     CLAUDE.md. -->
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>versions-maven-plugin</artifactId>
+                    <configuration>
+                        <includeProperties>nvx.rumi.version</includeProperties>
+                        <properties>
+                            <property>
+                                <name>nvx.rumi.version</name>
+                                <dependencies>
+                                    <dependency>
+                                        <groupId>com.neeve</groupId>
+                                        <artifactId>nvx-rumi</artifactId>
+                                    </dependency>
+                                </dependencies>
+                            </property>
+                        </properties>
+                    </configuration>
+                </plugin>
             </plugins>
         </pluginManagement>
 
