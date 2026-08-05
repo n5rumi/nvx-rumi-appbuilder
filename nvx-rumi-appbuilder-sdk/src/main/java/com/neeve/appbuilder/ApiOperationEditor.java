@@ -31,8 +31,11 @@ import org.w3c.dom.NodeList;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static com.neeve.appbuilder.ApiIntrospector.ASML_NAMESPACE;
 
@@ -43,10 +46,10 @@ import static com.neeve.appbuilder.ApiIntrospector.ASML_NAMESPACE;
  * typed client method.
  *
  * <p>Operations carry no wire id, so removing one simply drops a generated
- * client method — there is no id to retire. Adds validate that the
- * {@code inMessage}/{@code outMessage} actually exist (in the service's own
- * message model or the shared ROE model), so a typo can't silently produce a
- * broken client.
+ * client method — there is no id to retire. Adds validate that
+ * {@code inMessage}/{@code outMessage} resolve against the single message model
+ * this service's api.xml names, which is what the generator does, so a message
+ * the client cannot be built from is rejected here rather than at codegen.
  */
 public final class ApiOperationEditor {
     private ApiOperationEditor() {}
@@ -63,13 +66,13 @@ public final class ApiOperationEditor {
         if (findOperation(doc, name) != null) {
             return ChangeSet.noop("operation '" + name + "' already exists on service " + serviceName);
         }
-        Set<String> known = knownMessageNames(appRoot, serviceName);
-        if (!known.isEmpty()) {
-            if (inMessage != null && !known.contains(inMessage)) {
-                throw new IllegalArgumentException("inMessage '" + inMessage + "' is not a known message");
+        ResolutionScope scope = resolutionScope(doc, appRoot);
+        if (scope != null) {
+            if (inMessage != null && !scope.messageNames.contains(inMessage)) {
+                throw new IllegalArgumentException(unresolvable("inMessage", inMessage, scope));
             }
-            if (outMessage != null && !known.contains(outMessage)) {
-                throw new IllegalArgumentException("outMessage '" + outMessage + "' is not a known message");
+            if (outMessage != null && !scope.messageNames.contains(outMessage)) {
+                throw new IllegalArgumentException(unresolvable("outMessage", outMessage, scope));
             }
         }
 
@@ -133,23 +136,116 @@ public final class ApiOperationEditor {
         return null;
     }
 
-    /** Message names visible to this service's api: its own model plus the shared ROE model. */
-    private static Set<String> knownMessageNames(Path appRoot, String serviceName) throws IOException {
-        Set<String> names = new HashSet<>();
-        for (MessageDef m : MessageIntrospector.listMessages(appRoot, serviceName)) {
-            names.add(m.getName());
+    /** The single model an api.xml's operations resolve against, and its message names. */
+    private static final class ResolutionScope {
+        final String modelFile;      // as written in the api.xml
+        final Set<String> messageNames;
+
+        ResolutionScope(String modelFile, Set<String> messageNames) {
+            this.modelFile = modelFile;
+            this.messageNames = messageNames;
         }
-        Path roe = AppIntrospector.resolveRoeMessagesXmlFile(appRoot);
-        if (Files.exists(roe)) {
-            try {
-                for (MessageDef m : MessageIntrospector.parseMessages(XmlDomUtils.parseXmlDocument(roe))) {
-                    names.add(m.getName());
-                }
-            } catch (Exception ignored) {
-                // best-effort: if ROE can't be read, validate against what we have
+    }
+
+    /**
+     * Resolve the ONE message model this api.xml's operations are checked
+     * against: the model named by its {@code <messages modelFile="..."/>}.
+     *
+     * <p>Two things this deliberately does not do, both of which were how an
+     * earlier version got it wrong. It does not assume the model is the shared
+     * ROE model — that is a scaffolding convention, and the api.xml belongs to
+     * the user, who may point it anywhere. And it does not union the service's
+     * own message model in: {@code AsmModel.resolveMessage} does a local lookup
+     * on the named model and does not follow that model's imports, so a
+     * validator that accepted more than the generator resolves would let
+     * exactly the bad edit through that this check exists to catch.
+     *
+     * <p>The rule is to mirror the generator. Broader lets a bad edit through;
+     * narrower rejects a legitimate one.
+     *
+     * @return null when the scope cannot be established (no {@code <messages>}
+     *         element, or the model file is missing or unparseable), in which
+     *         case the caller must skip the check rather than guess — the same
+     *         conservative posture {@link ModelValidator} takes.
+     */
+    private static ResolutionScope resolutionScope(Document apiDoc, Path appRoot) {
+        Element messages = firstChild(apiDoc.getDocumentElement(), "messages");
+        if (messages == null) {
+            return null;
+        }
+        String modelFile = messages.getAttribute("modelFile");
+        if (modelFile == null || modelFile.trim().isEmpty()) {
+            return null;
+        }
+        modelFile = modelFile.trim();
+
+        Path target = resolveModelFile(appRoot, modelFile);
+        if (target == null) {
+            return null;
+        }
+        Set<String> names = new HashSet<>();
+        try {
+            for (MessageDef m : MessageIntrospector.parseMessages(XmlDomUtils.parseXmlDocument(target))) {
+                names.add(m.getName());
+            }
+        } catch (Exception e) {
+            return null;
+        }
+        return new ResolutionScope(modelFile, names);
+    }
+
+    /**
+     * Locate the model named by an api.xml's {@code modelFile}, which is a
+     * package-style path relative to a models root.
+     *
+     * <p>It is resolved against EVERY module's {@code src/main/models}, not
+     * just the service's own, because the shared ROE model — the one a
+     * scaffolded api.xml names — lives in a different Maven module. At build
+     * time the generator finds it on the classpath, where module boundaries
+     * have already been flattened; here they have not.
+     *
+     * @return the model file, or null if no module has it.
+     */
+    private static Path resolveModelFile(Path appRoot, String modelFile) {
+        List<Path> roots = new ArrayList<>();
+        try (Stream<Path> modules = Files.list(appRoot)) {
+            modules.filter(Files::isDirectory)
+                   .map(m -> m.resolve("src").resolve("main").resolve("models"))
+                   .filter(Files::isDirectory)
+                   .forEach(roots::add);
+        } catch (IOException e) {
+            return null;
+        }
+        for (Path root : roots) {
+            Path candidate = root.resolve(modelFile);
+            if (Files.exists(candidate)) {
+                return candidate;
             }
         }
-        return names;
+        return null;
+    }
+
+    private static String unresolvable(String attribute, String message, ResolutionScope scope) {
+        return attribute + " '" + message + "' is not defined in '" + scope.modelFile
+            + "', the message model this service's api.xml resolves operations against. "
+            + "A message named by an operation is part of the service's public contract, "
+            + "so it belongs in that model — for a scaffolded app that is the shared ROE "
+            + "model (add it with scope \"roe\"). A service's own message model is for "
+            + "messages that never leave the service.";
+    }
+
+    private static Element firstChild(Element parent, String localName) {
+        if (parent == null) {
+            return null;
+        }
+        NodeList children = parent.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node n = children.item(i);
+            if (n instanceof Element && localName.equals(n.getLocalName())) {
+                return (Element) n;
+            }
+        }
+        return null;
     }
 
     private static ChangeSet writeBack(Document doc, Path apiXml, boolean dryRun) throws IOException {
