@@ -69,7 +69,7 @@ public class StateEditorTest {
     @Test
     public void addStateEntity_insertsWithAutoId() throws Exception {
         ChangeSet r = StateEditor.addStateEntity(appRoot, "orderProcessor", "Order",
-            List.of(new FieldDef("id", "String", Map.of("key", "true")),
+            List.of(new FieldDef("id", "String", Map.of("isKey", "true")),
                     new FieldDef("status", "String", Map.of())),
             false);
         assertTrue(r.isApplied());
@@ -77,7 +77,7 @@ public class StateEditorTest {
         assertNotNull(order);
         assertEquals(Integer.valueOf(1), order.getId());
         assertEquals(2, order.getFields().size());
-        assertEquals("true", order.getFields().get(0).getAttributes().get("key"));
+        assertEquals("true", order.getFields().get(0).getAttributes().get("isKey"));
     }
 
     @Test

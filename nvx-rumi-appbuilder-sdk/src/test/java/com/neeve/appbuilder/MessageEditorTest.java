@@ -154,7 +154,7 @@ public class MessageEditorTest {
     @Test
     public void addThenRemove_roundTrip() throws Exception {
         MessageEditor.addMessage(appRoot, "feeder", "PlaceOrder",
-            List.of(new FieldDef("id", "String", Map.of("key", "true"))), false);
+            List.of(new FieldDef("id", "String", Map.of("isKey", "true"))), false);
         MessageEditor.removeMessage(appRoot, "feeder", "PlaceOrder", false);
         assertTrue(MessageIntrospector.listMessages(appRoot, "feeder").isEmpty());
     }

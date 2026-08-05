@@ -67,7 +67,7 @@ public class StateIntrospectorTest {
             "<model xmlns=\"http://www.neeveresearch.com/schema/x-adml\">" +
             "<entities>" +
             "  <entity name=\"Order\" id=\"1\">" +
-            "    <field name=\"id\" type=\"String\" key=\"true\"/>" +
+            "    <field name=\"id\" type=\"String\" isKey=\"true\"/>" +
             "    <field name=\"status\" type=\"String\"/>" +
             "  </entity>" +
             "  <entity name=\"Trade\" id=\"2\">" +
@@ -80,7 +80,7 @@ public class StateIntrospectorTest {
         assertEquals("Order", entities.get(0).getName());
         assertEquals(Integer.valueOf(1), entities.get(0).getId());
         assertEquals(2, entities.get(0).getFields().size());
-        assertEquals("true", entities.get(0).getFields().get(0).getAttributes().get("key"));
+        assertEquals("true", entities.get(0).getFields().get(0).getAttributes().get("isKey"));
 
         assertEquals("Trade", entities.get(1).getName());
         assertEquals(1, entities.get(1).getFields().size());

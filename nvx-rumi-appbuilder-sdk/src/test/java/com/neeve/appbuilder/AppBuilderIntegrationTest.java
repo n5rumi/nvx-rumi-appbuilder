@@ -197,7 +197,7 @@ public class AppBuilderIntegrationTest {
 
         // Add a state entity.
         StateEditor.addStateEntity(appRoot, "order-processor", "Order",
-            List.of(new FieldDef("id", "String", Map.of("key", "true"))),
+            List.of(new FieldDef("id", "String", Map.of("isKey", "true"))),
             false);
         AppBuilderAssertions.assertStateEntityExists(appRoot, "order-processor", "Order");
 

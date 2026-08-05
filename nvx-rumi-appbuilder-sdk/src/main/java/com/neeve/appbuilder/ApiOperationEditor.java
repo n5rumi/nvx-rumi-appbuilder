@@ -154,12 +154,15 @@ public final class ApiOperationEditor {
 
     private static ChangeSet writeBack(Document doc, Path apiXml, boolean dryRun) throws IOException {
         ChangeSet.Builder cs = ChangeSet.builder().addModified(apiXml);
-        if (dryRun) return cs.applied(false).build();
         try {
-            XmlDomUtils.saveXmlDocument(doc, apiXml);
+            // Dry runs validate too, so a "safe" dry run cannot be followed
+            // by a rejected write.
+            ModelWriter.saveValidated(doc, apiXml, dryRun);
+        } catch (ModelValidationException e) {
+            throw e; // a rejected edit is the answer, not a write failure
         } catch (Exception e) {
             throw new IOException("failed to write " + apiXml, e);
         }
-        return cs.applied(true).build();
+        return cs.applied(!dryRun).build();
     }
 }

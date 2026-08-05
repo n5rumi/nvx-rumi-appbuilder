@@ -22,6 +22,7 @@
 package com.neeve.appbuilder;
 
 import java.util.Map;
+import java.util.Set;
 
 /**
  * X-ADML scalar type-name helper.
@@ -72,5 +73,31 @@ final class AdmTypes {
         String trimmed = type.trim();
         if (trimmed.isEmpty()) return type;
         return ALIASES.getOrDefault(trimmed.toLowerCase(), trimmed);
+    }
+
+    /** The canonical ADML scalar type names. */
+    private static final Set<String> SCALARS =
+        Set.copyOf(new java.util.HashSet<>(ALIASES.values()));
+
+    /**
+     * True if {@code type} names an ADML scalar in any spelling the parser
+     * would accept, ignoring any array suffix. Used by {@link ModelValidator}
+     * to tell scalars apart from entity/message references.
+     */
+    static boolean isScalar(String type) {
+        if (type == null) return false;
+        String base = stripArraySuffix(type).trim();
+        if (base.isEmpty()) return false;
+        return SCALARS.contains(base) || ALIASES.containsKey(base.toLowerCase());
+    }
+
+    /** Strip a trailing {@code []} (possibly repeated) from a type reference. */
+    static String stripArraySuffix(String type) {
+        if (type == null) return null;
+        String s = type.trim();
+        while (s.endsWith("[]")) {
+            s = s.substring(0, s.length() - 2).trim();
+        }
+        return s;
     }
 }

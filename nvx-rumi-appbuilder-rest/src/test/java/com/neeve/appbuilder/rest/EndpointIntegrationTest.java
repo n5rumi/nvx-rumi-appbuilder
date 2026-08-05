@@ -170,7 +170,7 @@ public class EndpointIntegrationTest {
 
         // Add state entity.
         HttpResponse<String> s = post("/v1/services/proc/state-entities?app_root=" + enc(appRoot),
-            "{\"name\":\"Order\",\"fields\":[{\"name\":\"id\",\"type\":\"String\",\"attributes\":{\"key\":\"true\"}}]}");
+            "{\"name\":\"Order\",\"fields\":[{\"name\":\"id\",\"type\":\"String\",\"attributes\":{\"isKey\":\"true\"}}]}");
         assertEquals(200, s.statusCode());
         assertTrue(get("/v1/services/proc/state-entities?app_root=" + enc(appRoot)).body().contains("Order"));
         assertEquals(200, delete("/v1/services/proc/state-entities/Order?app_root=" + enc(appRoot)).statusCode());
