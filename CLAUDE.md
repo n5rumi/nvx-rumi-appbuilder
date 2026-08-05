@@ -146,6 +146,24 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
 - ⚠️ **ADML has no `key` attribute on a field — it is `isKey`.** The SDK passes
   `FieldDef` attributes through verbatim, so a wrong name reaches the model and
   fails at codegen.
+- **Reserved field names live in `ReservedNames` and are PINNED to the milestone**
+  (RUMI-387). A generated type extends `RogNode` → `MessageViewImpl`, which
+  between them declare ~70 `final public` no-arg getters; a field named
+  `message`, `messageKey`, `createTs`, `parent` or `metadata` generates a getter
+  that cannot override one. **Re-derive the list on a milestone bump** — the
+  grep is in the class javadoc. Only **no-arg** getters count: `getTag(int)` and
+  `setTag(int, Object)` take arguments, so a field named `tag` produces legal
+  overloads and is NOT reserved, despite folklore to the contrary.
+- **An api.xml operation is validated against the model the api.xml NAMES**
+  (RUMI-393), read from its `<messages modelFile>` — never assumed to be ROE,
+  since the file is the user's and can point anywhere. It resolves that path
+  against *every* module's `src/main/models`, because the shared ROE model lives
+  in a different Maven module (at build time the generator finds it on the
+  classpath, where module boundaries are already flattened). Imports are
+  deliberately NOT followed: `AsmModel.resolveMessage` does a local lookup, so
+  a validator that accepted more than the generator resolves would let the bad
+  edit through. **Mirror the generator** — broader lets a bad edit through,
+  narrower rejects a legitimate one.
 - ⚠️ **Do not declare `maven-enforcer-plugin` in a module's `<plugins>`.** That
   activates `nvx-os-parent`'s release-only `enforce-no-snapshots` execution and
   fails every SNAPSHOT build.
@@ -174,6 +192,14 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
   ⚠️ `AppParams.includeSamples` is a nullable `Boolean`, not a primitive: Gson
   leaves an absent key as `false` on a primitive, which would silently flip every
   pre-existing app to bare. Null means "not recorded" and reads as true.
+- ⚠️ **Generated `Main.java` imports single types, not packages** (RUMI-389), so
+  a sample-only type's import sits inside the `@sample-begin` region with the
+  code that uses it. The wildcard imports it replaced made a name defined in two
+  models ambiguous. The load-bearing consequence: `JavaSourceEditor.addHandler`
+  now has to **add the import for the message it handles**, resolving the
+  namespace from the model that declares it (service model, then ROE) — the
+  wildcards used to cover that for free. A type no model declares gets no
+  import rather than a guessed one.
 - **Bare keeps the wiring and the javadoc**, and drops only compilable sample
   artifacts. The webservice keeps a `/health` endpoint on purpose — a JAX-RS
   resource stripped to zero resource methods is not a shape worth shipping, and

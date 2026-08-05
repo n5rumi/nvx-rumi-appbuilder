@@ -124,6 +124,69 @@ public class JavaSourceEditorTest {
             HandlerIntrospector.listHandlers(appRoot, "feeder").isEmpty());
     }
 
+    /**
+     * The scaffolded Main.java used to import the message packages by
+     * wildcard, so any handler parameter resolved for free. It now imports
+     * single types (RUMI-389), which means the editor has to carry the import
+     * for the message it inserts a handler for — otherwise every add_handler
+     * would produce source that does not compile.
+     *
+     * <p>These three run against a REALLY scaffolded app rather than the stub
+     * Main.java the tests above use: the import can only be resolved from the
+     * models on disk, so a stub with no models would prove nothing.
+     */
+    @Test
+    public void addHandler_importsTheMessageItHandles() throws Exception {
+        Path realApp = scaffoldRealApp();
+        MessageEditor.addMessage(realApp, SVC, "Tick", List.of(), false);
+
+        JavaSourceEditor.addHandler(realApp, SVC, "onTick", "Tick", null, false);
+
+        String written = Files.readString(AppIntrospector.resolveMainJavaFile(realApp, SVC));
+        assertTrue("handler inserted", written.contains("onTick"));
+        assertTrue("import added with the model's real namespace: " + written,
+            written.contains("import com.example.demo." + SVC + ".messages.Tick;"));
+    }
+
+    /** A ROE-scoped message resolves to the ROE namespace, not the service's. */
+    @Test
+    public void addHandler_importsARoeScopedMessageFromTheRoeNamespace() throws Exception {
+        Path realApp = scaffoldRealApp();
+        MessageEditor.addMessage(realApp, SVC, FieldEditor.ModelScope.ROE_MESSAGES,
+            "OrderPlaced", List.of(), false);
+
+        JavaSourceEditor.addHandler(realApp, SVC, "onOrderPlaced", "OrderPlaced", null, false);
+
+        String written = Files.readString(AppIntrospector.resolveMainJavaFile(realApp, SVC));
+        assertTrue("import should name the ROE namespace: " + written,
+            written.contains("import com.example.demo.roe.OrderPlaced;"));
+    }
+
+    /**
+     * A type no model declares gets no import rather than a guessed one — the
+     * same conservative posture the model validator takes. The handler is still
+     * inserted; the caller asked for it.
+     */
+    @Test
+    public void addHandler_addsNoImportForATypeNoModelDeclares() throws Exception {
+        Path realApp = scaffoldRealApp();
+
+        JavaSourceEditor.addHandler(realApp, SVC, "onMystery", "NoSuchMessage", null, false);
+
+        String written = Files.readString(AppIntrospector.resolveMainJavaFile(realApp, SVC));
+        assertTrue("handler still inserted", written.contains("onMystery"));
+        assertFalse("no guessed import", written.contains("NoSuchMessage;"));
+    }
+
+    private static final String SVC = "gateway";
+
+    private Path scaffoldRealApp() throws Exception {
+        Path root = com.neeve.appbuilder.test.TestAppFactory.newApp("demo")
+            .packageName("com.example.demo").scaffoldAt(tempDir.resolve("real"));
+        com.neeve.appbuilder.test.TestAppFactory.addProcessor(root, SVC);
+        return root;
+    }
+
     @Test
     public void addHandler_preservesExistingMethodsAndComments() throws Exception {
         Path mainJava = AppIntrospector.resolveMainJavaFile(appRoot, "feeder");

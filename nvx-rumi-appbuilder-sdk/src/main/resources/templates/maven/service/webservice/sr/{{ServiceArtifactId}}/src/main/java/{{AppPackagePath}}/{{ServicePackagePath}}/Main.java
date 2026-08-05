@@ -13,9 +13,11 @@ import com.neeve.server.app.annotations.AppStateFactoryAccessor;
 import com.neeve.sma.MessageView;
 import com.neeve.trace.Tracer;
 
-import {{AppPackageName}}.roe.*;
-import {{AppPackageName}}.{{ServicePackageName}}.messages.*;
-import {{AppPackageName}}.{{ServicePackageName}}.state.*;
+import {{AppPackageName}}.{{ServicePackageName}}.state.Repository;
+// @sample-begin
+import {{AppPackageName}}.{{ServicePackageName}}.messages.EchoRequest;
+import {{AppPackageName}}.{{ServicePackageName}}.messages.EchoResponse;
+// @sample-end
 
 /**
  * A stateful Rumi microservice fronted by an embedded HTTP server.

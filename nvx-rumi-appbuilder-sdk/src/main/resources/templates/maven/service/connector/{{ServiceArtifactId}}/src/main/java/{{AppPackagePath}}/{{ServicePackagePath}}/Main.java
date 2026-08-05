@@ -8,8 +8,11 @@ import com.neeve.aep.event.AepMessagingPrestartEvent;
 // @sample-end
 import com.neeve.server.app.annotations.AppInjectionPoint;
 
-import {{AppPackageName}}.roe.*;
-import {{AppPackageName}}.{{ServicePackageName}}.messages.*;
+// @sample-begin
+import {{AppPackageName}}.{{ServicePackageName}}.messages.AlarmMessage;
+import {{AppPackageName}}.{{ServicePackageName}}.messages.EmptyMessage;
+import {{AppPackageName}}.{{ServicePackageName}}.messages.SampleConnectorMessage;
+// @sample-end
 
 /**
  * The Rumi service that owns this connector's bus.

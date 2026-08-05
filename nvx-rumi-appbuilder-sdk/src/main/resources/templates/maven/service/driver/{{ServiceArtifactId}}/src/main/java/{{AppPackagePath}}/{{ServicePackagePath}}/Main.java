@@ -15,7 +15,6 @@ import com.neeve.server.app.annotations.AppInjectionPoint;
 import com.neeve.util.UtlGovernor;
 // @sample-end
 
-import {{AppPackageName}}.roe.*;
 
 /**
  * A stateless Rumi driver: a source service that originates messages into the
