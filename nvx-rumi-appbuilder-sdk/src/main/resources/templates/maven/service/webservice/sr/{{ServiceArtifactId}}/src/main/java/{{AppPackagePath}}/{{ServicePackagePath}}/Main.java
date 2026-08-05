@@ -81,6 +81,8 @@ public class Main implements AepEngineProvider {
         }
     }
 
+    // @sample-begin
+
     /**
      * Sample request handler: runs on the engine thread, mutates replicated
      * state, and replies. The reply is correlated back to the blocked
@@ -97,4 +99,15 @@ public class Main implements AepEngineProvider {
         response.setCount(count);
         _messageSender.sendReply(request, response);
     }
+    // @sample-end
+    // @bare-begin
+
+    // Request handlers go here. Each one takes a message declared in this
+    // service's messages.xml, reads and mutates the replicated Repository via
+    // _engine.getApplicationState(request), and answers the blocked web-layer
+    // call with _messageSender.sendReply(request, response):
+    //
+    //     @EventHandler
+    //     final public void onMyRequest(final MyRequest request) { ... }
+    // @bare-end
 }

@@ -91,6 +91,8 @@ public class ServiceBuilder {
         private final ServiceHAModel serviceHAModel;
         private final boolean clustered;
         private final int numPartitions;
+        /** Null means "inherit whatever mode the app was scaffolded in". */
+        private final Boolean includeSamples;
         private final Map<String, String> tokenMap;
 
         public ServiceParams(String appRoot,
@@ -99,6 +101,23 @@ public class ServiceBuilder {
                              ServiceHAModel serviceHAModel,
                              boolean clustered,
                              int numPartitions) throws IOException {
+            this(appRoot, serviceName, serviceType, serviceHAModel, clustered, numPartitions, null);
+        }
+
+        /**
+         * @param includeSamples whether this service's scaffold carries worked
+         *                       example code, or null to inherit the mode
+         *                       recorded in the app's {@code .rumi} descriptor.
+         *                       Inheriting is what makes an app scaffolded
+         *                       sample-free stay that way as services are added.
+         */
+        public ServiceParams(String appRoot,
+                             String serviceName,
+                             ServiceType serviceType,
+                             ServiceHAModel serviceHAModel,
+                             boolean clustered,
+                             int numPartitions,
+                             Boolean includeSamples) throws IOException {
             if (appRoot == null || appRoot.isEmpty()) {
                 throw new IllegalArgumentException("app root cannot be null or empty");
             }
@@ -120,6 +139,7 @@ public class ServiceBuilder {
                 throw new IllegalArgumentException("the '" + this.serviceType.getName() + "' service type is not clusterable.");
             }
             this.numPartitions = numPartitions;
+            this.includeSamples = includeSamples;
             this.tokenMap = toTokenMap();
         }
 
@@ -167,6 +187,14 @@ public class ServiceBuilder {
 
         public int getNumPartitions() {
             return numPartitions;
+        }
+
+        /**
+         * Whether this service's scaffold carries worked example code, falling
+         * back to the mode the app itself was scaffolded in.
+         */
+        public boolean isIncludeSamples() {
+            return includeSamples != null ? includeSamples : appParams.isIncludeSamples();
         }
 
         public Map<String, String> getTokenMap() {
@@ -279,7 +307,7 @@ public class ServiceBuilder {
         params.getTokenMap().put(TokenUtils.toToken("ServiceMessageModelId"), String.valueOf(availableIds.get(1)));
 
         // generate the service skeleton
-        TemplateProcessor.applyTemplate(templateDir, appRoot, params.getTokenMap());
+        TemplateProcessor.applyTemplate(templateDir, appRoot, params.getTokenMap(), params.isIncludeSamples());
 
         // inject service config
         ConfigInjector.injectServiceConfig(appRoot, params);

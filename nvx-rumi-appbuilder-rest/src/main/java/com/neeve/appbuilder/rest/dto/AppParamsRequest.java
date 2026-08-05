@@ -42,6 +42,7 @@ public final class AppParamsRequest {
     private final String encodingType;
     private final String messagingProvider;
     private final String buildTool;
+    private final Boolean includeSamples;
 
     @JsonCreator
     public AppParamsRequest(@JsonProperty("appName") String appName,
@@ -54,7 +55,8 @@ public final class AppParamsRequest {
                             @JsonProperty("rumiMgmtVersion") String rumiMgmtVersion,
                             @JsonProperty("encodingType") String encodingType,
                             @JsonProperty("messagingProvider") String messagingProvider,
-                            @JsonProperty("buildTool") String buildTool) {
+                            @JsonProperty("buildTool") String buildTool,
+                            @JsonProperty("includeSamples") Boolean includeSamples) {
         this.appName = appName;
         this.appDir = appDir;
         this.packageName = packageName;
@@ -66,6 +68,7 @@ public final class AppParamsRequest {
         this.encodingType = encodingType;
         this.messagingProvider = messagingProvider;
         this.buildTool = buildTool;
+        this.includeSamples = includeSamples;
     }
 
     public ApplicationBuilder.AppParams toSdk() {
@@ -80,7 +83,8 @@ public final class AppParamsRequest {
             rumiMgmtVersion != null ? rumiMgmtVersion : "2.0.0",
             encodingType != null ? ApplicationBuilder.EncodingType.valueOf(encodingType.toUpperCase()) : ApplicationBuilder.EncodingType.QUARK,
             messagingProvider != null ? ApplicationBuilder.MessagingProvider.valueOf(messagingProvider.toUpperCase()) : ApplicationBuilder.MessagingProvider.ACTIVEMQ,
-            buildTool != null ? ApplicationBuilder.BuildTool.valueOf(buildTool.toUpperCase()) : ApplicationBuilder.BuildTool.MAVEN
+            buildTool != null ? ApplicationBuilder.BuildTool.valueOf(buildTool.toUpperCase()) : ApplicationBuilder.BuildTool.MAVEN,
+            includeSamples == null || includeSamples
         );
     }
 
@@ -95,4 +99,13 @@ public final class AppParamsRequest {
     public String getEncodingType() { return encodingType; }
     public String getMessagingProvider() { return messagingProvider; }
     public String getBuildTool() { return buildTool; }
+
+    /**
+     * Whether the scaffold carries worked example code. Absent means true, which
+     * keeps every existing caller on the behaviour it has always had; agents pass
+     * false so they are not handed demo code they would only have to delete.
+     * The value is recorded in the app's {@code .rumi} and inherited by services
+     * added later.
+     */
+    public Boolean getIncludeSamples() { return includeSamples; }
 }

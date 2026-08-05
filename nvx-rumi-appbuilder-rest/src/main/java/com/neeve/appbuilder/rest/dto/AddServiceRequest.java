@@ -38,18 +38,21 @@ public final class AddServiceRequest {
     private final String haModel;
     private final boolean clustered;
     private final Integer partitions;
+    private final Boolean includeSamples;
 
     @JsonCreator
     public AddServiceRequest(@JsonProperty("name") String name,
                              @JsonProperty("type") String type,
                              @JsonProperty("haModel") String haModel,
                              @JsonProperty("clustered") boolean clustered,
-                             @JsonProperty("partitions") Integer partitions) {
+                             @JsonProperty("partitions") Integer partitions,
+                             @JsonProperty("includeSamples") Boolean includeSamples) {
         this.name = name;
         this.type = type;
         this.haModel = haModel;
         this.clustered = clustered;
         this.partitions = partitions;
+        this.includeSamples = includeSamples;
     }
 
     public ServiceBuilder.ServiceParams toSdk(String appRoot) throws java.io.IOException {
@@ -61,7 +64,7 @@ public final class AddServiceRequest {
                 : ServiceBuilder.ServiceHAModel.valueOf(haModel.toUpperCase());
         }
         int p = partitions == null ? 1 : partitions;
-        return new ServiceBuilder.ServiceParams(appRoot, name, resolvedType, resolvedHa, clustered, p);
+        return new ServiceBuilder.ServiceParams(appRoot, name, resolvedType, resolvedHa, clustered, p, includeSamples);
     }
 
     public String getName() { return name; }
@@ -69,4 +72,11 @@ public final class AddServiceRequest {
     public String getHaModel() { return haModel; }
     public boolean isClustered() { return clustered; }
     public Integer getPartitions() { return partitions; }
+
+    /**
+     * Whether this service's scaffold carries worked example code. Absent means
+     * "inherit the mode the app was scaffolded in", which is what keeps a
+     * sample-free app sample-free without the caller having to remember.
+     */
+    public Boolean getIncludeSamples() { return includeSamples; }
 }

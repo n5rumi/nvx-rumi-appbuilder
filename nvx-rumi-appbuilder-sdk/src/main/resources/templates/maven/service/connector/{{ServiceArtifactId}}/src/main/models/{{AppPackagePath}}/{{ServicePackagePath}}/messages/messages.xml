@@ -10,9 +10,11 @@
     </enumerations>
 
     <messages>
+        <!-- @sample-begin -->
         <message name="EmptyMessage" id="1"/>
         <message name="AlarmMessage" id="2"/>
         <message name="SampleConnectorMessage" id="3"/>
+        <!-- @sample-end -->
     </messages>
 
     <entities>

@@ -8,7 +8,9 @@
     
     <entities>
         <entity name="Repository" id="1">
+            <!-- @sample-begin -->
             <field name="count" type="Long" id="1"/>
+            <!-- @sample-end -->
         </entity>
     </entities>
 

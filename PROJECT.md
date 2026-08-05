@@ -626,6 +626,102 @@ about a minute. It has no skip flag, deliberately: every other step has one
 because skipping it degrades a release, whereas skipping this one would let
 through the exact defect it exists to catch.
 
+## Two audiences, one template: the sample-free scaffold (RUMI-382)
+
+A scaffold is a first impression, and for most of this project's life there was
+only one audience to make it on: a human opening a generated app, who wants a
+worked example to imitate. So the templates ship one — an `/echo` endpoint wired
+through a real message to real replicated state, a driver with a rate-governed
+sending thread, a connector with a scheduled alarm loop.
+
+Then the audience changed. Sutra and the Rumi Support Agent build Rumi apps
+through the Dev MCP, and the first thing they do after scaffolding is *delete all
+of it*. The example is not merely useless to them, it is a bill: tokens to read
+it, tokens to reason about which parts are load-bearing, tokens to remove it, and
+a non-zero chance of leaving a fragment of somebody else's domain model in the
+user's application. The scaffold was optimised for the reader who now accounts
+for a minority of its use.
+
+The obvious fix is a second, empty set of templates. It is also the wrong one,
+for a reason this repository has already written down once: *a hand-maintained
+copy of something is a slow-motion bug*. Two trees would agree on the day they
+were created and quietly stop agreeing after that, and nothing would notice,
+because nobody compiles a template.
+
+So the two modes come out of one tree. Templates mark their demo regions inline
+with balanced sentinel comments, in whatever comment syntax the file already
+uses, and `SampleMarkers` drops whichever side the caller did not ask for:
+
+```java
+    // @sample-begin
+    @EventHandler
+    final public void onEchoRequest(final EchoRequest request) { ... }
+    // @sample-end
+    // @bare-begin
+    // Request handlers go here...
+    // @bare-end
+```
+
+There is exactly one definition of the processor template, and the modes cannot
+diverge because there is nothing to diverge from.
+
+### Where the default lives is the whole design
+
+The temptation is to pick one default and apply it everywhere. That would be
+wrong in one direction or the other, because the layers have different users.
+The SDK and REST service keep samples **on** — the `rumi` CLI is theirs, and a
+person running `rumi quickstart app` still wants the worked example. The MCP
+tools default to **bare**, because their only callers are agents. The CLI gets an
+explicit `--no-samples` for the human who wants what the agent gets.
+
+That split is easy to state and easy to break, so `test_create_app_is_sample_free_by_default`
+asserts the MCP default directly rather than inferring it from the layers below.
+A default that everyone assumes follows from somewhere else is a default nobody
+is actually testing.
+
+### Make the mode a property of the app, not of every call
+
+The first shape of this had `includeSamples` on every scaffolding call. It works
+until someone creates an app bare and then adds a service without repeating
+themselves, which is to say it works until the second call. So the mode is
+recorded in the app's `.rumi` descriptor at creation and inherited by every
+service added later; an explicit per-service value still wins. Nothing has to be
+remembered twice, and `ServiceRemover` needed no changes at all.
+
+That descriptor is also where the one genuinely nasty bug in this work was
+waiting. `AppParams` is deserialized from `.rumi` by Gson, and a descriptor
+written before this option existed has no `includeSamples` key. Had the field
+been a primitive `boolean`, Gson would have left it `false` — silently converting
+every app anyone had ever scaffolded to sample-free the moment they added a
+service. The field is a nullable `Boolean`, null means "not recorded", and
+`aDescriptorPredatingTheOptionStillMeansSamplesOn` pins it. The general shape:
+**when you add a field to a serialized record, the interesting case is the
+document that predates it**, and a primitive cannot express "absent".
+
+### Deleting code is the direction that breaks things
+
+Bare mode is not a smaller version of the same thing; it is a different artifact,
+and removal is exactly the operation that produces well-formed-but-broken output.
+An emptied model. An import pointing at a package with no types left in it. A
+JAX-RS resource whose last endpoint just left, which compiles perfectly and may
+or may not survive Jersey's model validation — a question nobody on this project
+could answer from memory, which is precisely why guessing was not an option.
+
+The answer was to keep a `/health` endpoint in the bare webservice and then go
+find out empirically. `ci/verify-generated-app.sh` now scaffolds, builds and
+*runs* both modes on every release, and `BareWebserviceTest` drives the health
+probe over real HTTP against a booted engine. It roughly doubles the gate's
+runtime, which is the correct trade: bare is the mode agents actually use, so
+leaving it unproven would mean gating the rare path and shipping the common one
+on faith.
+
+One smaller lesson fell out of the resolver itself. The first version collapsed
+the blank lines a removed region leaves behind with `(\n[ \t]*){3,}` → `\n\n`,
+and the greedy final repetition happily ate the *next* line's indentation,
+silently de-indenting generated Java. Matching only wholly-blank lines fixes it,
+and `collapsingBlankLinesPreservesTheFollowingIndentation` exists so nobody
+reintroduces the tidier-looking version.
+
 ## Lessons Learned (REST distribution & runtime)
 
 Lessons from getting the REST service to build, publish, and stop

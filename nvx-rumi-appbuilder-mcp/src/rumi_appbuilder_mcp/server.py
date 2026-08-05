@@ -59,8 +59,16 @@ def build_server(base_url: str | None = None) -> FastMCP:
         encoding_type: str = "QUARK",
         messaging_provider: str = "ACTIVEMQ",
         build_tool: str = "MAVEN",
+        include_samples: bool = False,
     ) -> dict[str, Any]:
-        """Scaffold a new Rumi app. Returns the resolved AppParams so the caller knows where the app landed on disk."""
+        """Scaffold a new Rumi app. Returns the resolved AppParams so the caller knows where the app landed on disk.
+
+        By default the scaffold contains no worked example code, so you can start
+        writing the real application immediately rather than deleting demo
+        messages and handlers first. The choice is recorded in the app and
+        inherited by every service you add later. Pass include_samples=True only
+        if you want the illustrative Echo/alarm/message-sending examples.
+        """
         return rest.post(
             "/v1/apps",
             json={
@@ -75,6 +83,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
                 "encodingType": encoding_type,
                 "messagingProvider": messaging_provider,
                 "buildTool": build_tool,
+                "includeSamples": include_samples,
             },
         )
 
@@ -98,8 +107,15 @@ def build_server(base_url: str | None = None) -> FastMCP:
         ha_model: str | None = None,
         clustered: bool = False,
         partitions: int = 1,
+        include_samples: bool = False,
     ) -> dict[str, Any]:
-        """Scaffold a new service. Type is processor|driver|connector|webservice. ha_model and clustered/partitions apply to the clusterable types (processor, webservice)."""
+        """Scaffold a new service. Type is processor|driver|connector|webservice. ha_model and clustered/partitions apply to the clusterable types (processor, webservice).
+
+        As with create_app, the scaffold carries no worked example code by
+        default -- just the wiring (injection points, state factory, HTTP server
+        lifecycle) and the javadoc explaining each contract. Pass
+        include_samples=True for the illustrative version.
+        """
         return rest.post(
             "/v1/services",
             params={"app_root": app_root},
@@ -109,6 +125,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
                 "haModel": ha_model,
                 "clustered": clustered,
                 "partitions": partitions,
+                "includeSamples": include_samples,
             },
         )
 
