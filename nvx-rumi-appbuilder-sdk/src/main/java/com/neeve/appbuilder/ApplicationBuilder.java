@@ -117,6 +117,18 @@ public class ApplicationBuilder {
         private final EncodingType encodingType;
         private final MessagingProvider messagingProvider;
         private final BuildTool buildTool;
+        /**
+         * Whether scaffolds for this app carry worked example code.
+         *
+         * <p>Deliberately a nullable {@link Boolean} rather than a primitive.
+         * This class is deserialized from the app's {@code .rumi} descriptor by
+         * Gson, and a descriptor written before this option existed has no such
+         * key -- which Gson would leave as {@code false} on a primitive, quietly
+         * flipping every pre-existing app to sample-free. Null means "not
+         * recorded", which {@link #isIncludeSamples()} reads as the historical
+         * behaviour: samples on.
+         */
+        private final Boolean includeSamples;
         private final String appTokenName;
         private final Map<String, String> tokenMap;
 
@@ -134,6 +146,23 @@ public class ApplicationBuilder {
                          EncodingType encodingType,
                          MessagingProvider messagingProvider,
                          BuildTool buildTool) {
+            this(appName, appDir, packageName, groupId, artifactPrefix, rumiVersion,
+                 rumiBindingsVersion, rumiMgmtVersion, encodingType, messagingProvider,
+                 buildTool, true);
+        }
+
+        public AppParams(String appName,
+                         String appDir,
+                         String packageName,
+                         String groupId,
+                         String artifactPrefix,
+                         String rumiVersion,
+                         String rumiBindingsVersion,
+                         String rumiMgmtVersion,
+                         EncodingType encodingType,
+                         MessagingProvider messagingProvider,
+                         BuildTool buildTool,
+                         boolean includeSamples) {
             if (appName == null) {
                 throw new IllegalArgumentException("app name cannot be null");
             }
@@ -172,6 +201,7 @@ public class ApplicationBuilder {
             this.encodingType = encodingType != null ? encodingType : EncodingType.QUARK;
             this.messagingProvider = messagingProvider != null ? messagingProvider : MessagingProvider.ACTIVEMQ;
             this.buildTool = buildTool != null ? buildTool : BuildTool.MAVEN;
+            this.includeSamples = includeSamples;
             this.appTokenName = appName.toLowerCase().replaceAll("\\s+", "");
             this.tokenMap = toTokenMap();
         }
@@ -304,6 +334,14 @@ public class ApplicationBuilder {
             return buildTool;
         }
 
+        /**
+         * Whether scaffolds for this app carry worked example code. An app whose
+         * {@code .rumi} predates this option reads as true, its original behaviour.
+         */
+        public boolean isIncludeSamples() {
+            return includeSamples == null || includeSamples;
+        }
+
         public Map<String, String> getTokenMap() {
             return tokenMap;
         }
@@ -337,7 +375,7 @@ public class ApplicationBuilder {
         catch (IOException e) {
             throw new IOException("Failed to extract template for build tool: " + buildTool, e);
         }
-        TemplateProcessor.applyTemplate(templateDir, appDir, params.getTokenMap());
+        TemplateProcessor.applyTemplate(templateDir, appDir, params.getTokenMap(), params.isIncludeSamples());
         AppParams.write(appRoot, params);
         // Seed the app-global factory-id ledger with the ids the scaffold created
         // (e.g. the shared ROE factory) so they are never reused.

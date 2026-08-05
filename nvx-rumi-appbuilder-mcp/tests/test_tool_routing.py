@@ -8,6 +8,8 @@ manager so we keep the test scope at the HTTP boundary.
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 import respx
@@ -76,6 +78,59 @@ async def test_add_service_posts_typed_body(mcp) -> None:
     req = route.calls.last.request
     assert b"order-processor" in req.content
     assert b"processor" in req.content
+
+
+@respx.mock
+async def test_create_app_is_sample_free_by_default(mcp) -> None:
+    """RUMI-382: the MCP is the agent-facing surface, so bare is its default.
+
+    Agents were scaffolding an app and then burning tokens deleting the worked
+    example code before they could add their own. The SDK and REST layers still
+    default to samples-on for the CLI's sake, which is precisely why this
+    default has to be asserted here rather than assumed to follow from them.
+    """
+    route = respx.post(f"{BASE}/v1/apps").mock(
+        return_value=httpx.Response(200, json={"appName": "trading"})
+    )
+    await _call(
+        mcp,
+        "create_app",
+        app_name="trading",
+        app_dir="/ws",
+        package_name="com.example.trading",
+        group_id="com.example",
+        artifact_prefix="acme",
+        rumi_version="4.0.637",
+    )
+    assert json.loads(route.calls.last.request.content)["includeSamples"] is False
+
+
+@respx.mock
+async def test_create_app_can_opt_back_into_samples(mcp) -> None:
+    route = respx.post(f"{BASE}/v1/apps").mock(
+        return_value=httpx.Response(200, json={"appName": "trading"})
+    )
+    await _call(
+        mcp,
+        "create_app",
+        app_name="trading",
+        app_dir="/ws",
+        package_name="com.example.trading",
+        group_id="com.example",
+        artifact_prefix="acme",
+        rumi_version="4.0.637",
+        include_samples=True,
+    )
+    assert json.loads(route.calls.last.request.content)["includeSamples"] is True
+
+
+@respx.mock
+async def test_add_service_is_sample_free_by_default(mcp) -> None:
+    route = respx.post(f"{BASE}/v1/services").mock(
+        return_value=httpx.Response(200, json={"name": "api"})
+    )
+    await _call(mcp, "add_service", app_root="/ws/t", name="api", type="webservice")
+    assert json.loads(route.calls.last.request.content)["includeSamples"] is False
 
 
 @respx.mock

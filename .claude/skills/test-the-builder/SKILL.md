@@ -130,19 +130,29 @@ sed -i '' 's#>4.0.0</nvx.rumi.version#>4.0.629</nvx.rumi.version#; \
 
 ## Step 4 — drop in the integration tests
 
-Three tests go in the **system module** (it has `conf/config.xml` and depends on every service):
+The tests go in the **system module** (it has `conf/config.xml` and depends on every service):
 `$APP/test-demo-system/src/test/java/com/example/demo/`. Copy them from `examples/` next to
 this skill (`$REPO/.claude/skills/test-the-builder/examples/`).
 
 **WebserviceTest** — the deep round-trip: boot the webservice, HTTP GET the echo endpoint
 twice, assert the echo and that the Rumi-state-backed `count` increments. The HTTP port is
-overridden off the 8080 default (commonly occupied) via a system property.
+overridden off the 8080 default (commonly occupied) via a system property. **Sample-rich
+scaffolds only** — there is no `/echo` in a sample-free app.
+
+**BareWebserviceTest** — the sample-free counterpart (RUMI-382): boot the webservice and GET
+`/gateway/v1/health`. Thinner than the echo round trip by necessity, but it covers the thing
+stripping the samples is most likely to break — that Jersey still stands up a resource whose
+only remaining method is the liveness probe.
 
 **SystemBootTest** — broad: boot all four service types + the snapped connector together and
-assert each engine started.
+assert each engine started. Mode-agnostic; run it either way.
 
 **FlowTest** — functional message flow: the driver sends N `Tick` messages, the processor's
 `onTick` handler counts them, assert the count matches. Requires the Step 2b edits.
+
+If you scaffolded sample-free (`includeSamples=false`), pair `SystemBootTest` with
+`BareWebserviceTest`; otherwise pair it with `WebserviceTest`. `ci/verify-generated-app.sh`
+runs both modes on every release and picks the pairs the same way.
 
 Substitute the app package / service xvm+app names if you scaffolded different ones. Key
 points the tests rely on:

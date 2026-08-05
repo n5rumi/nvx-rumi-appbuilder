@@ -54,6 +54,17 @@ class TemplateProcessor {
     }
 
     static void applyTemplate(Path templateDir, Path targetDir, Map<String, String> tokens) throws IOException {
+        applyTemplate(templateDir, targetDir, tokens, true);
+    }
+
+    /**
+     * Materialize a template tree into {@code targetDir}, substituting tokens and
+     * resolving the template's inline sample/bare regions (see {@link SampleMarkers}).
+     *
+     * <p>Regions are resolved before token substitution, so a marker is a purely
+     * template-level construct that no token can conjure into or out of existence.
+     */
+    static void applyTemplate(Path templateDir, Path targetDir, Map<String, String> tokens, boolean includeSamples) throws IOException {
         Files.walk(templateDir).forEach(source -> {
             try {
                 Path relative = templateDir.relativize(source);
@@ -64,7 +75,7 @@ class TemplateProcessor {
                     Files.createDirectories(target);
                 }
                 else {
-                    String content = Files.readString(source);
+                    String content = SampleMarkers.resolve(Files.readString(source), includeSamples, relative.toString());
                     String replacedContent = applyTokens(content, tokens);
                     Files.createDirectories(target.getParent());
                     Files.writeString(target, replacedContent);

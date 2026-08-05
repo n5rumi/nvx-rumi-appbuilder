@@ -9,19 +9,21 @@
     <enumerations>
     </enumerations>
 
+    <!-- NB: do not name a field "message"; it collides with the final
+         getMessage() in Rumi's MessageViewImpl base class. -->
     <messages>
+        <!-- @sample-begin -->
         <!-- Sample request/response injected by the HTTP layer. The engine
              handler replies via sendReply; the reply is correlated back to
              the blocked injectRequestAndWaitForReply call. -->
         <message name="EchoRequest" id="1">
-            <!-- NB: do not name a field "message"; it collides with the
-                 final getMessage() in Rumi's MessageViewImpl base class. -->
             <field name="text" type="String" id="1"/>
         </message>
         <message name="EchoResponse" id="2">
             <field name="echo" type="String" id="1"/>
             <field name="count" type="Long" id="2"/>
         </message>
+        <!-- @sample-end -->
     </messages>
 
     <entities>

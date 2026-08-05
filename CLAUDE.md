@@ -150,6 +150,37 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
   activates `nvx-os-parent`'s release-only `enforce-no-snapshots` execution and
   fails every SNAPSHOT build.
 
+## Sample-free scaffolds (RUMI-382)
+
+- **Two modes from one template tree.** Templates mark their demo regions inline
+  with `// @sample-begin` / `// @sample-end` (and `<!-- ... -->` in XML);
+  `// @bare-begin` / `// @bare-end` is the mirror, for content that appears only
+  in the sample-free mode. `SampleMarkers.resolve` drops whichever side the
+  caller did not ask for. **Never add a parallel "bare" template tree** — the two
+  would drift, which is the failure this design exists to prevent.
+- **Markers are only honoured under `templates/<tool>/app/` and
+  `templates/<tool>/service/`**, the two trees `TemplateProcessor.applyTemplate`
+  materializes. `ConfigInjector`, `ScriptInjector` and `ConnectorEditor` render
+  the other trees and know nothing about the mode; worse, `ServiceRemover`
+  re-renders script snippets to work out what to delete, so a marker there would
+  let a service be scaffolded in one mode and un-scaffolded as the other.
+  `SampleMarkerBalanceTest` enforces this, along with marker balance.
+- **Defaults differ per layer, deliberately.** SDK and REST default to
+  samples-**on**, so the `rumi` CLI and existing REST callers are unchanged. The
+  **MCP tools default to bare** — that is the agent-facing surface, and the whole
+  point is that an agent should not have to delete demo code first.
+- **The mode is a property of the app.** It is recorded in `.rumi` at creation
+  and `ServiceParams` inherits it, so services added later stay consistent.
+  ⚠️ `AppParams.includeSamples` is a nullable `Boolean`, not a primitive: Gson
+  leaves an absent key as `false` on a primitive, which would silently flip every
+  pre-existing app to bare. Null means "not recorded" and reads as true.
+- **Bare keeps the wiring and the javadoc**, and drops only compilable sample
+  artifacts. The webservice keeps a `/health` endpoint on purpose — a JAX-RS
+  resource stripped to zero resource methods is not a shape worth shipping, and
+  it gives `BareWebserviceTest` something to prove.
+- `ci/verify-generated-app.sh` builds and runs **both** modes. `MODES="bare"`
+  narrows it for local iteration; the release always runs both.
+
 ## Key Design Decisions
 
 - **Three modules, not one.** Each serves a different consumer shape.

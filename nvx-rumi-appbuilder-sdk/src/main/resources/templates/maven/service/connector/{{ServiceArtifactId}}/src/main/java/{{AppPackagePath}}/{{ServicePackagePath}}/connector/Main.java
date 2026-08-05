@@ -70,9 +70,15 @@ public class Main implements Connector {
     final public void processOutbound(final MessageView view, final OutboundAcknowledger acknowledger, int flags) throws Exception {
         _tracer.log("<--" + view.toString(), Tracer.Level.VERBOSE);
         try {
+            // @sample-begin
             if (view instanceof SampleConnectorMessage) {
                 // Forward the message to the external system here.
             }
+            // @sample-end
+            // @bare-begin
+            // Dispatch on the message type and forward it to the external
+            // system here, e.g. "if (view instanceof MyOutboundMessage) { ... }".
+            // @bare-end
         }
         finally {
             acknowledger.acknowledge();

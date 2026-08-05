@@ -24,11 +24,22 @@
 #
 # What it does
 #   1. builds + installs the SDK
-#   2. scaffolds a `demo` app with EVERY service type (processor, driver,
-#      connector, webservice) plus a custom connector snapped into the
-#      processor
-#   3. drops in the in-process JUnit/EmbeddedXVM tests
-#   4. builds and RUNS the generated system
+#   2. for EACH scaffold mode (with samples, and sample-free):
+#      a. scaffolds a `demo` app with EVERY service type (processor, driver,
+#         connector, webservice) plus a custom connector snapped into the
+#         processor
+#      b. drops in the in-process JUnit/EmbeddedXVM tests
+#      c. builds and RUNS the generated system
+#
+# Both modes, because both ship (RUMI-382)
+# ----------------------------------------
+# The sample-free mode is not a lesser variant to be spot-checked — it is what
+# every agent driving the Dev MCP gets, so in practice it is the mode most
+# generated apps are built from. It also removes code, which is the direction
+# that breaks things: an emptied model, a JAX-RS resource down to its last
+# endpoint, an import left pointing at a package that no longer has types in
+# it. None of that shows up in a compile of the scaffolder. Verifying only the
+# sample-rich mode would leave the common path unproven.
 #
 # Usage:
 #   ci/verify-generated-app.sh
@@ -40,6 +51,9 @@
 #   WORK_DIR       — scratch dir (default: mktemp -d). Kept on failure so the
 #                    broken generated app can be inspected.
 #   MVN            — maven binary (default: mvn). Must be >= 3.9.
+#   MODES          — space-separated subset of "samples bare" for local
+#                    iteration. Not a release skip flag: the release runs both,
+#                    and the default here is both.
 #
 # Exit code is non-zero on the first failure.
 set -euo pipefail
@@ -88,7 +102,7 @@ CP="${REPO_DIR}/nvx-rumi-appbuilder-sdk/target/classes:$(cat "${WORK_DIR}/sdk-cp
 
 # ---- 2. Scaffold every service type ---------------------------------
 
-info "Scaffolding a demo app with every service type"
+info "Preparing the scaffolding driver"
 cat > "${WORK_DIR}/Build.java" <<'EOF'
 import com.neeve.appbuilder.ConnectorEditor;
 import com.neeve.appbuilder.test.TestAppFactory;
@@ -98,16 +112,23 @@ import java.nio.file.Paths;
 /**
  * Scaffolds the system the release is verified against. Uses only builder
  * operations, so what runs is what a user would get.
+ *
+ * <p>args: <parentDir> <rumiVersion> <includeSamples>. The services are added
+ * with no per-service sample setting on purpose: the mode is recorded in the
+ * app's .rumi and inherited, and that inheritance is itself part of what this
+ * gate proves.
  */
 public class Build {
     public static void main(String[] args) throws Exception {
         Path parent = Paths.get(args[0]);
         String rumiVersion = args[1];
+        boolean includeSamples = Boolean.parseBoolean(args[2]);
 
         Path app = TestAppFactory.newApp("demo")
             .packageName("com.example.demo")
             .rumiVersion(rumiVersion)
             .rumiBindingsVersion(rumiVersion)
+            .includeSamples(includeSamples)
             .scaffoldAt(parent);
 
         TestAppFactory.addProcessor(app, "order-processor");
@@ -129,41 +150,61 @@ EOF
 "${JAVA_HOME}/bin/javac" -cp "${CP}" -d "${WORK_DIR}" "${WORK_DIR}/Build.java" \
     || fail "Could not compile the scaffolding driver"
 
-APP="$("${JAVA_HOME}/bin/java" -cp "${CP}:${WORK_DIR}" Build "${WORK_DIR}/out" "${RUMI_VERSION}" | tail -1)"
-[[ -d "${APP}" ]] || fail "Scaffolding did not produce an app at '${APP}'"
-info "Scaffolded ${APP}"
-
-# ---- 3. Drop in the in-process tests --------------------------------
-
 # These live beside the /test-the-builder skill, so the manual and automated
 # paths exercise the same tests rather than drifting into two versions.
 EXAMPLES="${REPO_DIR}/.claude/skills/test-the-builder/examples"
-TEST_DIR="${APP}/test-demo-system/src/test/java/com/example/demo"
 [[ -d "${EXAMPLES}" ]] || fail "Missing test sources at ${EXAMPLES}"
-mkdir -p "${TEST_DIR}"
 
-# SystemBootTest boots all four service types plus the snapped connector;
-# WebserviceTest drives the full HTTP -> engine -> state -> reply round trip.
-# FlowTest is deliberately excluded: it needs hand edits the builder still has
-# no operation for, so it cannot run unattended.
-for t in SystemBootTest WebserviceTest; do
-    cp "${EXAMPLES}/${t}.java" "${TEST_DIR}/" \
-        || fail "Could not stage ${t}"
+# ---- 3 & 4. Per mode: scaffold, stage tests, build AND run ----------
+
+# verify_mode <label> <includeSamples> <test...>
+#
+# SystemBootTest boots all four service types plus the snapped connector and is
+# mode-agnostic, so both modes run it. The webservice HTTP round trip is not:
+# with samples it is the /echo -> engine -> state -> reply path, and sample-free
+# it is the /health probe, which is all a bare resource still exposes.
+# FlowTest is deliberately excluded from both: it needs hand edits the builder
+# still has no operation for, so it cannot run unattended.
+verify_mode() {
+    local label="$1"; shift
+    local include_samples="$1"; shift
+    local out_dir="${WORK_DIR}/out-${label}"
+
+    info "[${label}] Scaffolding a demo app with every service type"
+    mkdir -p "${out_dir}"
+    local app
+    app="$("${JAVA_HOME}/bin/java" -cp "${CP}:${WORK_DIR}" Build \
+        "${out_dir}" "${RUMI_VERSION}" "${include_samples}" | tail -1)"
+    [[ -d "${app}" ]] || fail "[${label}] Scaffolding did not produce an app at '${app}'"
+    info "[${label}] Scaffolded ${app}"
+
+    local test_dir="${app}/test-demo-system/src/test/java/com/example/demo"
+    mkdir -p "${test_dir}"
+    local t
+    for t in "$@"; do
+        cp "${EXAMPLES}/${t}.java" "${test_dir}/" || fail "[${label}] Could not stage ${t}"
+    done
+
+    info "[${label}] Building and running the generated system"
+    if ! (cd "${app}" && "${MVN}" test -DfailIfNoTests=false); then
+        echo >&2
+        echo "!! [${label}] The generated app failed to build or run." >&2
+        echo "!! This is a builder defect, not a test defect — the generated app is" >&2
+        echo "!! the product. Inspect it at: ${app}" >&2
+        exit 1
+    fi
+    info "[${label}] Generated app built and ran cleanly against Rumi ${RUMI_VERSION}"
+}
+
+for mode in ${MODES:-samples bare}; do
+    case "${mode}" in
+        samples) verify_mode samples true  SystemBootTest WebserviceTest ;;
+        bare)    verify_mode bare    false SystemBootTest BareWebserviceTest ;;
+        *)       fail "Unknown mode '${mode}'; expected 'samples' or 'bare'" ;;
+    esac
 done
 
-# ---- 4. Build AND run -----------------------------------------------
-
-info "Building and running the generated system"
-cd "${APP}"
-if ! "${MVN}" test -DfailIfNoTests=false; then
-    echo >&2
-    echo "!! The generated app failed to build or run." >&2
-    echo "!! This is a builder defect, not a test defect — the generated app is" >&2
-    echo "!! the product. Inspect it at: ${APP}" >&2
-    exit 1
-fi
-
-info "Generated app built and ran cleanly against Rumi ${RUMI_VERSION}"
+info "Generated apps built and ran cleanly against Rumi ${RUMI_VERSION} in every scaffold mode"
 
 # Only clean up on success; a failed run leaves the app for inspection.
 if [[ -z "${WORK_DIR_PRESERVE:-}" ]]; then

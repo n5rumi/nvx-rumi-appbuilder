@@ -137,6 +137,7 @@ public final class TestAppFactory {
         private EncodingType encodingType = EncodingType.QUARK;
         private MessagingProvider messagingProvider = MessagingProvider.ACTIVEMQ;
         private BuildTool buildTool = BuildTool.MAVEN;
+        private boolean includeSamples = true;
 
         private Builder(String appName) {
             if (appName == null || appName.isBlank()) {
@@ -158,6 +159,13 @@ public final class TestAppFactory {
         public Builder buildTool(BuildTool v) { this.buildTool = v; return this; }
 
         /**
+         * Scaffold with or without worked example code. The mode is recorded in
+         * the app's {@code .rumi}, so the {@code addProcessor}/{@code addDriver}
+         * /... helpers inherit it -- there is no per-service setting to remember.
+         */
+        public Builder includeSamples(boolean v) { this.includeSamples = v; return this; }
+
+        /**
          * Scaffold the app under {@code parentDir}. Returns the app root
          * (which is {@code parentDir/<artifactPrefix>-<appTokenName>}).
          */
@@ -166,7 +174,7 @@ public final class TestAppFactory {
             ApplicationBuilder.AppParams params = new ApplicationBuilder.AppParams(
                 appName, parentDir.toString(), packageName, groupId, artifactPrefix,
                 rumiVersion, rumiBindingsVersion, rumiMgmtVersion,
-                encodingType, messagingProvider, buildTool);
+                encodingType, messagingProvider, buildTool, includeSamples);
             new ApplicationBuilder().createApplication(params);
             return Path.of(params.getAppRoot());
         }
