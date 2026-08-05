@@ -74,13 +74,34 @@ public class ServiceBuilder {
             return name;
         }
 
+        /**
+         * Resolve an HA model from any of the spellings it appears in, case
+         * insensitively: the enum constant ({@code STATE_REPLICATION}), the
+         * policy name the generated {@code @AppHAPolicy} carries
+         * ({@code StateReplication}), or the short template name ({@code sr}).
+         *
+         * <p>All three are spellings a caller legitimately arrives at — the
+         * middle one by reading generated code, which is the most likely place
+         * to look. Accepting only one of them made the other two a failed call
+         * whose error named a constant nobody had typed.
+         */
         public static ServiceHAModel fromString(String value) {
-            for (ServiceHAModel model : ServiceHAModel.values()) {
-                if (model.name.equalsIgnoreCase(value)) {
-                    return model;
+            if (value != null) {
+                String normalized = value.trim().replace("_", "");
+                for (ServiceHAModel model : ServiceHAModel.values()) {
+                    if (model.name.equalsIgnoreCase(value.trim())
+                        || model.name().replace("_", "").equalsIgnoreCase(normalized)) {
+                        return model;
+                    }
                 }
             }
-            throw new IllegalArgumentException("Unsupported service HA model: " + value);
+            StringBuilder accepted = new StringBuilder();
+            for (ServiceHAModel model : ServiceHAModel.values()) {
+                if (accepted.length() > 0) accepted.append(", ");
+                accepted.append(model.name()).append(" (or '").append(model.name).append("')");
+            }
+            throw new IllegalArgumentException("Unsupported service HA model: '" + value
+                + "'. Accepted: " + accepted + ", case insensitive.");
         }
     }
 

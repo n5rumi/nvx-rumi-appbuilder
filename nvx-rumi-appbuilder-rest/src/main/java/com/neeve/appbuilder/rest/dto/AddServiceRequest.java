@@ -59,9 +59,13 @@ public final class AddServiceRequest {
         ServiceBuilder.ServiceType resolvedType = ServiceBuilder.ServiceType.valueOf(type.toUpperCase());
         ServiceBuilder.ServiceHAModel resolvedHa = null;
         if (resolvedType.isClusterable()) {
+            // fromString, not valueOf: it accepts the policy spelling the
+            // generated @AppHAPolicy uses ("StateReplication") and the short
+            // template name ("sr") as well as the enum constant, and its
+            // message lists what is accepted.
             resolvedHa = haModel == null
                 ? ServiceBuilder.ServiceHAModel.STATE_REPLICATION
-                : ServiceBuilder.ServiceHAModel.valueOf(haModel.toUpperCase());
+                : ServiceBuilder.ServiceHAModel.fromString(haModel);
         }
         int p = partitions == null ? 1 : partitions;
         return new ServiceBuilder.ServiceParams(appRoot, name, resolvedType, resolvedHa, clustered, p, includeSamples);
