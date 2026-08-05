@@ -230,11 +230,26 @@ is effectively locked:
 
 | Property | Locked at |
 |---|---|
-| `jetty.version` | `12.0.16` |
+| `jetty.version` | `12.0.36` |
 | `jersey.version` | `3.1.11` |
-| `jackson.version` | `2.18.2` |
+| `jackson.version` | `2.18.9` |
 | `swagger.version` | `2.2.36` |
 | `slf4j.version` | `2.0.16` |
+
+"Locked" means *a milestone bump does not touch these*, not *these never
+move*. A deliberate security bump is a different thing and is expected: jetty
+and jackson were bumped for RUMI-381 to clear 14 Dependabot alerts. Two rules
+make that safe. Stay within the same minor line, so the bump cannot cross a
+Jakarta baseline the way jersey `4.0.0-M2` would. And edit the properties by
+hand — never reach for `versions:update-properties`, for the reason below.
+
+⚠️ **The webservice service template has its own `jetty.version`**, in
+`nvx-rumi-appbuilder-sdk/src/main/resources/templates/maven/service/webservice/sr/{{ServiceArtifactId}}/pom.xml`.
+That one is the POM of *generated apps*, so it ships to users and needs
+bumping too — it had drifted nine patch releases behind the REST service's own
+pin before anyone noticed. `ci/verify-generated-app.sh` is what proves such a
+bump has not broken generated apps: it boots a scaffolded webservice and
+exercises the HTTP round trip.
 
 ⚠️ **`mvn versions:update-properties` pulls pre-release artifacts here.**
 There is no version-range restriction configured (no `rulesUri`, no
