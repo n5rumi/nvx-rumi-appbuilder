@@ -65,9 +65,12 @@ are the scaffolding entry points. Drive them from a tiny Java main:
 ```bash
 cat > "$WORK/Build.java" <<'EOF'
 import com.neeve.appbuilder.ConnectorEditor;
+import com.neeve.appbuilder.FieldEditor;
 import com.neeve.appbuilder.JavaSourceEditor;
+import com.neeve.appbuilder.MessageEditor;
 import com.neeve.appbuilder.test.TestAppFactory;
 import java.nio.file.*;
+import java.util.List;
 public class Build {
   public static void main(String[] a) throws Exception {
     Path app = TestAppFactory.newApp("demo").packageName("com.example.demo").scaffoldAt(Paths.get(a[0]));
@@ -76,8 +79,13 @@ public class Build {
     TestAppFactory.addConnector(app, "sink");
     TestAppFactory.addWebservice(app, "gateway");
     ConnectorEditor.addConnector(app, "order-processor", "audit", false);
+    // Shared Tick message in the ROE model, so both the driver and the processor
+    // see it. ROE scope resolves the app-level model, so the service name is just
+    // the app context. (Slice 2 added this op; the skill used to perl-edit it in.)
+    MessageEditor.addMessage(app, "order-processor", FieldEditor.ModelScope.ROE_MESSAGES,
+        "Tick", List.of(), false);
     // Functional code via a builder op: add an @EventHandler onTick(Tick) to the
-    // processor whose body counts ticks. (The Tick message, the _tickCount field,
+    // processor whose body counts ticks. (The _tickCount field
     // and the getter are added by hand below — the builder has no op for those.)
     JavaSourceEditor.addHandler(app, "order-processor", "onTick", "Tick", "_tickCount++;", false);
     System.out.println("BUILT:" + app);
@@ -94,22 +102,21 @@ APP="$WORK/out/test-demo"
 
 ### Step 2b — functional edits the builder can't do yet
 
-The `FlowTest` needs a shared message both the driver and processor see, a counter
-the test can read, and a driver that actually sends. The builder has no operation for
-these three, so make them by hand (and keep them logged in `gtm/rumi/TODO.md` as
-candidate builder operations):
+The `FlowTest` also needs a counter the test can read and a driver that actually
+sends. The builder has no operation for either, so make them by hand (and keep them
+logged in `gtm/rumi/TODO.md` as candidate builder operations):
 
 ```bash
-# (1) shared Tick message in roe (no op to add a shared roe message)
-perl -0pi -e 's{<messages>\s*</messages>}{<messages>\n        <message name="Tick" id="1"/>\n    </messages>}' \
-  "$APP/test-demo-roe/src/main/models/com/example/demo/roe/messages.xml"
-# (2) processor counter field + public accessor (no op to add a field/accessor)
+# (1) processor counter field + public accessor (no op to add a field/accessor)
 perl -0pi -e 's{    private AepMessageSender _messageSender;}{    private AepMessageSender _messageSender;\n    private int _tickCount;\n    public int getTickCount() \{ return _tickCount; \}}' \
   "$APP/test-demo-order-processor/src/main/java/com/example/demo/order/processor/Main.java"
-# (3) fill the driver template's send placeholder
+# (2) fill the driver template's send placeholder
 perl -0pi -e 's{// put code here to send a message}{_messageSender.sendMessage(Tick.create());}' \
   "$APP/test-demo-feeder/src/main/java/com/example/demo/feeder/Main.java"
 ```
+
+The shared `Tick` message used to be a third perl edit here. It is now a builder
+operation (`MessageEditor` with `ModelScope.ROE_MESSAGES`) and is done in Step 2.
 
 ## Step 3 — patch the generated app to real Rumi versions
 
@@ -173,14 +180,19 @@ Real bugs this harness has already caught and fixed:
 ## Builder gaps this surfaced (candidate new operations)
 
 `WebserviceTest` and `SystemBootTest` are gap-free — they run on builder output alone.
-`FlowTest` needs the three Step-2b hand edits because the builder currently has no operation
+`FlowTest` needs the two Step-2b hand edits because the builder currently has no operation
 to:
-1. add a **shared message to the `roe` module** that multiple services import (`MessageEditor`
-   only targets a single service's `messages.xml`);
-2. add a **field + public accessor** to a service class (`JavaSourceEditor` only adds
+1. add a **field + public accessor** to a service class (`JavaSourceEditor` only adds
    `@EventHandler` methods);
-3. fill a **driver's send body** (the driver template ships a `// put code here` placeholder).
+2. fill a **driver's send body** (the driver template ships a `// put code here` placeholder).
 
-Each is a reasonable future builder operation; they are tracked in `gtm/rumi/TODO.md`. Until
+Both are reasonable future builder operations; they are tracked in `gtm/rumi/TODO.md`. Until
 they exist, the skill makes the edits by hand — which is itself a useful signal about where the
 builder's "do" surface is thin.
+
+**Closed since this list was written:** adding a **shared message to the `roe` module** was
+the third gap here. Slice 2 of the model-editing epic gave `MessageEditor` a `scope`, so
+`ModelScope.ROE_MESSAGES` now does it as a builder operation (Step 2), and the perl edit is
+gone. Slice 3 likewise closed an `asEmbedded` hand-edit that briefly lived in this step.
+Worth re-checking this list whenever the "do" surface grows — a stale gap list quietly argues
+for hand-editing something the builder can already do.
