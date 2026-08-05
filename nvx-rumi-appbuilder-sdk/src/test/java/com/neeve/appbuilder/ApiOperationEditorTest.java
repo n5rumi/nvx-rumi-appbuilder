@@ -51,9 +51,13 @@ public class ApiOperationEditorTest {
         tempDir = Files.createTempDirectory("api-op-editor-");
         appRoot = TestAppFactory.newApp("demo").packageName("com.example.demo").scaffoldAt(tempDir);
         TestAppFactory.addProcessor(appRoot, SVC);
-        MessageEditor.addMessage(appRoot, SVC, "PingRequest", List.of(), false);
-        MessageEditor.addMessage(appRoot, SVC, "PingResponse",
-            List.of(new FieldDef("status", "String", Map.of())), false);
+        // ROE-scoped, because that is the model a scaffolded api.xml resolves
+        // against. A message an operation names is part of the service's public
+        // contract, so this is where it belongs.
+        MessageEditor.addMessage(appRoot, SVC, FieldEditor.ModelScope.ROE_MESSAGES,
+            "PingRequest", List.of(), false);
+        MessageEditor.addMessage(appRoot, SVC, FieldEditor.ModelScope.ROE_MESSAGES,
+            "PingResponse", List.of(new FieldDef("status", "String", Map.of())), false);
     }
 
     @After
@@ -93,6 +97,69 @@ public class ApiOperationEditorTest {
         assertNull(ApiIntrospector.getOperation(appRoot, SVC, "ping"));
         assertTrue("remove of absent is noop",
             ApiOperationEditor.removeOperation(appRoot, SVC, "ping", false).isNoop());
+    }
+
+    @Test
+    public void addOperation_rejectsAMessageOutsideTheModelTheApiXmlNames() throws Exception {
+        // Service-scoped: schema-valid, resolvable by the introspector, and
+        // NOT resolvable by the generator, which reads only the single model
+        // the api.xml names. This is the case that used to reach codegen.
+        MessageEditor.addMessage(appRoot, SVC, FieldEditor.ModelScope.SERVICE_MESSAGES,
+            "PrivateRequest", List.of(), false);
+        try {
+            ApiOperationEditor.addOperation(appRoot, SVC, "priv", "PrivateRequest", "PingResponse",
+                null, null, false);
+            fail("expected rejection: the message is not in the model api.xml names");
+        } catch (IllegalArgumentException expected) {
+            assertTrue("message should name the model that was searched",
+                expected.getMessage().contains("roe/messages.xml"));
+        }
+        assertNull("a rejected add must not write the operation",
+            ApiIntrospector.getOperation(appRoot, SVC, "priv"));
+    }
+
+    @Test
+    public void addOperation_followsTheApiXmlToANonRoeModel() throws Exception {
+        // The api.xml belongs to the user and may point anywhere; the check
+        // follows it rather than assuming the scaffolding convention.
+        MessageEditor.addMessage(appRoot, SVC, FieldEditor.ModelScope.SERVICE_MESSAGES,
+            "PrivateRequest", List.of(), false);
+        MessageEditor.addMessage(appRoot, SVC, FieldEditor.ModelScope.SERVICE_MESSAGES,
+            "PrivateResponse", List.of(), false);
+
+        Path apiXml = AppIntrospector.resolveApiXmlFile(appRoot, SVC);
+        String api = Files.readString(apiXml);
+        assertTrue(api.contains("roe/messages.xml"));
+        Files.writeString(apiXml, api.replaceAll(
+            "modelFile=\"[^\"]*\"",
+            "modelFile=\"com/example/demo/" + SVC.replace('-', '_') + "/messages/messages.xml\""));
+
+        // Re-point it properly: resolve the service model's real location
+        // relative to the models root, whatever the scaffolder named it.
+        Path serviceModel = AppIntrospector.resolveMessagesXmlFile(appRoot, SVC);
+        Path modelsRoot = serviceModel;
+        while (modelsRoot != null && !"models".equals(modelsRoot.getFileName().toString())) {
+            modelsRoot = modelsRoot.getParent();
+        }
+        assertNotNull(modelsRoot);
+        String rel = modelsRoot.relativize(serviceModel).toString().replace('\\', '/');
+        Files.writeString(apiXml, Files.readString(apiXml).replaceAll(
+            "modelFile=\"[^\"]*\"", "modelFile=\"" + rel + "\""));
+
+        // Now the service-scoped message is the one that resolves...
+        ApiOperationEditor.addOperation(appRoot, SVC, "priv", "PrivateRequest", "PrivateResponse",
+            null, null, false);
+        assertNotNull(ApiIntrospector.getOperation(appRoot, SVC, "priv"));
+
+        // ...and a ROE message, reachable only through an <import>, is not:
+        // the generator does not follow imports, so neither do we.
+        try {
+            ApiOperationEditor.addOperation(appRoot, SVC, "ping", "PingRequest", "PingResponse",
+                null, null, false);
+            fail("expected rejection: imports are not followed");
+        } catch (IllegalArgumentException expected) {
+            // ok
+        }
     }
 
     @Test
