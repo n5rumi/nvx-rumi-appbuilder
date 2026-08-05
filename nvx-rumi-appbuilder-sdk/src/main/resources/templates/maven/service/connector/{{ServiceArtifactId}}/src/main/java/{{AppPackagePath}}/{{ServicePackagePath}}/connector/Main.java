@@ -8,8 +8,9 @@ import com.neeve.sma.SmaPermanentException;
 import com.neeve.sma.spi.connector.Connector;
 import com.neeve.trace.Tracer;
 
-import {{AppPackageName}}.roe.*;
-import {{AppPackageName}}.{{ServicePackageName}}.messages.*;
+// @sample-begin
+import {{AppPackageName}}.{{ServicePackageName}}.messages.SampleConnectorMessage;
+// @sample-end
 
 /**
  * A user-authored Rumi connector: a message-bus binding that bridges the

@@ -93,6 +93,18 @@ public final class JavaSourceEditor {
             return ChangeSet.noop("handler '" + methodName + "' already exists on " + clazz.getNameAsString());
         }
 
+        // Import the message type explicitly. The scaffolded Main.java used to
+        // import the message and ROE packages by wildcard, which resolved any
+        // handler parameter for free — and made a name defined in both models
+        // ambiguous, failing on generated code the author never wrote. The
+        // templates now import single types, so the editor has to carry its own
+        // import. Unresolvable means the type is not in either model, in which
+        // case adding a guessed import would be worse than adding none.
+        String fqn = resolveMessageFqn(appRoot, serviceName, messageType);
+        if (fqn != null) {
+            cu.addImport(fqn);
+        }
+
         MethodDeclaration method = buildHandlerMethod(methodName, messageType, body);
         clazz.addMember(method);
         // LexicalPreservingPrinter setup happens in parse() before any
@@ -165,6 +177,57 @@ public final class JavaSourceEditor {
             if (type instanceof ClassOrInterfaceDeclaration) {
                 return (ClassOrInterfaceDeclaration) type;
             }
+        }
+        return null;
+    }
+
+    /**
+     * Fully-qualify a handler's message type by finding which model declares
+     * it — the service's own message model, or the app's shared ROE model.
+     *
+     * <p>The namespace is read from the model's own {@code namespace}
+     * attribute rather than assembled from the app's package tokens, so this
+     * stays correct for a hand-arranged app whose packages do not follow the
+     * scaffolding convention.
+     *
+     * @return the fully-qualified name, {@code messageType} unchanged if it is
+     *         already qualified, or null if no model declares it.
+     */
+    private static String resolveMessageFqn(Path appRoot, String serviceName, String messageType) {
+        if (messageType == null || messageType.trim().isEmpty()) {
+            return null;
+        }
+        String type = messageType.trim();
+        if (type.contains(".")) {
+            return type; // already qualified; import it as given
+        }
+        try {
+            String ns = namespaceDeclaring(AppIntrospector.resolveMessagesXmlFile(appRoot, serviceName), type);
+            if (ns == null) {
+                ns = namespaceDeclaring(AppIntrospector.resolveRoeMessagesXmlFile(appRoot), type);
+            }
+            return ns == null ? null : ns + "." + type;
+        } catch (Exception e) {
+            return null; // no model to read; leave the import alone
+        }
+    }
+
+    /** The model's namespace if it declares {@code messageName}, else null. */
+    private static String namespaceDeclaring(Path modelFile, String messageName) {
+        if (modelFile == null || !Files.exists(modelFile)) {
+            return null;
+        }
+        try {
+            org.w3c.dom.Document doc = XmlDomUtils.parseXmlDocument(modelFile);
+            for (com.neeve.appbuilder.model.MessageDef m : MessageIntrospector.parseMessages(doc)) {
+                if (messageName.equals(m.getName())) {
+                    org.w3c.dom.Element root = doc.getDocumentElement();
+                    String ns = root == null ? null : root.getAttribute("namespace");
+                    return ns == null || ns.trim().isEmpty() ? null : ns.trim();
+                }
+            }
+        } catch (Exception ignored) {
+            // unreadable model: treat as "does not declare it"
         }
         return null;
     }

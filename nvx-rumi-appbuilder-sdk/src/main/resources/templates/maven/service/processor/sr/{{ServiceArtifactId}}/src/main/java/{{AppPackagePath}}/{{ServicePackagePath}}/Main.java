@@ -9,9 +9,7 @@ import com.neeve.server.app.annotations.AppInjectionPoint;
 import com.neeve.server.app.annotations.AppStateFactoryAccessor;
 import com.neeve.sma.MessageView;
 
-import {{AppPackageName}}.roe.*;
-import {{AppPackageName}}.{{ServicePackageName}}.messages.*;
-import {{AppPackageName}}.{{ServicePackageName}}.state.*;
+import {{AppPackageName}}.{{ServicePackageName}}.state.Repository;
 
 @AppHAPolicy(value = AepEngine.HAPolicy.{{ServiceHAModel}})
 public class Main {
