@@ -38,5 +38,75 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <!-- Schemas unpacked from the pinned Rumi artifacts (see below).
+                 Deliberately NOT checked in, so they cannot drift from
+                 ${nvx.rumi.version} and cannot be hand-edited. -->
+            <resource>
+                <directory>${project.build.directory}/generated-resources/schemas</directory>
+                <targetPath>schemas</targetPath>
+            </resource>
+        </resources>
+
+        <plugins>
+            <!-- RUMI-377: the validators' schemas are produced from the Rumi
+                 version this builder targets, not maintained by hand.
+
+                 x-ddl.xsd   (config.xml)                 <- nvx-rumi-ddl
+                 x-adml.xsd  (messages.xml, state.xml)    <- nvx-rumi-adm
+                 x-asml.xsd  (api.xml)                    <- nvx-rumi-client
+
+                 Each ships at the root of its artifact. Staleness is now
+                 structurally impossible — there is no checked-in copy to drift.
+                 Absence is caught by SchemaResourcesTest, which loads all three
+                 through SchemaFactory: that proves they arrived AND parse as
+                 schemas, which a file-existence check would not. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>unpack-rumi-schemas</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>unpack</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>com.neeve</groupId>
+                                    <artifactId>nvx-rumi-ddl</artifactId>
+                                    <version>${nvx.rumi.version}</version>
+                                    <includes>x-ddl.xsd</includes>
+                                    <outputDirectory>${project.build.directory}/generated-resources/schemas</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.neeve</groupId>
+                                    <artifactId>nvx-rumi-adm</artifactId>
+                                    <version>${nvx.rumi.version}</version>
+                                    <includes>x-adml.xsd</includes>
+                                    <outputDirectory>${project.build.directory}/generated-resources/schemas</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.neeve</groupId>
+                                    <artifactId>nvx-rumi-client</artifactId>
+                                    <version>${nvx.rumi.version}</version>
+                                    <includes>x-asml.xsd</includes>
+                                    <outputDirectory>${project.build.directory}/generated-resources/schemas</outputDirectory>
+                                </artifactItem>
+                            </artifactItems>
+                            <overWriteReleases>true</overWriteReleases>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>
 

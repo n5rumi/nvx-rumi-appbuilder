@@ -32,6 +32,14 @@
         <connection>scm:git:git://github.com/n5rumi/nvx-rumi-appbuilder.git</connection>
     </scm>
 
+    <properties>
+        <!-- The Rumi milestone this builder targets. Single source of truth:
+             the REST service compiles against it, and the SDK unpacks its
+             schemas (x-ddl, x-adml, x-asml) from the matching artifacts at
+             build time. A milestone bump is this one line. -->
+        <nvx.rumi.version>4.0.637</nvx.rumi.version>
+    </properties>
+
     <modules>
         <module>nvx-rumi-appbuilder-sdk</module>
         <module>nvx-rumi-appbuilder-rest</module>

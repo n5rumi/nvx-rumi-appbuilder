@@ -191,9 +191,15 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
 
 ## Milestone Version Bumps
 
-When picking up a new Rumi milestone, **only `nvx.rumi.version` in
-`nvx-rumi-appbuilder-rest/pom.xml` changes.** Everything else in that
-`<properties>` block is effectively locked:
+When picking up a new Rumi milestone, **only `nvx.rumi.version` in the root
+`pom.xml` changes.** It lives in the parent `<properties>` because it drives
+two things now: the REST service's Rumi dependency, and the SDK's build-time
+unpack of the `x-ddl`, `x-adml` and `x-asml` schemas (RUMI-377). The schemas
+are no longer checked in, so they follow that one line automatically and
+cannot drift.
+
+Everything else in `nvx-rumi-appbuilder-rest/pom.xml`'s `<properties>` block
+is effectively locked:
 
 | Property | Locked at |
 |---|---|

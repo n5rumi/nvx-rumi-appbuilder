@@ -26,13 +26,10 @@ import com.neeve.appbuilder.model.ValidationResult.ValidationError;
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.SAXParseException;
 
-import javax.xml.XMLConstants;
 import javax.xml.transform.stream.StreamSource;
 import javax.xml.validation.Schema;
-import javax.xml.validation.SchemaFactory;
 import javax.xml.validation.Validator;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -41,14 +38,11 @@ import java.util.List;
 /**
  * Validate an app's config.xml against the X-DDL schema (x-ddl.xsd).
  *
- * <p>The schema is bundled in the SDK JAR at
- * {@code /schemas/x-ddl.xsd}. The bundled copy is a point-in-time copy
- * of the canonical schema in {@code nvx-rumi-ddl/src/resources/x-ddl.xsd};
- * update it by re-running {@code install/stage-xsd.sh} (TODO) or by
- * copying manually when the Rumi DDL schema is revised.
+ * <p>The schema is unpacked at build time from the {@code nvx-rumi-ddl}
+ * artifact matching {@code ${nvx.rumi.version}}, so it always describes the
+ * Rumi version this builder targets. See {@link Schemas}.
  */
 public final class ConfigValidator {
-    private static final String XSD_RESOURCE_PATH = "/schemas/x-ddl.xsd";
 
     private ConfigValidator() {}
 
@@ -73,7 +67,7 @@ public final class ConfigValidator {
      * Useful for validating snippets or partial configs.
      */
     public static ValidationResult validateFile(Path xmlFile) throws IOException {
-        Schema schema = loadSchema();
+        Schema schema = Schemas.load(Schemas.Kind.X_DDL);
         Validator validator = schema.newValidator();
 
         List<ValidationError> errors = new ArrayList<>();
@@ -110,18 +104,6 @@ public final class ConfigValidator {
     }
 
     // --- internal -----------------------------------------------------
-
-    private static Schema loadSchema() throws IOException {
-        try (InputStream is = ConfigValidator.class.getResourceAsStream(XSD_RESOURCE_PATH)) {
-            if (is == null) {
-                throw new IOException("bundled X-DDL schema not found at classpath: " + XSD_RESOURCE_PATH);
-            }
-            SchemaFactory factory = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI);
-            return factory.newSchema(new StreamSource(is));
-        } catch (Exception e) {
-            throw new IOException("failed to load X-DDL schema", e);
-        }
-    }
 
     private static ValidationError toError(ValidationError.Severity severity, SAXParseException ex) {
         return new ValidationError(severity, ex.getLineNumber(), ex.getColumnNumber(), ex.getMessage());
