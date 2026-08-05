@@ -68,6 +68,21 @@ RELEASE_ARCHES="${RELEASE_ARCHES:-linux-x86-64 osx-x86-64}"
 info()  { echo "==> $*"; }
 fail()  { echo "!! $*" >&2; exit 1; }
 
+# ---- 0. Prove the builder produces apps that build and run ----------
+#
+# This runs FIRST, before any artifact reaches the downloads tree and before
+# the `latest` symlink moves. Publishing and then discovering the generated
+# app does not compile would mean shipping a broken builder and finding out
+# from a user — or, worse, from an agent that concludes its own code is wrong.
+#
+# Deliberately not behind a SKIP_ flag. Every other step here has one because
+# skipping it degrades a release; skipping this one would let exactly the
+# defect it exists to catch through, which is the whole point of RUMI-379.
+
+info "Verifying that generated apps build and run"
+"${REPO_DIR}/ci/verify-generated-app.sh" \
+    || fail "Generated-app verification failed — refusing to publish ${VERSION}"
+
 # ---- 1. REST: matrix build + publish --------------------------------
 
 if [[ "${SKIP_REST:-}" != "1" ]]; then

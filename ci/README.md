@@ -82,11 +82,39 @@ bash /tmp/smoke-${VERSION}/rumi-appbuilder-rest/current/install.sh \
     --install-dir /tmp/smoke-${VERSION} --uninstall --force
 ```
 
+## Generated-app verification (the release gate)
+
+Before anything is published, `ci/release.sh` runs `ci/verify-generated-app.sh`.
+It scaffolds a `demo` app with **every** service type — processor, driver,
+connector, webservice — plus a custom connector snapped into the processor, then
+**builds and runs** it through the in-process JUnit/`EmbeddedXVM` harness every
+generated app ships. Takes roughly a minute.
+
+This exists because `mvn package` on this repo compiles the *scaffolder*, never
+the *templates*. A template that references a missing API, emits malformed XML,
+or pins the wrong dependency passes the entire test suite and only explodes in
+the user's generated app. When `/test-the-builder` was first run manually it
+immediately caught four such bugs — `xmlns=""` on injected config fragments,
+Rumi 4.0 needing both javax and jakarta JAXB, a `--` inside a POM comment, and
+port-8080 collisions — every one of which had passed the unit tests.
+
+It runs against the Rumi version from `nvx.rumi.version`, read from the parent
+POM, so a milestone bump moves the check with it. The test sources are shared
+with the `/test-the-builder` skill (`.claude/skills/test-the-builder/examples/`)
+rather than duplicated, so the manual and automated paths cannot drift.
+
+There is deliberately **no skip flag**. The other steps have one because
+skipping them degrades a release; skipping this one would ship precisely the
+defect it exists to catch. On failure the generated app is left on disk and its
+path printed — a failure here is a builder defect, not a test defect.
+
 ## Skipping parts of a release
 
 - `SKIP_REST=1` — patch-only release that leaves REST untouched.
 - `SKIP_MCP=1` — REST-only release.
 - `SKIP_BUNDLE=1` — republishing a per-service installer without touching the combined one (rare).
+
+Note there is no skip for the generated-app verification above, by design.
 
 ## Layout of published artifacts
 
