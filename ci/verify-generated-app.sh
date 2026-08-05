@@ -69,11 +69,31 @@ fail() { echo "!! $*" >&2; exit 1; }
 # The generated app must be proven against the Rumi version this builder
 # targets. Reading it from the POM rather than hardcoding means a milestone
 # bump moves this check with it — the whole point of RUMI-377.
+#
+# RUMI-384: this capture has to be colour-proof. Maven colourises its output
+# when it believes stdout is a terminal, and under TeamCity's Docker wrapper it
+# does, so the value came back as "4.0.637<ESC>[0m<ESC>[0m". That string is
+# stamped straight into the generated app's <nvx.rumi.version>, and every
+# dependency it then resolves 404s at a version containing an escape sequence.
+# It never reproduced locally because a piped stdout is not a TTY.
+#
+# Three independent guards, deliberately. Any one of them fixes the observed
+# failure; together they also cover the next variant of it.
 if [[ -z "${RUMI_VERSION:-}" ]]; then
-    RUMI_VERSION="$("${MVN}" -q -N -DforceStdout \
+    RUMI_VERSION="$("${MVN}" -q -B -Dstyle.color=never -N -DforceStdout \
         help:evaluate -Dexpression=nvx.rumi.version -f "${REPO_DIR}/pom.xml" 2>/dev/null | tail -1)"
 fi
+# 2. Strip any escape sequence that got through anyway, plus stray whitespace/CR.
+ESC="$(printf '\033')"
+RUMI_VERSION="$(printf '%s' "${RUMI_VERSION}" \
+    | sed "s/${ESC}\[[0-9;]*[a-zA-Z]//g" \
+    | tr -d '[:space:]')"
 [[ -n "${RUMI_VERSION}" ]] || fail "Could not determine nvx.rumi.version from the parent POM"
+# 3. A version that is not a version means we captured decoration rather than
+#    data. Say so here, naming the value, instead of letting it surface three
+#    minutes later as an unresolvable dependency that reads like a build defect.
+[[ "${RUMI_VERSION}" =~ ^[0-9][0-9A-Za-z.+_-]*$ ]] \
+    || fail "nvx.rumi.version resolved to '$(printf '%q' "${RUMI_VERSION}")', which is not a version"
 info "Verifying generated apps against Rumi ${RUMI_VERSION}"
 
 WORK_DIR="${WORK_DIR:-$(mktemp -d)}"
