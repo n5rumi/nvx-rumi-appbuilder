@@ -123,6 +123,33 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
   `pyproject.toml` and sits alongside the Maven children; it is not
   listed in the parent POM's `<modules>`.
 
+## Model validation (RUMI-376/377/378/379)
+
+- **Schemas are not checked in.** `x-ddl.xsd`, `x-adml.xsd` and `x-asml.xsd` are
+  unpacked at `generate-resources` from the `nvx-rumi-ddl` / `nvx-rumi-adm` /
+  `nvx-rumi-client` artifacts matching `${nvx.rumi.version}`. Load them through
+  `Schemas`; never add a copy back to `src/main/resources/schemas`.
+- **Every model write goes through `ModelWriter.saveValidated`**, which
+  validates first and writes only if valid, so a rejected edit leaves the file
+  untouched. A new model editor must use it rather than calling
+  `XmlDomUtils.saveXmlDocument` directly. Dry runs validate too.
+- **Validation is two layers.** The schema does *not* catch the ADML rules —
+  `field/@type` is `xs:string` and XSD does no cross-referencing, so
+  `type="long"`, a non-`asEmbedded` entity used as a field type, and an
+  undefined type all pass. `ModelValidator`'s semantic layer covers those, and
+  is conservative: it stays silent when an `<import>` could not be read.
+- **`ModelValidationException` extends `IllegalStateException`**, which is what
+  gives it the REST layer's 422 mapping. Do not change that hierarchy.
+- **A new mutating operation needs a test in `MutatingOperationValidityTest`.**
+  `MutatingOperationCoverageTest` derives the operation set by scanning for
+  public static `ChangeSet`-returning methods and fails the build otherwise.
+- ⚠️ **ADML has no `key` attribute on a field — it is `isKey`.** The SDK passes
+  `FieldDef` attributes through verbatim, so a wrong name reaches the model and
+  fails at codegen.
+- ⚠️ **Do not declare `maven-enforcer-plugin` in a module's `<plugins>`.** That
+  activates `nvx-os-parent`'s release-only `enforce-no-snapshots` execution and
+  fails every SNAPSHOT build.
+
 ## Key Design Decisions
 
 - **Three modules, not one.** Each serves a different consumer shape.

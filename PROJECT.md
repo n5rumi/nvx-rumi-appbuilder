@@ -524,6 +524,108 @@ ledger only protects ids minted after a `createService`/`createApplication` that
 ran the recording step. (In practice the test-the-builder runtime check exercised
 the new path, so any app scaffolded going forward is covered from birth.)
 
+## Validation: what a schema can and cannot tell you (RUMI-376/377/378/379)
+
+An August 2026 audit asked a blunt question — what actually proves a generated
+app is valid? — and the answer was "nothing." The model files the editors spend
+most of their time writing were never schema-checked, the one schema we did
+bundle was a hand-maintained copy, the tests proved output was readable by the
+component that had written it, and no CI step ever compiled a generated app.
+Closing that produced four lessons worth more than the code.
+
+### A hand-maintained copy of someone else's schema is a slow-motion bug
+
+`ConfigValidator` validated against a checked-in `x-ddl.xsd` whose own javadoc
+called the refresh mechanism a TODO. The interesting part is not that it was
+stale — when measured it happened to be byte-identical to the pinned 4.0.637
+artifact — but that *nobody could have known either way without checking*. A
+validator trusted to be authoritative while quietly a version behind is worse
+than no validator: it drifts in both directions, rejecting what the platform
+accepts and accepting what it rejects, and both failures look like correctness.
+
+The fix removes the category rather than the instance. All three schemas
+(`x-ddl` from `nvx-rumi-ddl`, `x-adml` from `nvx-rumi-adm`, `x-asml` from
+`nvx-rumi-client`) are unpacked at build time from the artifacts matching
+`nvx.rumi.version`, and the checked-in copy is deleted. Staleness becomes
+structurally impossible: there is no second copy to drift, and nothing to
+hand-edit. The general shape — *derive it, don't copy it* — applies any time you
+find yourself vendoring an artifact that someone else owns and versions.
+
+### Ask what the schema actually checks before trusting it to check anything
+
+The obvious plan was "turn on schema validation and the known ADML foot-guns
+fall out." Measured against the real `x-adml.xsd`, they do not. `field/@type` is
+declared `xs:string` and XSD 1.0 does no cross-referencing, so `type="long"`
+(which the ADM parser does not alias and silently mis-parses), an entity used as
+a message field type without `asEmbedded="true"`, and even
+`type="NoSuchTypeAnywhere"` all validate perfectly cleanly.
+
+That is why `ModelValidator` is two layers: schema validation for structural
+damage, and a semantic layer for the reference rules the schema cannot express.
+`ModelValidatorTest.schemaAloneAcceptsWhatTheAdmParserRejects` pins the finding
+in a test, so the second layer can never be mistaken for redundant and quietly
+deleted by someone who assumes what we assumed. When you add a validator, spend
+the ten minutes to find out what it actually rejects; "we validate against the
+schema" is a claim about coverage that is very easy to get wrong.
+
+### Round-trip tests through your own parser prove almost nothing
+
+The editor tests all had the same shape: write with the editor, read back with
+the matching introspector, assert the values survived. That proves the output is
+parseable *by the component that produced it* — a closed loop that cannot detect
+a file which is well-formed but invalid.
+
+The moment real schema validation was switched on, it caught a defect that had
+been sitting in fixtures across both the SDK and REST suites: they wrote
+`key="true"` on a field. ADML has no `key` attribute; the real one is `isKey`.
+The SDK passes `FieldDef` attributes through verbatim, so a user who copied that
+would have got a model that fails ADM codegen — and the tests would have gone on
+being green, because the introspector reading it back did not care either. Some
+tests used `isKey` and some used `key`, which is exactly how this kind of thing
+hides. **Validate against an external standard, not against your own reader.**
+
+### A check nobody has pointed at real data has not been tested
+
+`ConfigValidator` had existed since Phase D4 and had never once been run against
+a scaffolded app's `config.xml` — only against placeholder-free fixtures. The
+first time it saw a real one, it failed on every X-DDL property placeholder:
+values like `${SERVICE_PERSISTENCE_QUORUM::1}` sit in attributes the schema types
+as `integer` and `boolean`, and the platform substitutes them *before* parsing.
+So the validator was, in practice, unusable on the very files it was written for,
+and the passing test suite said otherwise.
+
+It now resolves `${prop::default}` to the default before validating — faithful
+rather than a fudge, since that is the value the platform uses when nothing
+overrides it, so the defaults get genuinely type-checked instead of skipped — and
+declines to type-check a placeholder with no default, whose value cannot be known
+statically. The same sweep found `ConfigFragmentEditor` injecting fragments
+without the x-ddl namespace, producing the `xmlns=""` bug written up above as
+already fixed. It *was* fixed — in `ConfigInjector`. The sibling editor added
+later never got it. **When you fix a bug, grep for the pattern, not the file.**
+
+### Coverage lists that must be remembered will eventually be wrong
+
+The MCP suite's `EXPECTED_TOOLS` had already gone stale once, silently missing a
+whole slice of tools. Only 14 of 47 tools were named in any routing test. The
+answer is not to write the missing 33 by hand and re-open the same gap next
+quarter: it is to *derive* the expected set. `MutatingOperationCoverageTest`
+scans for public static `ChangeSet`-returning methods and fails the build if one
+has no validity test; `test_tool_coverage.py` drives every registered tool
+through the mocked REST boundary and pins `EXPECTED_TOOLS` against live
+registration. A list that has to be maintained by memory is a list whose being
+wrong looks precisely like its being right.
+
+### The release now refuses to ship a builder that produces broken apps
+
+`ci/release.sh` ran `versions:set` and `-Pdist` and nothing else, so nothing
+stopped a release whose generated apps did not compile — the only proof was a
+manual skill someone had to remember to run. `ci/verify-generated-app.sh` now
+scaffolds every service type plus a custom connector, builds it, and *runs* it
+in-process, as step 0 before any artifact reaches the downloads tree. It takes
+about a minute. It has no skip flag, deliberately: every other step has one
+because skipping it degrades a release, whereas skipping this one would let
+through the exact defect it exists to catch.
+
 ## Lessons Learned (REST distribution & runtime)
 
 Lessons from getting the REST service to build, publish, and stop
