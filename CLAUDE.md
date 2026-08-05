@@ -180,6 +180,13 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
   it gives `BareWebserviceTest` something to prove.
 - `ci/verify-generated-app.sh` builds and runs **both** modes. `MODES="bare"`
   narrows it for local iteration; the release always runs both.
+- ⚠️ **Values read out of Maven must be colour-proofed** (RUMI-384). `mvn -q
+  -DforceStdout help:evaluate` appends ANSI codes when stdout is a TTY, which it
+  is under TeamCity's Docker wrapper and is not when you pipe it locally. A
+  contaminated `nvx.rumi.version` gets stamped into the generated app's POM and
+  every dependency 404s at `4.0.637<ESC>[0m`. The capture disables colour, strips
+  escapes, and validates the shape — keep all three if you touch it, and test
+  with a TTY (`script -q /dev/null …`), not just a pipe.
 
 ## Key Design Decisions
 

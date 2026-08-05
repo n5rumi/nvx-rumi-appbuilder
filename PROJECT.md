@@ -722,6 +722,55 @@ silently de-indenting generated Java. Matching only wholly-blank lines fixes it,
 and `collapsingBlankLinesPreservesTheFollowingIndentation` exists so nobody
 reintroduces the tidier-looking version.
 
+### The gate's first real run failed on its own input (RUMI-384)
+
+`ci/verify-generated-app.sh` was written for the 1.0.16 cycle but merged after
+1.0.16 shipped, so **1.0.17 was the first release ever to run it**. It blocked
+that release immediately, printing "this is a builder defect, not a test defect
+— the generated app is the product." It was wrong. The generated app was fine.
+
+The build log's error was that `nvx-rumi-bindings-bom:4.0.637` could not be
+found, which looks like the Nexus proxy trap that strands the Bindings BOM after
+most milestones. The tell that it was something else was in the URL Maven
+actually requested:
+
+```
+.../nvx-rumi-bindings-bom/4.0.637%1B%5B0m/nvx-rumi-bindings-bom-4.0.637%1B%5B0m.pom
+```
+
+`%1B%5B0m` is `ESC [ 0 m`, an ANSI colour reset. The script derives the Rumi
+version with `mvn -q -DforceStdout help:evaluate`, and Maven colourises its
+output when it believes stdout is a terminal — which it is under TeamCity's
+Docker wrapper, and is not when you run it locally through a pipe. So the
+captured version was `4.0.637␛[0m`, it went straight into the generated app's
+`<nvx.rumi.version>`, and every dependency lookup asked for a version with an
+escape sequence in it. The BOM was simply the first to be asked.
+
+Three things worth keeping from this.
+
+**Read the URL, not the error.** "Could not find artifact X:4.0.637" and "could
+not find artifact X:4.0.637␛[0m" render identically in a terminal, because the
+escape sequence is invisible by construction. The only place the difference
+survived was the percent-encoded URL in the log. When an artifact that plainly
+exists reports as missing, compare the exact string being requested against the
+exact string you expect, byte for byte, before concluding the repository is at
+fault.
+
+**A value read from a tool is input, and input gets validated.** The capture now
+disables colour, strips escape sequences anyway, and rejects anything that is not
+shaped like a version — three guards where one would do, because the failure they
+prevent costs a release cycle and they cost three lines. The version check in
+particular converts a confusing 404 three minutes downstream into an immediate
+message naming the offending value.
+
+**Anything that only ever runs in CI has not been tested.** This script had been
+run many times on a developer machine and passed every time; a piped stdout is
+not a TTY, so the bug could not appear there. The reproduction was one command —
+`script -q /dev/null mvn ...` to attach a TTY — and it should have been part of
+writing the script, not part of debugging it. The general form: when a script's
+behaviour depends on its environment, exercise it in the environment that
+differs, not only the one on your desk.
+
 ## Lessons Learned (REST distribution & runtime)
 
 Lessons from getting the REST service to build, publish, and stop
