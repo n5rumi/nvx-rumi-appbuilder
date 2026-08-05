@@ -88,13 +88,24 @@ public final class ConfigFragmentEditor {
         Document fragmentDoc;
         try {
             doc = XmlDomUtils.parseXmlDocument(configPath);
-            fragmentDoc = XmlDomUtils.parseXmlString(xmlFragment);
+            // Parse the fragment inside an X-DDL-namespaced wrapper so the
+            // fragment subtree inherits the x-ddl default namespace. Parsed
+            // bare, it lands under the x-ddl document carrying xmlns="", which
+            // the production launcher tolerates but a validating parser — and
+            // EmbeddedXVM — rejects. ConfigInjector has done this since that
+            // bug was found; this editor was added later and never got it.
+            fragmentDoc = XmlDomUtils.parseXmlString(
+                "<nv-x-ddl-fragment xmlns=\"" + ConfigInjector.XDDL_NAMESPACE + "\">"
+                + xmlFragment + "</nv-x-ddl-fragment>");
         } catch (Exception e) {
             throw new IOException("failed to parse config or fragment", e);
         }
 
         Element parent = navigateOrCreate(doc.getDocumentElement(), targetPath);
-        Element newNode = fragmentDoc.getDocumentElement();
+        Element newNode = firstChildElement(fragmentDoc.getDocumentElement());
+        if (newNode == null) {
+            throw new IOException("config fragment contained no element: " + xmlFragment);
+        }
 
         NodeList existing = parent.getChildNodes();
         for (int i = 0; i < existing.getLength(); i++) {
@@ -257,4 +268,17 @@ public final class ConfigFragmentEditor {
         }
         return null;
     }
+
+    /** First element child of {@code parent}, or null if it has none. */
+    private static Element firstChildElement(Element parent) {
+        NodeList children = parent.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node n = children.item(i);
+            if (n.getNodeType() == Node.ELEMENT_NODE) {
+                return (Element) n;
+            }
+        }
+        return null;
+    }
+
 }

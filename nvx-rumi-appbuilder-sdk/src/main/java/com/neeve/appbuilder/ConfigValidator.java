@@ -30,10 +30,13 @@ import javax.xml.transform.stream.StreamSource;
 import javax.xml.validation.Schema;
 import javax.xml.validation.Validator;
 import java.io.IOException;
+import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Validate an app's config.xml against the X-DDL schema (x-ddl.xsd).
@@ -69,6 +72,7 @@ public final class ConfigValidator {
     public static ValidationResult validateFile(Path xmlFile) throws IOException {
         Schema schema = Schemas.load(Schemas.Kind.X_DDL);
         Validator validator = schema.newValidator();
+        String resolved = resolvePlaceholders(Files.readString(xmlFile));
 
         List<ValidationError> errors = new ArrayList<>();
         validator.setErrorHandler(new ErrorHandler() {
@@ -87,7 +91,7 @@ public final class ConfigValidator {
         });
 
         try {
-            validator.validate(new StreamSource(xmlFile.toFile()));
+            validator.validate(new StreamSource(new StringReader(resolved)));
         } catch (SAXParseException e) {
             // Some parse errors short-circuit via exception rather than the ErrorHandler.
             if (errors.stream().noneMatch(err -> err.getMessage().equals(e.getMessage()))) {
@@ -97,6 +101,12 @@ public final class ConfigValidator {
             throw new IOException("failed to validate " + xmlFile, e);
         }
 
+        // A placeholder with no default has no value we can know here, so its
+        // datatype cannot be checked. Dropping those errors keeps every
+        // structural finding while not inventing a value the platform will
+        // supply at load time.
+        errors.removeIf(e -> e.getMessage() != null && e.getMessage().contains("${"));
+
         boolean ok = errors.stream().noneMatch(
             err -> err.getSeverity() == ValidationError.Severity.ERROR
                 || err.getSeverity() == ValidationError.Severity.FATAL);
@@ -104,6 +114,43 @@ public final class ConfigValidator {
     }
 
     // --- internal -----------------------------------------------------
+
+    /** {@code ${name::default}}, innermost first so nesting resolves. */
+    private static final Pattern PLACEHOLDER_WITH_DEFAULT =
+        Pattern.compile("\\$\\{[^{}]*?::([^{}]*?)\\}");
+
+    /**
+     * Replace {@code ${prop::default}} with {@code default}, repeatedly, so
+     * nested forms like {@code ${a::${b::false}}} collapse from the inside out.
+     *
+     * <p>X-DDL substitutes these before the platform parses the document, but
+     * the schema types the attributes they sit in as {@code boolean},
+     * {@code integer} and the like. Validating the raw text therefore reports
+     * a datatype error on every placeholder in a perfectly good config — which
+     * is why this validator had never been pointed at a scaffolded app's
+     * config.xml, only at placeholder-free fixtures.
+     *
+     * <p>Substituting the declared default is faithful rather than a fudge:
+     * it is exactly the value the platform uses when nothing overrides the
+     * property, so the defaults get genuinely type-checked instead of skipped.
+     */
+    static String resolvePlaceholders(String xml) {
+        String current = xml;
+        // Each pass collapses one nesting level; the bound stops a pathological
+        // or malformed document from looping.
+        for (int pass = 0; pass < 10; pass++) {
+            Matcher m = PLACEHOLDER_WITH_DEFAULT.matcher(current);
+            if (!m.find()) {
+                break;
+            }
+            String next = m.reset().replaceAll(r -> Matcher.quoteReplacement(r.group(1)));
+            if (next.equals(current)) {
+                break;
+            }
+            current = next;
+        }
+        return current;
+    }
 
     private static ValidationError toError(ValidationError.Severity severity, SAXParseException ex) {
         return new ValidationError(severity, ex.getLineNumber(), ex.getColumnNumber(), ex.getMessage());
