@@ -897,3 +897,62 @@ Second, and more general: never let a tool that rewrites your build files
 commit unreviewed. Read the full `git diff` before staging, every time.
 The five reverted lines cost thirty seconds to spot in a diff and would
 have cost an afternoon to spot in a stack trace.
+
+*(The plugin is now configured so it can't reach those five properties at
+all — see the next entry, which arrived by the opposite door.)*
+
+### The version bump that succeeded at doing nothing
+
+Cutting 4.0.640 (August 2026, App Builder 1.0.20). Same command as last
+time, `mvn versions:update-properties`, and this time the diff was clean.
+Suspiciously clean. `nvx.rumi.version` in the root `pom.xml` still read
+**4.0.637** — the *previous* milestone. The plugin had considered the
+property and walked past it. `BUILD SUCCESS`, exit code 0, and — this is
+the part worth sitting with — not one line anywhere in the log mentioning
+the property it had declined to touch. Had nobody read the diff by hand,
+App Builder 1.0.20 would have shipped pinned to the milestone before the
+one it advertised.
+
+The mechanism is mundane once you see it. `versions-maven-plugin` links a
+property to a dependency by looking for a dependency that *uses* it —
+within a single project. `nvx.rumi.version` is declared in the root POM,
+but the only dependency that consumes it, `com.neeve:nvx-rumi`, lives down
+in `nvx-rumi-appbuilder-rest`. Run at the aggregator, the plugin found a
+property with nothing attached to it, shrugged, and moved on. It wasn't
+confused and it didn't fail; the link it needed simply didn't exist inside
+any one module's four walls. The fix (commit `18c6b1c`, PR #5) is to state
+the link the plugin couldn't infer — an explicit
+`nvx.rumi.version` → `com.neeve:nvx-rumi` association in the root POM's
+`pluginManagement`, plus
+`<includeProperties>nvx.rumi.version</includeProperties>` to confine the
+goal to the one property a milestone is allowed to move.
+
+That second half is a fix for the *previous* entry, arrived at sideways.
+`nvx-os-parent` pins `versions-maven-plugin` at **2.1**, which predates the
+`ignoredVersions` parameter — so there is no way to tell it "not
+pre-releases", which is why it kept offering jersey `4.0.0-M2` and slf4j
+`2.1.0-alpha1` on consecutive milestones. Filtering by *version* was never
+available to us. Filtering by *property* was, and it turns out to be the
+better instrument anyway: the locked jetty/jersey/jackson/swagger/slf4j
+pins are now outside the goal's reach entirely, rather than inside it and
+manually reverted by whoever happened to be cutting the milestone. Verified
+by resetting the pin to 4.0.637 and re-running — the parent reported
+`Updated ${nvx.rumi.version} from 4.0.637 to 4.0.640`, and the two child
+modules proposed nothing at all. The known cost:
+`versions:display-property-updates` honours the same parameter, so it stops
+reporting available jetty/jackson updates. Dependabot is the mechanism for
+that visibility now, and it is what drove the RUMI-381 security bumps.
+
+The lesson is the one the previous entry has a mirror image of. That entry
+warned about a tool **over-reaching** — changing five things it had no
+business changing. Nobody had thought to worry about the opposite: the tool
+**under-reaching** and changing nothing, which is much harder to notice,
+because a diff that's missing a line doesn't jump out the way a diff with
+five extra ones does. A tool that did its job and a tool that quietly did
+nothing produce byte-identical exit codes. So: **when automation's job is
+to change something, verify the change happened.** Don't infer success from
+the absence of an error — check for the presence of the effect. "Did the
+version actually move?" now sits in the release checklist right next to
+"did the push trigger a build?", and both are there for the same reason:
+the failures that cost you a release are the ones that never raise their
+hand.
