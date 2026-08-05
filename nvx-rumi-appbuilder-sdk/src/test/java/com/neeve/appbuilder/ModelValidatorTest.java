@@ -179,6 +179,67 @@ public class ModelValidatorTest {
     }
 
     @Test
+    public void rejectsAFieldNamedAfterAnInheritedFinalGetter() throws Exception {
+        Path f = write("messages.xml", model(
+            "    <messages>\n"
+          + "        <message name=\"Tick\" id=\"1\">\n"
+          + "            <field name=\"message\" id=\"1\" type=\"String\"/>\n"
+          + "        </message>\n"
+          + "    </messages>\n"));
+        assertTrue(firstError(ModelValidator.validateFile(f)).contains("reserved name"));
+    }
+
+    /**
+     * The plausible-looking names matter more than the obvious one: nobody is
+     * surprised that `message` is taken, but `messageKey`, `createTs` and
+     * `parent` all read as ordinary domain fields and all collide.
+     */
+    @Test
+    public void rejectsTheLessObviousReservedNames() throws Exception {
+        for (String name : new String[] {"messageKey", "createTs", "parent", "metadata", "requestId"}) {
+            Path f = write(name + ".xml", model(
+                "    <messages>\n"
+              + "        <message name=\"Tick\" id=\"1\">\n"
+              + "            <field name=\"" + name + "\" id=\"1\" type=\"String\"/>\n"
+              + "        </message>\n"
+              + "    </messages>\n"));
+            assertFalse("'" + name + "' should be rejected", ModelValidator.validateFile(f).isOk());
+        }
+    }
+
+    /**
+     * The rule is about SIGNATURE collision, not about the word appearing on a
+     * base class. {@code getTag(int)} and {@code setTag(int, Object)} take
+     * arguments, so a field named `tag` generates legal overloads. Rejecting it
+     * would be a false rejection, which costs more than the miss it prevents —
+     * and `tag` was on the list this check was written from.
+     */
+    @Test
+    public void acceptsAFieldWhoseBaseClassMethodTakesArguments() throws Exception {
+        Path f = write("messages.xml", model(
+            "    <messages>\n"
+          + "        <message name=\"Tick\" id=\"1\">\n"
+          + "            <field name=\"tag\" id=\"1\" type=\"String\"/>\n"
+          + "            <field name=\"name\" id=\"2\" type=\"String\"/>\n"
+          + "        </message>\n"
+          + "    </messages>\n"));
+        assertTrue(ModelValidator.validateFile(f).getErrors().toString(),
+            ModelValidator.validateFile(f).isOk());
+    }
+
+    /** An entity's fields generate the same accessors, so the rule is the same. */
+    @Test
+    public void appliesTheReservedNameRuleToEntityFieldsToo() throws Exception {
+        Path f = write("state.xml", model(
+            "    <entities>\n"
+          + "        <entity name=\"Repository\" id=\"1\">\n"
+          + "            <field name=\"ownershipCount\" id=\"1\" type=\"Long\"/>\n"
+          + "        </entity>\n"
+          + "    </entities>\n"));
+        assertTrue(firstError(ModelValidator.validateFile(f)).contains("reserved name"));
+    }
+
+    @Test
     public void requiresAsEmbeddedOnAnEntityUsedAsAFieldType() throws Exception {
         Path f = write("messages.xml", model(
             "    <messages>\n"

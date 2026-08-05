@@ -75,17 +75,19 @@ import java.util.Set;
  *   <li>{@code type="NoSuchTypeAnywhere"} — a reference to nothing at all.
  * </ul>
  *
- * So a second, semantic layer resolves type references and enforces the three
- * ADML rules learned by running edited models through real codegen. Note the
- * first two are exact inverses of each other, which is precisely why they are
- * worth encoding once here rather than remembering:
+ * So a second, semantic layer resolves type references and enforces the ADML
+ * rules learned by running edited models through real codegen. Note the first
+ * two are exact inverses of each other, which is precisely why they are worth
+ * encoding once here rather than remembering:
  *
  * <ol>
  *   <li>an entity used as a <em>message field type</em> MUST be
  *       {@code asEmbedded="true"} (it is serialized inline into the message);
  *   <li>an entity used as a <em>collection element</em> must NOT be
  *       {@code asEmbedded};
- *   <li>a collection may only contain entity/message types — never scalars.
+ *   <li>a collection may only contain entity/message types — never scalars;
+ *   <li>a field may not carry a name whose generated getter would collide with
+ *       an inherited final method — see {@link ReservedNames}.
  * </ol>
  *
  * <h2>Conservative by construction</h2>
@@ -299,10 +301,20 @@ public final class ModelValidator {
                                        boolean allImportsResolved,
                                        List<ValidationError> errors) {
         String rawType = field.getAttribute("type");
+        String name = field.getAttribute("name");
+
+        // Checked before the type, and independently of it: a reserved name
+        // breaks the build whatever the field is declared as.
+        if (ReservedNames.isReservedFieldName(name)) {
+            errors.add(error("field '" + name + "' on " + owner + " is a reserved name. "
+                + "Its generated getter would collide with a final method inherited from "
+                + "com.neeve.rog.impl.RogNode / com.neeve.sma.MessageViewImpl, so the "
+                + "generated source will not compile. Rename the field."));
+        }
+
         if (rawType == null || rawType.trim().isEmpty()) {
             return; // required by the schema; already reported there
         }
-        String name = field.getAttribute("name");
         String type = AdmTypes.stripArraySuffix(rawType);
 
         if (AdmTypes.isScalar(type)) {
