@@ -109,7 +109,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
         partitions: int = 1,
         include_samples: bool = False,
     ) -> dict[str, Any]:
-        """Scaffold a new service. Type is processor|driver|connector|webservice. ha_model and clustered/partitions apply to the clusterable types (processor, webservice).
+        """Scaffold a new service. Type is processor|driver|connector|webservice. ha_model is STATE_REPLICATION or EVENT_SOURCING. ha_model and clustered/partitions apply to the clusterable types (processor, webservice).
 
         As with create_app, the scaffold carries no worked example code by
         default -- just the wiring (injection points, state factory, HTTP server
