@@ -373,6 +373,9 @@ scaffolded an app and ran `mvn package` on it:
    ADM code. We renamed the sample field to `text`. Lesson: ADM messages
    inherit from `MessageViewImpl`, so avoid field names that collide with its
    final accessors (`message`, and check before reusing common names).
+   *(This later became a real check — `ReservedNames` + `ModelValidator`,
+   RUMI-387; see "Mirror the generator" below, including why the list is ~70
+   names and why `tag` is not one of them.)*
 2. **`--` is illegal inside XML comments.** A template comment containing a
    double-dash made the ADM model parser reject the whole `messages.xml`.
 
@@ -491,9 +494,12 @@ Corollaries the model editors encode:
   hand-written Java referencing the old accessor still needs a manual fix).
 - **API operations reference ROE.** An `api.xml` `<operation>`'s
   `inMessage`/`outMessage` resolve against the model its `<messages modelFile>`
-  points at — ROE by default. So operations pair with ROE messages; this only
-  surfaces when ASM codegen runs (the model-edit regression in `/test-the-builder`
-  runs ADM+ASM on the edited models to catch exactly this class of thing).
+  points at — ROE by default. So operations pair with ROE messages; this used to
+  surface only when ASM codegen ran (the model-edit regression in
+  `/test-the-builder` runs ADM+ASM on the edited models to catch exactly this
+  class of thing). `ApiOperationEditor` now enforces it at edit time — against
+  the model the api.xml *names*, not the one the convention assumes (RUMI-393,
+  written up under "Mirror the generator" below).
 
 ### The factory-id ledger: record on add, never on remove
 
@@ -770,6 +776,165 @@ not a TTY, so the bug could not appear there. The reproduction was one command �
 writing the script, not part of debugging it. The general form: when a script's
 behaviour depends on its environment, exercise it in the environment that
 differs, not only the one on your desk.
+
+## Mirror the generator (App Builder 1.0.21)
+
+Four tickets shipped together in August 2026 as **1.0.21** against Rumi 4.0.640
+(PR #6, rebase-merged to `develop`, `1.0` and `main` fast-forwarded behind it,
+head `a56c8b3`; 278 SDK tests, up from 269, plus 16 REST, 294 reported by CI).
+They look unrelated on the ticket board — a reserved-word list, an api.xml
+check, an import statement, a spelling — and they are all the same question
+asked four times: **what exactly does the Rumi code generator accept?** The SDK's
+job is to accept precisely that, and every bug below is the SDK's answer having
+drifted from the generator's, in one direction or the other. Broader lets a bad
+edit through to explode at codegen; narrower rejects a model that would have
+worked. Neither error is safe, but they are not symmetric, and knowing which one
+you are choosing is most of the work.
+
+### The reserved-name list nobody had actually read off the base class (RUMI-387)
+
+An ADML field named `message` generates `getMessage()`, which cannot override the
+`final public getMessage()` a generated type inherits — a compile error in code
+the user never wrote, from a name that looks entirely reasonable. That much this
+document already knew: it is written up above, discovered by hand when the
+webservice template first hit `mvn package`. `ReservedNames` plus a check in
+`ModelValidator` turn it from folklore into a rejection at edit time.
+
+The interesting part is what changed once someone opened `RogNode` and
+`MessageViewImpl` and read them, instead of working from the bug report. Two
+corrections, in opposite directions.
+
+**`tag` is not reserved.** It had been reported as reserved, and it looks like
+it should be. But the inherited methods are `getTag(int)` and
+`setTag(int, Object)` — they take arguments. A field named `tag` generates
+`getTag()`/`setTag(Object)`, which are legal *overloads*, and the app compiles.
+Listing it would have produced a false rejection, and a validator that rejects
+valid models is worse than one that misses an invalid one: the miss is caught
+minutes later by codegen with a clear compiler error, while the false rejection
+blocks a legitimate edit with an authoritative-sounding message and no
+recourse. Only **no-arg** getters can collide, and that is the rule the list is
+derived from.
+
+**The list is ~70 names, not the four that were reported.** `RogNode`
+contributes most of them, and the ones worth fearing are not the obvious ones.
+`messageKey`, `createTs`, `parent`, `metadata`, `requestId` all read as ordinary
+domain fields — which makes them *likelier* to be chosen than `message`, not
+less. Nobody names a field `message` twice; plenty of people name one `parent`.
+
+The list is a static array pinned to the milestone, with the grep that derives it
+sitting in the class javadoc, and a note in CLAUDE.md to re-derive it on a
+milestone bump. Deriving it at build time — unpack the Rumi jars, scan the
+bytecode for final no-arg getters — is the version of this that cannot go stale,
+and this repository has argued for exactly that discipline once already, for the
+schemas. It was judged more machinery than this check is worth today: the base
+classes are stable across milestones in a way an XSD is not, and the cost of
+being one milestone behind is a missed rejection, not a wrong one.
+
+### Validate against the model the file names, not the one convention expects (RUMI-393)
+
+`ApiOperationEditor` let you name any message in an operation's `inMessage` or
+`outMessage`, as long as it existed in *either* the service's message model or
+ROE. The generator is stricter: an `<operation>` resolves its messages against
+the single model the api.xml's own `<messages modelFile>` points at, and nothing
+else. So the SDK happily wrote operations that ASM codegen would later refuse.
+
+The fix reads `modelFile` and validates against that one model. Two things it
+deliberately does *not* do, both of which were proposed and rejected on the way:
+
+- **It does not assume ROE.** Pointing at ROE is a scaffolding convention, and
+  the api.xml belongs to the user, who may point it anywhere. A validator that
+  hard-codes our own convention stops being a validator and becomes a style
+  guide with a 422 attached.
+- **It does not follow the named model's imports.** This one is tempting,
+  because a model that imports another can reasonably be said to "have" its
+  types. But `AsmModel.resolveMessage` does a *local* lookup — imports do not
+  widen it. Accepting more than the generator resolves would let through exactly
+  the edit the check exists to catch.
+
+A trap in the implementation is worth recording on its own, because it produced
+the most dangerous kind of bug: one that passes its own tests. `modelFile` has to
+resolve against **every** module's `src/main/models`, not against the directory
+the api.xml lives in, because the shared ROE model lives in a different Maven
+module. At build time the generator finds it on the classpath, where module
+boundaries have already been flattened away; on disk they very much still exist.
+The first implementation resolved relative to the api.xml, found nothing,
+concluded it "cannot establish scope", and **silently skipped the check** — while
+every test written for it went green, because the fixtures were single-module.
+A validator with a graceful-degradation path has a silent-success mode, and a
+test suite that never exercises the multi-module shape will never tell you that
+the check has quietly turned itself off.
+
+### The import that was load-bearing for a feature it had nothing to do with (RUMI-389)
+
+Generated `Main.java` used wildcard imports of the app's `roe`, `messages` and
+`state` packages. That is fine until a name is defined in two models, at which
+point the generated file does not compile and the error blames a line the user
+did not write. The fix is single-type imports, with the sample-only ones moved
+inside the `@sample-begin` regions where they belong.
+
+The templates were the easy half. The consequence that mattered was in
+`JavaSourceEditor.addHandler`, which had been relying on those wildcards without
+anybody writing that down: it inserts a handler method for a message type and
+had never needed to import it, because the wildcard already covered every
+message in the app. Removing the wildcards without touching the editor would
+have made **every** `add_handler` call emit source that does not compile — an
+agent-facing operation, silently broken, in service of fixing a name clash that
+only bites apps with two models. Strictly worse than the bug being fixed.
+
+So the editor now adds the import itself, and how it resolves the namespace is
+the part worth keeping. It reads the `namespace` attribute off whichever model
+actually declares the message, rather than assembling a package name from the
+app's group id and service name. Assembling would work for every app the
+scaffolder produces and fail for the one that has been rearranged by hand —
+which is the whole point of an *editor*, as opposed to a generator. And a type
+that no model declares gets no import at all rather than a guessed one: a
+missing import is a compile error that names the type, while a wrong import is a
+compile error that names a package nobody has ever heard of.
+
+Two smaller findings. The `roe` wildcard turned out to be unused in every
+template, which is a reminder that generated code accumulates the same dead
+weight hand-written code does, with nobody reading it. And the thing that
+actually proved this work was `ci/verify-generated-app.sh` — both scaffold modes
+built and run against 4.0.640. A template change cannot show up in a compile of
+the scaffolder, so the SDK build going green says nothing at all about it; the
+gate is the only witness.
+
+### Accept the spelling the platform prints (RUMI-388)
+
+`ServiceHAModel.fromString` was `valueOf`, so `StateReplication` — which is
+exactly what the generated `@AppHAPolicy` annotation shows, and therefore exactly
+what a user or an agent copies — returned a 400 that named `STATE_REPLICATION`,
+a constant nobody had typed. `fromString` now accepts the enum constant with or
+without the underscore, plus the short template name, case-insensitively; the
+REST DTO calls it instead of `valueOf`; and the MCP tool description enumerates
+what is accepted, so the model does not have to guess and then retry.
+
+The generalisation is small but it recurs: when a value appears in generated
+output in one spelling and is accepted at the API in another, the API is wrong,
+regardless of which spelling is the "real" one internally. Users do not read
+your enum; they read what you printed for them.
+
+### Writing the warning down did not prevent the repeat
+
+RUMI-393 landing in the SDK turned two `DevCommandIntegrationTest` cases red over
+in `nvx-rumi-cli`, during what was meant to be a one-line version bump. The tests
+added a service-scoped message and named it in an api.xml operation — that is,
+they had been asserting the old, broken behaviour, and the fix is to the tests.
+
+This is the same shape RUMI-383 already produced and already had a lesson written
+for it: a validator arriving downstream turns latent invalid data into a build
+break at the worst possible moment, so sweep the consumers *before* their next
+pin move, not after. What is new here is that the behaviour change was predicted
+in writing, on this very PR, and then simply not acted on. The CLI's snapshot
+build found it instead.
+
+That is the lesson worth banking, and it is not about validators. **A warning
+recorded is not a task scheduled.** The note went into a PR description, which is
+a document nobody reads again after the merge button, and the work it implied —
+grep the consumers, fix their fixtures, land it alongside — belonged in a ticket
+or in the same change set. Prose in a review thread has no owner and no due date;
+the only reason this cost minutes instead of a release is that the CLI happens to
+build on a snapshot.
 
 ## Lessons Learned (REST distribution & runtime)
 
