@@ -37,7 +37,7 @@
              the REST service compiles against it, and the SDK unpacks its
              schemas (x-ddl, x-adml, x-asml) from the matching artifacts at
              build time. A milestone bump is this one line. -->
-        <nvx.rumi.version>4.0.640</nvx.rumi.version>
+        <nvx.rumi.version>4.0.660</nvx.rumi.version>
     </properties>
 
     <modules>
