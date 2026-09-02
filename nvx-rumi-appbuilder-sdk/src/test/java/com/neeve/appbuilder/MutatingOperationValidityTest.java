@@ -125,6 +125,24 @@ public class MutatingOperationValidityTest {
         ProjectValidity.assertProjectValid(appRoot);
     }
 
+    @Test
+    public void updatingAHandlerBodyLeavesTheProjectValid() throws Exception {
+        TestAppFactory.addProcessor(appRoot, "order-processor");
+        MessageEditor.addMessage(appRoot, "order-processor", "OrderRequest",
+            List.of(new FieldDef("qty", "Long", Map.of())), false);
+        valid(JavaSourceEditor.addHandler(appRoot, "order-processor", "onOrder",
+            "OrderRequest", "long qty = message.getQty();", false));
+
+        valid(JavaSourceEditor.updateHandler(appRoot, "order-processor", "onOrder",
+            "long qty = message.getQty();\n        if (qty > 0) {\n            // fill\n        }", false));
+        ProjectValidity.assertProjectValid(appRoot);
+
+        // An empty body is a legitimate update, not a removal, and must not
+        // leave a method that no longer parses.
+        valid(JavaSourceEditor.updateHandler(appRoot, "order-processor", "onOrder", "", false));
+        ProjectValidity.assertProjectValid(appRoot);
+    }
+
     // --- connectors ----------------------------------------------------
 
     @Test

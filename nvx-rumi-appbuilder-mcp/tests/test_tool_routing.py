@@ -162,6 +162,37 @@ async def test_add_handler_nested_path(mcp) -> None:
 
 
 @respx.mock
+async def test_update_handler_puts_the_body_to_the_method_path(mcp) -> None:
+    route = respx.put(f"{BASE}/v1/services/svc/handlers/onOrder").mock(
+        return_value=httpx.Response(200, json={"applied": True})
+    )
+    await _call(
+        mcp,
+        "update_handler",
+        app_root="/ws/t",
+        service="svc",
+        method="onOrder",
+        body="int a = 1;",
+    )
+    assert b"int a = 1;" in route.calls.last.request.content
+    assert "app_root=/ws/t" in _query(route.calls.last.request)
+
+
+@respx.mock
+async def test_list_handlers_omits_bodies_by_default(mcp) -> None:
+    """The default has to stay cheap: a listing that dumps every body is the
+    waste this surface exists to remove."""
+    route = respx.get(f"{BASE}/v1/services/svc/handlers").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    await _call(mcp, "list_handlers", app_root="/ws/t", service="svc")
+    assert "include_body=false" in _query(route.calls.last.request)
+
+    await _call(mcp, "list_handlers", app_root="/ws/t", service="svc", include_body=True)
+    assert "include_body=true" in _query(route.calls.last.request)
+
+
+@respx.mock
 async def test_add_message_sends_fields_list(mcp) -> None:
     route = respx.post(f"{BASE}/v1/services/svc/messages").mock(
         return_value=httpx.Response(200, json={"applied": True})

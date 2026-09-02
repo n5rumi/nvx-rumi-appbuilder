@@ -140,13 +140,16 @@ def build_server(base_url: str | None = None) -> FastMCP:
     # ---- Handlers ----------------------------------------------------
 
     @mcp.tool()
-    def list_handlers(app_root: str, service: str) -> list[dict[str, Any]]:
-        """List @EventHandler methods on a service's Main.java."""
-        return rest.get(f"/v1/services/{service}/handlers", {"app_root": app_root})
+    def list_handlers(app_root: str, service: str, include_body: bool = False) -> list[dict[str, Any]]:
+        """List a service's @EventHandler methods. Bodies are omitted unless include_body is true - a listing answers what handlers exist; ask get_handler for one body rather than dumping every one."""
+        return rest.get(
+            f"/v1/services/{service}/handlers",
+            {"app_root": app_root, "include_body": str(include_body).lower()},
+        )
 
     @mcp.tool()
     def get_handler(app_root: str, service: str, method: str) -> dict[str, Any]:
-        """Return a single handler's definition (method name, message type, return type, line)."""
+        """Return a single handler's definition AND its body, verbatim and without the enclosing braces. Hand the body back to update_handler unchanged and the file is byte-identical."""
         return rest.get(
             f"/v1/services/{service}/handlers/{method}", {"app_root": app_root}
         )
@@ -165,6 +168,21 @@ def build_server(base_url: str | None = None) -> FastMCP:
             f"/v1/services/{service}/handlers",
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},
             json={"method": method, "messageType": message_type, "body": body},
+        )
+
+    @mcp.tool()
+    def update_handler(
+        app_root: str,
+        service: str,
+        method: str,
+        body: str,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Replace an existing @EventHandler method's body, leaving its signature and the rest of the file untouched. This is how you change what a handler does - do not edit Main.java by hand. Idempotent; an unchanged body is a no-op. Rejects a body that does not parse and leaves the file as it was. body is the Java method body without braces; "" empties the handler."""
+        return rest.put(
+            f"/v1/services/{service}/handlers/{method}",
+            params={"app_root": app_root, "dry_run": str(dry_run).lower()},
+            json={"body": body},
         )
 
     @mcp.tool()

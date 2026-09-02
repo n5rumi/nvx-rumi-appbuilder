@@ -26,6 +26,9 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.body.Parameter;
+import com.github.javaparser.ast.stmt.BlockStmt;
+import com.github.javaparser.Position;
+import java.util.Optional;
 import com.neeve.appbuilder.model.HandlerDef;
 
 import java.io.IOException;
@@ -60,15 +63,33 @@ public final class HandlerIntrospector {
      * in source order.
      */
     public static List<HandlerDef> listHandlers(Path appRoot, String serviceName) throws IOException {
+        return listHandlers(appRoot, serviceName, false);
+    }
+
+    /**
+     * As {@link #listHandlers(Path, String)}, optionally carrying each
+     * handler's body.
+     *
+     * <p>Bodies are <b>off by default</b> and that is deliberate. A list call
+     * answers "what handlers are there?", and returning every body turns a
+     * cheap signature listing into a full dump of the service's logic — the
+     * exact shape of waste this surface exists to remove. Ask for one handler's
+     * body with {@link #getHandler}, or opt in here when you genuinely want
+     * them all.
+     */
+    public static List<HandlerDef> listHandlers(Path appRoot, String serviceName, boolean includeBodies)
+            throws IOException {
         Path mainJava = AppIntrospector.resolveMainJavaFile(appRoot, serviceName);
         if (!Files.exists(mainJava)) return Collections.emptyList();
+        String source;
         CompilationUnit cu;
         try {
-            cu = StaticJavaParser.parse(mainJava);
+            source = new String(Files.readAllBytes(mainJava), java.nio.charset.StandardCharsets.UTF_8);
+            cu = StaticJavaParser.parse(source);
         } catch (Exception e) {
             throw new IOException("failed to parse " + mainJava, e);
         }
-        return parseHandlers(cu);
+        return parseHandlers(cu, includeBodies ? source : null);
     }
 
     /**
@@ -76,13 +97,24 @@ public final class HandlerIntrospector {
      * method with that name exists in the service's {@code Main.java}.
      */
     public static HandlerDef getHandler(Path appRoot, String serviceName, String methodName) throws IOException {
-        for (HandlerDef h : listHandlers(appRoot, serviceName)) {
+        // Bodies on: fetching one named handler is the case where the body is
+        // the point (RUMI-411), unlike the bulk listing.
+        for (HandlerDef h : listHandlers(appRoot, serviceName, true)) {
             if (methodName.equals(h.getMethodName())) return h;
         }
         return null;
     }
 
     static List<HandlerDef> parseHandlers(CompilationUnit cu) {
+        return parseHandlers(cu, null);
+    }
+
+    /**
+     * @param source the original file text, or {@code null} to skip body
+     *        extraction. Bodies are sliced out of this rather than printed
+     *        from the AST so they survive a read/write round trip unchanged.
+     */
+    static List<HandlerDef> parseHandlers(CompilationUnit cu, String source) {
         List<HandlerDef> out = new ArrayList<>();
         cu.findAll(MethodDeclaration.class).forEach(method -> {
             if (!hasEventHandlerAnnotation(method)) return;
@@ -90,9 +122,92 @@ public final class HandlerIntrospector {
             String messageType = extractMessageType(method);
             String returnType = method.getType().asString();
             int startLine = method.getBegin().map(p -> p.line).orElse(-1);
-            out.add(new HandlerDef(name, messageType, returnType, startLine));
+            out.add(new HandlerDef(name, messageType, returnType, startLine,
+                                   source == null ? null : extractBody(method, source)));
         });
         return out;
+    }
+
+    /**
+     * The verbatim text between a handler's braces, or {@code null} for an
+     * abstract/interface method that has no body at all.
+     */
+    static String extractBody(MethodDeclaration method, String source) {
+        int[] braces = bodyBraceOffsets(method.getBody().orElse(null), source);
+        if (braces == null) return null;
+        // begin sits on '{' and end on '}', so the inner text excludes both.
+        return source.substring(braces[0] + 1, braces[1]);
+    }
+
+    /**
+     * Character offset of a JavaParser {@link Position} (1-based line and
+     * column) in {@code source}, or -1 if it cannot be resolved.
+     *
+     * <p>Counts line breaks directly rather than splitting, so it is correct
+     * for {@code \n} and {@code \r\n} alike — a split-and-rejoin would
+     * silently shift every offset on a CRLF file by one per preceding line.
+     */
+    static int offsetOf(String source, Position pos) {
+        if (pos == null) return -1;
+        int line = 1;
+        int i = 0;
+        while (line < pos.line && i < source.length()) {
+            char c = source.charAt(i);
+            if (c == '\n') {
+                line++;
+                i++;
+            } else if (c == '\r') {
+                // A bare CR is a line terminator to JavaParser's char stream, and
+                // CRLF is ONE break, not two. Counting only '\n' put every offset
+                // after a lone CR out by a line, and since a CR reaches a Java file
+                // most easily inside a block comment, the mismatch landed in the
+                // middle of a method rather than anywhere obviously wrong.
+                line++;
+                i++;
+                if (i < source.length() && source.charAt(i) == '\n') i++;
+            } else {
+                i++;
+            }
+        }
+        if (line != pos.line) return -1;
+        int offset = i + (pos.column - 1);
+        return offset <= source.length() ? offset : -1;
+    }
+
+    /**
+     * Offsets of a body's opening and closing brace, or {@code null} if they
+     * cannot be trusted.
+     *
+     * <p>The brace check is the point. Everything else in this feature validates
+     * the <em>body</em>; nothing validated the <em>splice point</em>, so a
+     * position mismatch did not fail — it wrote a mangled {@code Main.java}.
+     * Confirming the characters really are {@code &#123;} and {@code &#125;}
+     * turns any future arithmetic slip into a refusal instead of corruption.
+     */
+    static int[] bodyBraceOffsets(BlockStmt block, String source) {
+        if (block == null) return null;
+        int open = offsetOf(source, block.getBegin().orElse(null));
+        int close = offsetOf(source, block.getEnd().orElse(null));
+        if (open < 0 || close < 0 || close <= open || close >= source.length()) return null;
+        if (source.charAt(open) != '{' || source.charAt(close) != '}') return null;
+        return new int[] { open, close };
+    }
+
+    /**
+     * Every {@code @EventHandler} method with this name anywhere in the file,
+     * including nested and inner classes.
+     *
+     * <p>Shared by the read and write paths deliberately: they used to disagree
+     * — the introspector walked the whole compilation unit while the editor
+     * looked only at the primary class — so a handler on a nested class could
+     * be read and then silently fail to update, reported as a no-op that reads
+     * like success.
+     */
+    static Optional<MethodDeclaration> findHandler(CompilationUnit cu, String methodName) {
+        return cu.findAll(MethodDeclaration.class).stream()
+            .filter(m -> methodName.equals(m.getNameAsString()))
+            .filter(HandlerIntrospector::hasEventHandlerAnnotation)
+            .findFirst();
     }
 
     static boolean hasEventHandlerAnnotation(MethodDeclaration method) {

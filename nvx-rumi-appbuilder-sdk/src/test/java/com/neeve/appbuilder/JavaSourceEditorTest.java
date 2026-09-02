@@ -294,6 +294,186 @@ public class JavaSourceEditorTest {
         assertEquals("onTick", svc.getHandlers().get(0).getMethodName());
     }
 
+    // ---- updateHandler (RUMI-411) --------------------------------------
+
+    @Test
+    public void updateHandler_replacesBodyAndLeavesSignatureAlone() throws Exception {
+        writeEmptyMain("feeder");
+        JavaSourceEditor.addHandler(appRoot, "feeder", "onTick", "Tick", "int a = 1;", false);
+
+        ChangeSet result = JavaSourceEditor.updateHandler(
+            appRoot, "feeder", "onTick", "int b = 2;", false);
+
+        assertTrue(result.isApplied());
+        assertFalse(result.isNoop());
+
+        String written = readMain("feeder");
+        assertFalse("old body gone", written.contains("int a = 1;"));
+        assertTrue("new body present", written.contains("int b = 2;"));
+        assertTrue("signature untouched", written.contains("onTick(final Tick message)"));
+
+        HandlerDef h = HandlerIntrospector.getHandler(appRoot, "feeder", "onTick");
+        assertEquals("Tick", h.getMessageType());
+        assertTrue(h.getBody().contains("int b = 2;"));
+    }
+
+    /**
+     * The property the whole ticket rests on: read a body, hand it straight
+     * back, and the file must be untouched. If this fails, an agent that
+     * re-applies its model reformats hand-written code every pass.
+     */
+    @Test
+    public void updateHandler_roundTripsByteIdentical() throws Exception {
+        writeEmptyMain("feeder");
+        JavaSourceEditor.addHandler(appRoot, "feeder", "onTick", "Tick",
+            "if (message != null) {\n    doWork(message);   // keep this comment\n}", false);
+
+        String before = readMain("feeder");
+        String body = HandlerIntrospector.getHandler(appRoot, "feeder", "onTick").getBody();
+
+        ChangeSet result = JavaSourceEditor.updateHandler(appRoot, "feeder", "onTick", body, false);
+
+        assertTrue("an unchanged body is a noop, not a rewrite", result.isNoop());
+        assertEquals("file must be byte-identical", before, readMain("feeder"));
+    }
+
+    @Test
+    public void updateHandler_preservesSurroundingMembers() throws Exception {
+        writeEmptyMain("feeder");
+        JavaSourceEditor.addHandler(appRoot, "feeder", "onFirst", "Tick", "int a = 1;", false);
+        JavaSourceEditor.addHandler(appRoot, "feeder", "onSecond", "Tick", "int b = 2;", false);
+
+        JavaSourceEditor.updateHandler(appRoot, "feeder", "onFirst", "int c = 3;", false);
+
+        String written = readMain("feeder");
+        assertTrue("sibling handler untouched", written.contains("int b = 2;"));
+        assertEquals(2, HandlerIntrospector.listHandlers(appRoot, "feeder").size());
+    }
+
+    @Test
+    public void updateHandler_unknownHandlerIsANoop() throws Exception {
+        writeEmptyMain("feeder");
+
+        ChangeSet result = JavaSourceEditor.updateHandler(
+            appRoot, "feeder", "onNothing", "int a = 1;", false);
+
+        assertTrue(result.isNoop());
+        assertFalse(result.isApplied());
+    }
+
+    @Test
+    public void updateHandler_rejectsAnUnparseableBodyAndChangesNothing() throws Exception {
+        writeEmptyMain("feeder");
+        JavaSourceEditor.addHandler(appRoot, "feeder", "onTick", "Tick", "int a = 1;", false);
+        String before = readMain("feeder");
+
+        try {
+            JavaSourceEditor.updateHandler(appRoot, "feeder", "onTick", "int a = ;", false);
+            fail("expected IllegalArgumentException for an unparseable body");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("onTick"));
+        }
+        assertEquals("a rejected body must not damage the file", before, readMain("feeder"));
+    }
+
+    @Test
+    public void updateHandler_dryRunDoesNotWrite() throws Exception {
+        writeEmptyMain("feeder");
+        JavaSourceEditor.addHandler(appRoot, "feeder", "onTick", "Tick", "int a = 1;", false);
+        String before = readMain("feeder");
+
+        ChangeSet result = JavaSourceEditor.updateHandler(
+            appRoot, "feeder", "onTick", "int b = 2;", true);
+
+        assertFalse(result.isApplied());
+        assertEquals(1, result.getFilesModified().size());
+        assertEquals(before, readMain("feeder"));
+    }
+
+    @Test
+    public void getHandler_bodyIsNullWhenNotRead() throws Exception {
+        // The four-arg HandlerDef is still used where only the declaration
+        // matters; null there must stay distinguishable from an empty body.
+        HandlerDef declOnly = new HandlerDef("onTick", "Tick", "void", 10);
+        assertNull(declOnly.getBody());
+    }
+
+    // ---- RUMI-411 review follow-ups ------------------------------------
+
+    /**
+     * A bare CR is a line terminator to JavaParser but was invisible to the
+     * offset walk, so every position after one was out by a line. A CR reaches
+     * a Java file most easily inside a block comment, which puts the mismatch
+     * in the middle of a method rather than anywhere obviously wrong — the
+     * splice then wrote a mangled file and reported success.
+     */
+    @Test
+    public void handlerBodyIsCorrectWhenTheFileContainsABareCarriageReturn() throws Exception {
+        Path mainJava = AppIntrospector.resolveMainJavaFile(appRoot, "feeder");
+        Files.createDirectories(mainJava.getParent());
+        Files.writeString(mainJava,
+            "package com.example.trading.feeder;\n" +
+            "\n" +
+            "public class Main {\n" +
+            "    /* one\rtwo */\n" +
+            "    @EventHandler\n" +
+            "    final public void onTick(final Tick message) {\n" +
+            "        int marker = 1;\n" +
+            "    }\n" +
+            "}\n");
+
+        HandlerDef h = HandlerIntrospector.getHandler(appRoot, "feeder", "onTick");
+        assertNotNull(h);
+        assertTrue("body must be the real body, not a slice from the wrong offset",
+            h.getBody().contains("int marker = 1;"));
+        assertFalse("must not have swallowed the closing brace", h.getBody().contains("public class"));
+
+        assertTrue(JavaSourceEditor.updateHandler(appRoot, "feeder", "onTick",
+            "int marker = 2;", false).isApplied());
+
+        String written = readMain("feeder");
+        assertTrue("the update landed", written.contains("int marker = 2;"));
+        assertTrue("the class is still intact", written.contains("public class Main {"));
+        assertTrue("the comment survived", written.contains("two */"));
+        // Proof it is still a Java file rather than wreckage that happens to
+        // contain the right substring.
+        assertEquals(1, HandlerIntrospector.listHandlers(appRoot, "feeder").size());
+    }
+
+    /**
+     * The read path walked the whole compilation unit and the write path looked
+     * only at the primary class, so a handler on a nested class could be read
+     * and then fail to update — returned as a no-op, which reads as success at
+     * the MCP layer.
+     */
+    @Test
+    public void aHandlerOnANestedClassCanBeUpdatedNotJustRead() throws Exception {
+        Path mainJava = AppIntrospector.resolveMainJavaFile(appRoot, "feeder");
+        Files.createDirectories(mainJava.getParent());
+        Files.writeString(mainJava,
+            "package com.example.trading.feeder;\n" +
+            "\n" +
+            "public class Main {\n" +
+            "    public static class Inner {\n" +
+            "        @EventHandler\n" +
+            "        final public void onNested(final Tick message) {\n" +
+            "            int a = 1;\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n");
+
+        assertNotNull("the read path already sees it",
+            HandlerIntrospector.getHandler(appRoot, "feeder", "onNested"));
+
+        ChangeSet result = JavaSourceEditor.updateHandler(
+            appRoot, "feeder", "onNested", "int a = 2;", false);
+
+        assertFalse("a handler the read path returns must not be a no-op to write",
+            result.isNoop());
+        assertTrue(result.isApplied());
+        assertTrue(readMain("feeder").contains("int a = 2;"));
+    }
+
     // ---- helpers -------------------------------------------------------
 
     private void writeEmptyMain(String serviceName) throws IOException {

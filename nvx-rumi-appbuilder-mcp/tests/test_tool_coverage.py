@@ -120,7 +120,10 @@ async def test_mutating_tools_use_a_mutating_http_method(mcp) -> None:
         return_value=httpx.Response(200, json={})
     )
 
-    prefixes = ("add_", "create_", "remove_", "delete_", "rename_", "deprecate_")
+    # "update_" belongs here for the same reason as the rest: a tool that
+    # says it changes something and issues a GET is a bug. It was missing,
+    # so update_handler (RUMI-411) would have been skipped by this guard.
+    prefixes = ("add_", "create_", "update_", "remove_", "delete_", "rename_", "deprecate_")
     wrong: list[str] = []
     for tool in await _registered_tools(mcp):
         if not tool.name.startswith(prefixes):

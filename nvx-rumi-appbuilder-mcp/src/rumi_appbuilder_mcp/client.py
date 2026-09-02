@@ -65,6 +65,15 @@ class AppBuilderClient:
     ) -> Any:
         return self._decode(self._http.post(path, params=_clean(params), json=json))
 
+    def put(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: Any | None = None,
+    ) -> Any:
+        return self._decode(self._http.put(path, params=_clean(params), json=json))
+
     def delete(
         self,
         path: str,
