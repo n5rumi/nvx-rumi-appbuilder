@@ -162,6 +162,41 @@ async def test_add_handler_nested_path(mcp) -> None:
 
 
 @respx.mock
+async def test_list_config_fragments_sends_scope_path_and_selector(mcp) -> None:
+    route = respx.get(f"{BASE}/v1/config/fragments").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    await _call(
+        mcp,
+        "list_config_fragments",
+        app_root="/ws/t",
+        scope_path=["xvms", "templates"],
+        tag="xvm",
+        name="inference",
+    )
+    query = _query(route.calls.last.request)
+    # A repeated param per segment is what JAX-RS List<String> expects.
+    assert "scope_path=xvms" in query
+    assert "scope_path=templates" in query
+    assert "tag=xvm" in query
+    assert "name=inference" in query
+
+
+@respx.mock
+async def test_list_config_fragments_omits_unset_narrowing(mcp) -> None:
+    """An unset selector must not arrive as an empty string, which would
+    narrow to fragments whose name really is ""."""
+    route = respx.get(f"{BASE}/v1/config/fragments").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    await _call(mcp, "list_config_fragments", app_root="/ws/t")
+    query = _query(route.calls.last.request)
+    assert "tag=" not in query
+    assert "name=" not in query
+    assert "scope_path=" not in query
+
+
+@respx.mock
 async def test_update_handler_puts_the_body_to_the_method_path(mcp) -> None:
     route = respx.put(f"{BASE}/v1/services/svc/handlers/onOrder").mock(
         return_value=httpx.Response(200, json={"applied": True})

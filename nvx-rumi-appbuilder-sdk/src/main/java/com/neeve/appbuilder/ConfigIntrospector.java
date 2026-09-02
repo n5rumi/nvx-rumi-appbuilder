@@ -22,6 +22,7 @@
 package com.neeve.appbuilder;
 
 import com.neeve.appbuilder.model.ConfigFragment;
+import com.neeve.appbuilder.model.ElementSelector;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -85,6 +86,49 @@ public final class ConfigIntrospector {
         Document doc = getConfig(appRoot);
         if (doc == null) return Collections.emptyList();
         return listFragments(doc, profile);
+    }
+
+    /**
+     * Enumerate fragments, narrowed to one scope path and/or one selector
+     * (RUMI-413).
+     *
+     * <p>The write side has taken an {@link ElementSelector} since it existed;
+     * the read side could only return everything, so answering "what is in this
+     * one xvm's env block?" meant fetching the whole config and searching it by
+     * hand. Reading a whole generated file to answer a one-line question was the
+     * single most expensive tool call in the session that prompted this.
+     *
+     * @param scopePath exact scope path to restrict to, or {@code null} for any.
+     *        Exact rather than a prefix, so that a selector means the same thing
+     *        here as it does on remove — asymmetry between the two is how a
+     *        caller ends up deleting more than it inspected.
+     * @param selector  match on tag name and/or attributes, or {@code null} for
+     *        any.
+     */
+    public static List<ConfigFragment> listFragments(Path appRoot, String profile,
+                                                     List<String> scopePath,
+                                                     ElementSelector selector) throws IOException {
+        return filter(listFragments(appRoot, profile), scopePath, selector);
+    }
+
+    /** Overload that takes an already-parsed document. */
+    public static List<ConfigFragment> listFragments(Document doc, String profile,
+                                                     List<String> scopePath,
+                                                     ElementSelector selector) {
+        return filter(listFragments(doc, profile), scopePath, selector);
+    }
+
+    private static List<ConfigFragment> filter(List<ConfigFragment> all,
+                                               List<String> scopePath,
+                                               ElementSelector selector) {
+        if (scopePath == null && selector == null) return all;
+        List<ConfigFragment> out = new ArrayList<>();
+        for (ConfigFragment f : all) {
+            if (scopePath != null && !scopePath.equals(f.getScopePath())) continue;
+            if (selector != null && !selector.matches(f.getElement())) continue;
+            out.add(f);
+        }
+        return out;
     }
 
     /** Overload that takes an already-parsed document. */

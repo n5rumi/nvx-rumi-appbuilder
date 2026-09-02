@@ -505,18 +505,22 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     @mcp.tool()
     def get_config(app_root: str) -> str:
-        """Return the rendered config.xml as text."""
+        """Return the WHOLE rendered config.xml as text. Prefer list_config_fragments with a scope_path and selector when you want one part of it - this returns the entire file however narrow the question."""
         return rest.get_text("/v1/config", {"app_root": app_root})
 
     @mcp.tool()
     def list_config_fragments(
-        app_root: str, profile: str | None = None
+        app_root: str,
+        profile: str | None = None,
+        scope_path: list[str] | None = None,
+        tag: str | None = None,
+        name: str | None = None,
     ) -> list[dict[str, Any]]:
-        """List every config fragment, optionally filtered by profile name. Fragments carry scope path, tag, name, and the rendered XML."""
-        return rest.get(
-            "/v1/config/fragments",
-            {"app_root": app_root, "profile": profile},
-        )
+        """List config fragments, each carrying its scope path, tag, name and rendered XML. Narrow with profile, an exact scope_path (e.g. ["xvms","templates"]) and a tag/name selector - the same selector remove_config_fragment takes. Use this rather than get_config: a narrowed read answers a specific question, get_config returns the whole file whatever you asked. A selected xvm or app fragment carries its own <env> block in the returned XML."""
+        params: dict[str, Any] = {"app_root": app_root, "profile": profile, "tag": tag, "name": name}
+        if scope_path:
+            params["scope_path"] = scope_path
+        return rest.get("/v1/config/fragments", params)
 
     @mcp.tool()
     def add_config_fragment(

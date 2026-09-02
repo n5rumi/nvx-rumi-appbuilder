@@ -22,6 +22,7 @@
 package com.neeve.appbuilder;
 
 import com.neeve.appbuilder.model.ConfigFragment;
+import com.neeve.appbuilder.model.ElementSelector;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -167,5 +168,74 @@ public class ConfigIntrospectorTest {
 
     private static String scope(ConfigFragment f) {
         return f.getScopePath().stream().collect(Collectors.joining("/"));
+    }
+
+    // ---- narrowed reads (RUMI-413) --------------------------------------
+
+    private void writeTwoXvms() throws Exception {
+        PhaseBTestSupport.writeConfigXml(appRoot,
+            "<model xmlns=\"http://www.neeveresearch.com/schema/x-ddl\">"
+          + "  <env><a>1</a></env>"
+          + "  <xvms><templates>"
+          + "    <xvm name=\"inference\"><env><HEAP>2g</HEAP></env></xvm>"
+          + "    <xvm name=\"web\"><env><HEAP>512m</HEAP></env></xvm>"
+          + "  </templates></xvms>"
+          + "</model>");
+    }
+
+    @Test
+    public void listFragments_narrowsToOneScopePath() throws Exception {
+        writeTwoXvms();
+        List<ConfigFragment> all = ConfigIntrospector.listFragments(appRoot, null);
+        List<ConfigFragment> scoped = ConfigIntrospector.listFragments(
+            appRoot, null, List.of("xvms", "templates"), null);
+
+        assertTrue("the unnarrowed read sees more than the scope", all.size() > scoped.size());
+        assertEquals(2, scoped.size());
+        for (ConfigFragment f : scoped) {
+            assertEquals(List.of("xvms", "templates"), f.getScopePath());
+        }
+    }
+
+    /**
+     * The case this ticket exists for: answering "what is in this one xvm's env
+     * block?" without reading the whole config to find it.
+     */
+    @Test
+    public void listFragments_narrowsToOneNamedFragmentCarryingItsEnv() throws Exception {
+        writeTwoXvms();
+        List<ConfigFragment> hit = ConfigIntrospector.listFragments(
+            appRoot, null, List.of("xvms", "templates"),
+            ElementSelector.byTagAndName("xvm", "inference"));
+
+        assertEquals(1, hit.size());
+        assertEquals("inference", hit.get(0).getName());
+        // The selected fragment carries its own env subtree, which is what makes
+        // a targeted read a substitute for reading the file.
+        assertEquals("2g", hit.get(0).getElement()
+            .getElementsByTagName("HEAP").item(0).getTextContent());
+    }
+
+    @Test
+    public void listFragments_selectorWithoutScopePathStillNarrows() throws Exception {
+        writeTwoXvms();
+        List<ConfigFragment> hit = ConfigIntrospector.listFragments(
+            appRoot, null, null, ElementSelector.byName("web"));
+        assertEquals(1, hit.size());
+        assertEquals("web", hit.get(0).getName());
+    }
+
+    @Test
+    public void listFragments_bothNullIsTheUnnarrowedRead() throws Exception {
+        writeTwoXvms();
+        assertEquals(ConfigIntrospector.listFragments(appRoot, null).size(),
+                     ConfigIntrospector.listFragments(appRoot, null, null, null).size());
+    }
+
+    @Test
+    public void listFragments_aScopePathThatMatchesNothingReturnsEmpty() throws Exception {
+        writeTwoXvms();
+        assertTrue(ConfigIntrospector.listFragments(
+            appRoot, null, List.of("apps", "templates"), null).isEmpty());
     }
 }
