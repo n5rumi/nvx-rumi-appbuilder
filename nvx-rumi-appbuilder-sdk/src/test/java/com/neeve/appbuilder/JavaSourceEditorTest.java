@@ -294,6 +294,110 @@ public class JavaSourceEditorTest {
         assertEquals("onTick", svc.getHandlers().get(0).getMethodName());
     }
 
+    // ---- updateHandler (RUMI-411) --------------------------------------
+
+    @Test
+    public void updateHandler_replacesBodyAndLeavesSignatureAlone() throws Exception {
+        writeEmptyMain("feeder");
+        JavaSourceEditor.addHandler(appRoot, "feeder", "onTick", "Tick", "int a = 1;", false);
+
+        ChangeSet result = JavaSourceEditor.updateHandler(
+            appRoot, "feeder", "onTick", "int b = 2;", false);
+
+        assertTrue(result.isApplied());
+        assertFalse(result.isNoop());
+
+        String written = readMain("feeder");
+        assertFalse("old body gone", written.contains("int a = 1;"));
+        assertTrue("new body present", written.contains("int b = 2;"));
+        assertTrue("signature untouched", written.contains("onTick(final Tick message)"));
+
+        HandlerDef h = HandlerIntrospector.getHandler(appRoot, "feeder", "onTick");
+        assertEquals("Tick", h.getMessageType());
+        assertTrue(h.getBody().contains("int b = 2;"));
+    }
+
+    /**
+     * The property the whole ticket rests on: read a body, hand it straight
+     * back, and the file must be untouched. If this fails, an agent that
+     * re-applies its model reformats hand-written code every pass.
+     */
+    @Test
+    public void updateHandler_roundTripsByteIdentical() throws Exception {
+        writeEmptyMain("feeder");
+        JavaSourceEditor.addHandler(appRoot, "feeder", "onTick", "Tick",
+            "if (message != null) {\n    doWork(message);   // keep this comment\n}", false);
+
+        String before = readMain("feeder");
+        String body = HandlerIntrospector.getHandler(appRoot, "feeder", "onTick").getBody();
+
+        ChangeSet result = JavaSourceEditor.updateHandler(appRoot, "feeder", "onTick", body, false);
+
+        assertTrue("an unchanged body is a noop, not a rewrite", result.isNoop());
+        assertEquals("file must be byte-identical", before, readMain("feeder"));
+    }
+
+    @Test
+    public void updateHandler_preservesSurroundingMembers() throws Exception {
+        writeEmptyMain("feeder");
+        JavaSourceEditor.addHandler(appRoot, "feeder", "onFirst", "Tick", "int a = 1;", false);
+        JavaSourceEditor.addHandler(appRoot, "feeder", "onSecond", "Tick", "int b = 2;", false);
+
+        JavaSourceEditor.updateHandler(appRoot, "feeder", "onFirst", "int c = 3;", false);
+
+        String written = readMain("feeder");
+        assertTrue("sibling handler untouched", written.contains("int b = 2;"));
+        assertEquals(2, HandlerIntrospector.listHandlers(appRoot, "feeder").size());
+    }
+
+    @Test
+    public void updateHandler_unknownHandlerIsANoop() throws Exception {
+        writeEmptyMain("feeder");
+
+        ChangeSet result = JavaSourceEditor.updateHandler(
+            appRoot, "feeder", "onNothing", "int a = 1;", false);
+
+        assertTrue(result.isNoop());
+        assertFalse(result.isApplied());
+    }
+
+    @Test
+    public void updateHandler_rejectsAnUnparseableBodyAndChangesNothing() throws Exception {
+        writeEmptyMain("feeder");
+        JavaSourceEditor.addHandler(appRoot, "feeder", "onTick", "Tick", "int a = 1;", false);
+        String before = readMain("feeder");
+
+        try {
+            JavaSourceEditor.updateHandler(appRoot, "feeder", "onTick", "int a = ;", false);
+            fail("expected IllegalArgumentException for an unparseable body");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("onTick"));
+        }
+        assertEquals("a rejected body must not damage the file", before, readMain("feeder"));
+    }
+
+    @Test
+    public void updateHandler_dryRunDoesNotWrite() throws Exception {
+        writeEmptyMain("feeder");
+        JavaSourceEditor.addHandler(appRoot, "feeder", "onTick", "Tick", "int a = 1;", false);
+        String before = readMain("feeder");
+
+        ChangeSet result = JavaSourceEditor.updateHandler(
+            appRoot, "feeder", "onTick", "int b = 2;", true);
+
+        assertFalse(result.isApplied());
+        assertEquals(1, result.getFilesModified().size());
+        assertEquals(before, readMain("feeder"));
+    }
+
+    @Test
+    public void getHandler_bodyIsNullWhenNotRead() throws Exception {
+        // The four-arg HandlerDef is still used where only the declaration
+        // matters; null there must stay distinguishable from an empty body.
+        HandlerDef declOnly = new HandlerDef("onTick", "Tick", "void", 10);
+        assertNull(declOnly.getBody());
+    }
+
     // ---- helpers -------------------------------------------------------
 
     private void writeEmptyMain(String serviceName) throws IOException {

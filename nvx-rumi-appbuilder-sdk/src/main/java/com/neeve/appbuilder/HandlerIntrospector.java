@@ -26,6 +26,8 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.body.Parameter;
+import com.github.javaparser.ast.stmt.BlockStmt;
+import com.github.javaparser.Position;
 import com.neeve.appbuilder.model.HandlerDef;
 
 import java.io.IOException;
@@ -62,13 +64,15 @@ public final class HandlerIntrospector {
     public static List<HandlerDef> listHandlers(Path appRoot, String serviceName) throws IOException {
         Path mainJava = AppIntrospector.resolveMainJavaFile(appRoot, serviceName);
         if (!Files.exists(mainJava)) return Collections.emptyList();
+        String source;
         CompilationUnit cu;
         try {
-            cu = StaticJavaParser.parse(mainJava);
+            source = new String(Files.readAllBytes(mainJava), java.nio.charset.StandardCharsets.UTF_8);
+            cu = StaticJavaParser.parse(source);
         } catch (Exception e) {
             throw new IOException("failed to parse " + mainJava, e);
         }
-        return parseHandlers(cu);
+        return parseHandlers(cu, source);
     }
 
     /**
@@ -83,6 +87,15 @@ public final class HandlerIntrospector {
     }
 
     static List<HandlerDef> parseHandlers(CompilationUnit cu) {
+        return parseHandlers(cu, null);
+    }
+
+    /**
+     * @param source the original file text, or {@code null} to skip body
+     *        extraction. Bodies are sliced out of this rather than printed
+     *        from the AST so they survive a read/write round trip unchanged.
+     */
+    static List<HandlerDef> parseHandlers(CompilationUnit cu, String source) {
         List<HandlerDef> out = new ArrayList<>();
         cu.findAll(MethodDeclaration.class).forEach(method -> {
             if (!hasEventHandlerAnnotation(method)) return;
@@ -90,9 +103,45 @@ public final class HandlerIntrospector {
             String messageType = extractMessageType(method);
             String returnType = method.getType().asString();
             int startLine = method.getBegin().map(p -> p.line).orElse(-1);
-            out.add(new HandlerDef(name, messageType, returnType, startLine));
+            out.add(new HandlerDef(name, messageType, returnType, startLine,
+                                   source == null ? null : extractBody(method, source)));
         });
         return out;
+    }
+
+    /**
+     * The verbatim text between a handler's braces, or {@code null} for an
+     * abstract/interface method that has no body at all.
+     */
+    static String extractBody(MethodDeclaration method, String source) {
+        BlockStmt block = method.getBody().orElse(null);
+        if (block == null) return null;
+        int open = offsetOf(source, block.getBegin().orElse(null));
+        int close = offsetOf(source, block.getEnd().orElse(null));
+        if (open < 0 || close < 0 || close <= open) return null;
+        // begin sits on '{' and end on '}', so the inner text excludes both.
+        return source.substring(open + 1, close);
+    }
+
+    /**
+     * Character offset of a JavaParser {@link Position} (1-based line and
+     * column) in {@code source}, or -1 if it cannot be resolved.
+     *
+     * <p>Counts line breaks directly rather than splitting, so it is correct
+     * for {@code \n} and {@code \r\n} alike — a split-and-rejoin would
+     * silently shift every offset on a CRLF file by one per preceding line.
+     */
+    static int offsetOf(String source, Position pos) {
+        if (pos == null) return -1;
+        int line = 1;
+        int i = 0;
+        while (line < pos.line && i < source.length()) {
+            if (source.charAt(i) == '\n') line++;
+            i++;
+        }
+        if (line != pos.line) return -1;
+        int offset = i + (pos.column - 1);
+        return offset <= source.length() ? offset : -1;
     }
 
     static boolean hasEventHandlerAnnotation(MethodDeclaration method) {

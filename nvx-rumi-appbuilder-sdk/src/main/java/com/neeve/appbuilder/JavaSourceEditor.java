@@ -122,6 +122,88 @@ public final class JavaSourceEditor {
     }
 
     /**
+     * Replace the body of an existing {@code @EventHandler} method in the
+     * service's {@code Main.java}, leaving its signature, annotations and the
+     * rest of the file untouched (RUMI-411).
+     *
+     * <p>Splices the new text between the existing braces in the raw source
+     * rather than replacing the AST node. Re-rendering the method would
+     * reformat hand-written code around it, and this call exists precisely so
+     * that changing behaviour does not force the caller out to a file edit.
+     * Read a body with {@code HandlerIntrospector.getHandler(...).getBody()}
+     * and hand it straight back here and the file is byte-identical.
+     *
+     * <p>Idempotent: an unchanged body is a noop rather than a rewrite, so a
+     * caller that re-applies its whole model does not dirty every file.
+     *
+     * @param body method body Java code, without surrounding braces.
+     * @throws IllegalArgumentException if {@code body} does not parse. Unlike
+     *         {@link #addHandler} — which degrades a bad body to a comment
+     *         because there was nothing there to lose — this call is replacing
+     *         code that presumably worked, so it fails rather than damaging it.
+     */
+    public static ChangeSet updateHandler(Path appRoot,
+                                          String serviceName,
+                                          String methodName,
+                                          String body,
+                                          boolean dryRun) throws IOException {
+        Path mainJava = AppIntrospector.resolveMainJavaFile(appRoot, serviceName);
+        if (!Files.exists(mainJava)) {
+            throw new IOException("Main.java not found at " + mainJava);
+        }
+        String newBody = body == null ? "" : body;
+
+        // Validate before touching anything on disk.
+        try {
+            StaticJavaParser.parseBlock("{" + newBody + "}");
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                "handler body does not parse, so '" + methodName + "' was left unchanged: " + e.getMessage(), e);
+        }
+
+        String source = new String(Files.readAllBytes(mainJava), StandardCharsets.UTF_8);
+        CompilationUnit cu;
+        try {
+            cu = StaticJavaParser.parse(source);
+        } catch (Exception e) {
+            throw new IOException("failed to parse " + mainJava, e);
+        }
+        ClassOrInterfaceDeclaration clazz = primaryClass(cu);
+        if (clazz == null) {
+            throw new IllegalStateException("no class declaration found in " + mainJava);
+        }
+
+        Optional<MethodDeclaration> target = clazz.getMethodsByName(methodName).stream()
+            .filter(HandlerIntrospector::hasEventHandlerAnnotation)
+            .findFirst();
+        if (target.isEmpty()) {
+            return ChangeSet.noop("no handler named '" + methodName + "' found on " + clazz.getNameAsString());
+        }
+
+        BlockStmt block = target.get().getBody().orElse(null);
+        if (block == null) {
+            throw new IllegalStateException("handler '" + methodName + "' has no body to replace");
+        }
+        int open = HandlerIntrospector.offsetOf(source, block.getBegin().orElse(null));
+        int close = HandlerIntrospector.offsetOf(source, block.getEnd().orElse(null));
+        if (open < 0 || close < 0 || close <= open) {
+            throw new IllegalStateException("could not locate the body of '" + methodName + "' in " + mainJava);
+        }
+
+        if (newBody.equals(source.substring(open + 1, close))) {
+            return ChangeSet.noop("handler '" + methodName + "' already has this body");
+        }
+
+        String rendered = source.substring(0, open + 1) + newBody + source.substring(close);
+        ChangeSet.Builder cs = ChangeSet.builder().addModified(mainJava);
+        if (dryRun) {
+            return cs.applied(false).build();
+        }
+        Files.write(mainJava, rendered.getBytes(StandardCharsets.UTF_8));
+        return cs.applied(true).build();
+    }
+
+    /**
      * Remove the named method from the service's {@code Main.java}. If the
      * method doesn't exist, returns a noop ChangeSet.
      */
