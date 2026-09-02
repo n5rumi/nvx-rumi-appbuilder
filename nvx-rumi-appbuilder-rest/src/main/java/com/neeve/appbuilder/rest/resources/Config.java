@@ -25,6 +25,7 @@ import com.neeve.appbuilder.ConfigFragmentEditor;
 import com.neeve.appbuilder.ConfigIntrospector;
 import com.neeve.appbuilder.ConfigValidator;
 import com.neeve.appbuilder.model.ChangeSet;
+import com.neeve.appbuilder.model.ElementSelector;
 import com.neeve.appbuilder.model.ValidationResult;
 import com.neeve.appbuilder.rest.dto.AddConfigFragmentRequest;
 import com.neeve.appbuilder.rest.dto.ConfigFragmentView;
@@ -49,6 +50,7 @@ import javax.xml.transform.stream.StreamResult;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -80,10 +82,30 @@ public class Config extends AbstractResource {
     @Path("/fragments")
     @Produces(MediaType.APPLICATION_JSON)
     @Operation(summary = "List config fragments",
-               description = "Returns every fragment discovered across config-fragment files. Optionally filter by profile name.")
+               description = "Returns fragments discovered across config-fragment files. Narrow with profile, an exact scope_path "
+                           + "(repeat the parameter per segment, e.g. scope_path=xvms&scope_path=templates), and a tag/name "
+                           + "selector - the same selector shape DELETE takes. Prefer a narrowed read over GET /v1/config, which "
+                           + "returns the whole file to answer any question.")
     public List<ConfigFragmentView> listFragments(@QueryParam("app_root") String appRoot,
-                                                  @QueryParam("profile") String profile) throws IOException {
-        return ConfigIntrospector.listFragments(requireAbsoluteAppRoot(appRoot), profile)
+                                                  @QueryParam("profile") String profile,
+                                                  @QueryParam("scope_path") List<String> scopePath,
+                                                  @QueryParam("tag") String tag,
+                                                  @QueryParam("name") String name) throws IOException {
+        // An absent repeated query param arrives as an empty list, not null, and
+        // an empty list is a legitimate scope path (the document root) as far as
+        // equals() is concerned - so it has to mean "unset" explicitly.
+        List<String> scope = (scopePath == null || scopePath.isEmpty()) ? null : scopePath;
+        // Blank is unset here too. Only the Python MCP omits an unset param; a
+        // hand-built curl or a generated client sends ?tag=&name=, and an empty
+        // tag matches no element at all -- returning [] indistinguishable from
+        // "this app has no fragments". The guard above already learned this for
+        // scope_path; tag and name need the same treatment.
+        String tagOrNull = (tag == null || tag.isEmpty()) ? null : tag;
+        String nameOrNull = (name == null || name.isEmpty()) ? null : name;
+        ElementSelector selector = (tagOrNull == null && nameOrNull == null)
+            ? null
+            : new ElementSelector(tagOrNull, nameOrNull == null ? Map.of() : Map.of("name", nameOrNull));
+        return ConfigIntrospector.listFragments(requireAbsoluteAppRoot(appRoot), profile, scope, selector)
             .stream().map(ConfigFragmentView::from).collect(Collectors.toList());
     }
 

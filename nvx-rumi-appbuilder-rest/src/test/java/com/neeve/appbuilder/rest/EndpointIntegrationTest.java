@@ -145,6 +145,53 @@ public class EndpointIntegrationTest {
     }
 
     @Test
+    public void configFragments_canBeNarrowedByScopeAndSelector() throws Exception {
+        // Two xvm templates, so a narrowed read has something to exclude.
+        post("/v1/config/fragments?app_root=" + enc(appRoot),
+            "{\"scopePath\":[\"xvms\",\"templates\"],"
+          + "\"xml\":\"<xvm name=\\\"inference\\\"><env><HEAP>2g</HEAP></env></xvm>\"}");
+        post("/v1/config/fragments?app_root=" + enc(appRoot),
+            "{\"scopePath\":[\"xvms\",\"templates\"],"
+          + "\"xml\":\"<xvm name=\\\"web\\\"><env><HEAP>512m</HEAP></env></xvm>\"}");
+
+        String all = get("/v1/config/fragments?app_root=" + enc(appRoot)).body();
+        assertTrue(all.contains("inference"));
+        assertTrue(all.contains("web"));
+
+        // Narrowed to one named fragment: the other must not come back, and the
+        // one that does carries its own env block.
+        String one = get("/v1/config/fragments?app_root=" + enc(appRoot)
+            + "&scope_path=xvms&scope_path=templates&tag=xvm&name=inference").body();
+        assertTrue("the selected fragment is returned", one.contains("inference"));
+        assertFalse("the unselected one must not be", one.contains("512m"));
+        assertTrue("and it carries its env block", one.contains("2g"));
+
+        // Narrowing to a different scope returns that scope only - the scaffold
+        // puts a bus there, so this proves exclusion rather than emptiness.
+        String buses = get("/v1/config/fragments?app_root=" + enc(appRoot)
+            + "&scope_path=buses").body();
+        assertTrue(buses.contains("\"tagName\":\"bus\""));
+        assertFalse("an xvm must not appear under the buses scope", buses.contains("inference"));
+
+        // Blank selector params are unset, not a selector that matches nothing.
+        // Only the Python MCP omits them; a hand-built client sends ?tag=&name=.
+        String blank = get("/v1/config/fragments?app_root=" + enc(appRoot)
+            + "&scope_path=xvms&scope_path=templates&tag=&name=").body();
+        assertTrue("blank tag/name must not narrow to nothing", blank.contains("inference"));
+
+        // A scope this read cannot enumerate is refused, never reported empty:
+        // remove navigates paths the read cannot see, so "nothing there" would
+        // tell a caller that checked first that deleting was safe.
+        assertEquals(400, get("/v1/config/fragments?app_root=" + enc(appRoot)
+            + "&scope_path=xvms").statusCode());
+
+        // A scope path that genuinely matches nothing is an empty list, not
+        // everything - the failure mode of a filter that silently no-ops.
+        assertEquals("[]", get("/v1/config/fragments?app_root=" + enc(appRoot)
+            + "&scope_path=profiles&scope_path=nosuchprofile&scope_path=env").body().trim());
+    }
+
+    @Test
     public void handlerBody_isReadableAndReplaceableOverHttp() throws Exception {
         post("/v1/services?app_root=" + enc(appRoot),
             "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}");

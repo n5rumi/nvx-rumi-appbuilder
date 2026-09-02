@@ -12,3 +12,9 @@
 **/.pytest_cache
 **/.venv
 **/venv
+
+# setuptools build_py output. It was tracked and went stale: the committed
+# copy was missing update_handler (RUMI-411) and the narrowed fragment read
+# (RUMI-413), and build_py only re-copies when the source is STRICTLY newer,
+# so a fresh CI checkout can ship the stale module in the wheel.
+nvx-rumi-appbuilder-mcp/build/lib/
