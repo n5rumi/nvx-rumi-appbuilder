@@ -28,6 +28,7 @@ import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.Position;
+import java.util.Optional;
 import com.neeve.appbuilder.model.HandlerDef;
 
 import java.io.IOException;
@@ -132,13 +133,10 @@ public final class HandlerIntrospector {
      * abstract/interface method that has no body at all.
      */
     static String extractBody(MethodDeclaration method, String source) {
-        BlockStmt block = method.getBody().orElse(null);
-        if (block == null) return null;
-        int open = offsetOf(source, block.getBegin().orElse(null));
-        int close = offsetOf(source, block.getEnd().orElse(null));
-        if (open < 0 || close < 0 || close <= open) return null;
+        int[] braces = bodyBraceOffsets(method.getBody().orElse(null), source);
+        if (braces == null) return null;
         // begin sits on '{' and end on '}', so the inner text excludes both.
-        return source.substring(open + 1, close);
+        return source.substring(braces[0] + 1, braces[1]);
     }
 
     /**
@@ -154,12 +152,62 @@ public final class HandlerIntrospector {
         int line = 1;
         int i = 0;
         while (line < pos.line && i < source.length()) {
-            if (source.charAt(i) == '\n') line++;
-            i++;
+            char c = source.charAt(i);
+            if (c == '\n') {
+                line++;
+                i++;
+            } else if (c == '\r') {
+                // A bare CR is a line terminator to JavaParser's char stream, and
+                // CRLF is ONE break, not two. Counting only '\n' put every offset
+                // after a lone CR out by a line, and since a CR reaches a Java file
+                // most easily inside a block comment, the mismatch landed in the
+                // middle of a method rather than anywhere obviously wrong.
+                line++;
+                i++;
+                if (i < source.length() && source.charAt(i) == '\n') i++;
+            } else {
+                i++;
+            }
         }
         if (line != pos.line) return -1;
         int offset = i + (pos.column - 1);
         return offset <= source.length() ? offset : -1;
+    }
+
+    /**
+     * Offsets of a body's opening and closing brace, or {@code null} if they
+     * cannot be trusted.
+     *
+     * <p>The brace check is the point. Everything else in this feature validates
+     * the <em>body</em>; nothing validated the <em>splice point</em>, so a
+     * position mismatch did not fail — it wrote a mangled {@code Main.java}.
+     * Confirming the characters really are {@code &#123;} and {@code &#125;}
+     * turns any future arithmetic slip into a refusal instead of corruption.
+     */
+    static int[] bodyBraceOffsets(BlockStmt block, String source) {
+        if (block == null) return null;
+        int open = offsetOf(source, block.getBegin().orElse(null));
+        int close = offsetOf(source, block.getEnd().orElse(null));
+        if (open < 0 || close < 0 || close <= open || close >= source.length()) return null;
+        if (source.charAt(open) != '{' || source.charAt(close) != '}') return null;
+        return new int[] { open, close };
+    }
+
+    /**
+     * Every {@code @EventHandler} method with this name anywhere in the file,
+     * including nested and inner classes.
+     *
+     * <p>Shared by the read and write paths deliberately: they used to disagree
+     * — the introspector walked the whole compilation unit while the editor
+     * looked only at the primary class — so a handler on a nested class could
+     * be read and then silently fail to update, reported as a no-op that reads
+     * like success.
+     */
+    static Optional<MethodDeclaration> findHandler(CompilationUnit cu, String methodName) {
+        return cu.findAll(MethodDeclaration.class).stream()
+            .filter(m -> methodName.equals(m.getNameAsString()))
+            .filter(HandlerIntrospector::hasEventHandlerAnnotation)
+            .findFirst();
     }
 
     static boolean hasEventHandlerAnnotation(MethodDeclaration method) {

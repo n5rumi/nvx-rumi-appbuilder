@@ -168,6 +168,25 @@ public class EndpointIntegrationTest {
         assertTrue(after.contains("int b = 2;"));
         assertFalse(after.contains("int a = 1;"));
 
+        // An ABSENT body is not an empty one. Before this check, {} replaced the
+        // handler with nothing and returned 200 - working code deleted silently.
+        HttpResponse<String> absent = put("/v1/services/proc/handlers/onOrder?app_root=" + enc(appRoot), "{}");
+        assertEquals("an absent body is a client error: " + absent.body(), 400, absent.statusCode());
+        assertTrue("the handler must be untouched",
+            get("/v1/services/proc/handlers/onOrder?app_root=" + enc(appRoot)).body().contains("int b = 2;"));
+
+        // "" remains the explicit way to empty one.
+        assertEquals(200, put("/v1/services/proc/handlers/onOrder?app_root=" + enc(appRoot),
+            "{\"body\":\"\"}").statusCode());
+
+        // Restore a body for the checks below.
+        assertEquals(200, put("/v1/services/proc/handlers/onOrder?app_root=" + enc(appRoot),
+            "{\"body\":\"int b = 2;\"}").statusCode());
+
+        // A listing must not ship a null body key now that it is suppressed.
+        assertFalse("a null body should not be serialized",
+            get("/v1/services/proc/handlers?app_root=" + enc(appRoot)).body().contains("\"body\":null"));
+
         // A body that does not parse is a 400 and must leave the handler alone.
         HttpResponse<String> bad = put("/v1/services/proc/handlers/onOrder?app_root=" + enc(appRoot),
             "{\"body\":\"int a = ;\"}");

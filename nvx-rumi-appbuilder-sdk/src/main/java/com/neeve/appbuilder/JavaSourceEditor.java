@@ -168,27 +168,26 @@ public final class JavaSourceEditor {
         } catch (Exception e) {
             throw new IOException("failed to parse " + mainJava, e);
         }
-        ClassOrInterfaceDeclaration clazz = primaryClass(cu);
-        if (clazz == null) {
-            throw new IllegalStateException("no class declaration found in " + mainJava);
-        }
-
-        Optional<MethodDeclaration> target = clazz.getMethodsByName(methodName).stream()
-            .filter(HandlerIntrospector::hasEventHandlerAnnotation)
-            .findFirst();
+        // Search the whole compilation unit, matching the read path: looking only
+        // at the primary class meant a handler on a nested class could be read
+        // and then silently fail to update, reported as a no-op.
+        Optional<MethodDeclaration> target = HandlerIntrospector.findHandler(cu, methodName);
         if (target.isEmpty()) {
-            return ChangeSet.noop("no handler named '" + methodName + "' found on " + clazz.getNameAsString());
+            return ChangeSet.noop("no handler named '" + methodName + "' found in " + mainJava.getFileName());
         }
 
         BlockStmt block = target.get().getBody().orElse(null);
         if (block == null) {
             throw new IllegalStateException("handler '" + methodName + "' has no body to replace");
         }
-        int open = HandlerIntrospector.offsetOf(source, block.getBegin().orElse(null));
-        int close = HandlerIntrospector.offsetOf(source, block.getEnd().orElse(null));
-        if (open < 0 || close < 0 || close <= open) {
-            throw new IllegalStateException("could not locate the body of '" + methodName + "' in " + mainJava);
+        int[] braces = HandlerIntrospector.bodyBraceOffsets(block, source);
+        if (braces == null) {
+            throw new IllegalStateException(
+                "could not locate the body of '" + methodName + "' in " + mainJava
+                + " — refusing to edit rather than risk writing at the wrong offset");
         }
+        int open = braces[0];
+        int close = braces[1];
 
         if (newBody.equals(source.substring(open + 1, close))) {
             return ChangeSet.noop("handler '" + methodName + "' already has this body");
@@ -222,9 +221,8 @@ public final class JavaSourceEditor {
             throw new IllegalStateException("no class declaration found in " + mainJava);
         }
 
-        Optional<MethodDeclaration> target = clazz.getMethodsByName(methodName).stream()
-            .filter(HandlerIntrospector::hasEventHandlerAnnotation)
-            .findFirst();
+        // Same whole-unit search as the update path, for the same reason.
+        Optional<MethodDeclaration> target = HandlerIntrospector.findHandler(cu, methodName);
 
         if (target.isEmpty()) {
             return ChangeSet.noop("no handler named '" + methodName + "' found on " + clazz.getNameAsString());

@@ -21,11 +21,13 @@
  */
 package com.neeve.appbuilder.rest;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.neeve.appbuilder.model.HandlerDef;
 import jakarta.ws.rs.ext.ContextResolver;
 import jakarta.ws.rs.ext.Provider;
 
@@ -56,6 +58,14 @@ public class JacksonConfig implements ContextResolver<ObjectMapper> {
             }
         });
         mapper.registerModule(m);
+        // A HandlerDef carries a body only when one was asked for, so every
+        // other response would otherwise ship "body":null on every handler --
+        // including GET /v1/services/{svc}. Scoped to this type rather than set
+        // globally: flipping null-suppression for every DTO is a wider change
+        // than it looks, and would drop keys clients may rely on being present.
+        mapper.configOverride(HandlerDef.class)
+              .setInclude(JsonInclude.Value.construct(JsonInclude.Include.NON_NULL,
+                                                      JsonInclude.Include.ALWAYS));
     }
 
     @Override

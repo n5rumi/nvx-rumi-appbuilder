@@ -106,6 +106,14 @@ public class Handlers extends AbstractResource {
                             @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
                             UpdateHandlerRequest req) throws IOException {
         if (req == null) throw new IllegalArgumentException("request body is required");
+        // An ABSENT body is not an empty one. Collapsing the two would let a
+        // client that mistyped the key, or that strips nulls, silently erase a
+        // working handler and get a 200 back. "" stays the explicit way to
+        // empty a handler.
+        if (req.getBody() == null) {
+            throw new IllegalArgumentException(
+                "'body' is required; send \"\" to deliberately empty the handler");
+        }
         return JavaSourceEditor.updateHandler(requireAbsoluteAppRoot(appRoot), service,
             method, req.getBody(), dryRun);
     }
