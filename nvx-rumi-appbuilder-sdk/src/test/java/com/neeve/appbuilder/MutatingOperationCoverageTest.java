@@ -28,6 +28,7 @@ import io.github.classgraph.MethodInfo;
 import io.github.classgraph.ScanResult;
 import org.junit.Test;
 
+import com.neeve.appbuilder.model.BatchResult;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -42,7 +43,8 @@ import static org.junit.Assert.*;
  * {@link MutatingOperationValidityTest} quietly.
  *
  * <p>The expected set is <em>derived</em>, by scanning the SDK for public
- * static methods that return a {@link ChangeSet} — the shape every mutating
+ * static methods that return a {@link ChangeSet} or a
+ * {@link com.neeve.appbuilder.model.BatchResult} — the shapes a mutating
  * operation has. It is deliberately not a hand-maintained list, because the
  * MCP suite's hand-maintained {@code EXPECTED_TOOLS} had already gone stale
  * once: it silently failed to pick up the connector, field and operation
@@ -65,9 +67,14 @@ public class MutatingOperationCoverageTest {
 
         Set<String> uncovered = new TreeSet<>();
         for (String op : operations) {
-            // Method name alone: the suite calls e.g. FieldEditor.renameField.
+            // Match ClassName.method( rather than the bare .method(. A bare match
+            // is fine for a distinctive name like renameField and dangerous for a
+            // common one: ModelBatch#apply (RUMI-412) would be satisfied by any
+            // stray Function.apply( in the suite, reporting covered with no test —
+            // the exact silent staleness this class exists to prevent.
+            String owner = op.substring(0, op.indexOf('#'));
             String method = op.substring(op.indexOf('#') + 1);
-            if (!suite.contains("." + method + "(")) {
+            if (!suite.contains(owner + "." + method + "(")) {
                 uncovered.add(op);
             }
         }
@@ -119,7 +126,13 @@ public class MutatingOperationCoverageTest {
                     }
                     String returnType = mi.getTypeSignatureOrTypeDescriptor()
                         .getResultType().toString();
-                    if (returnType.equals(ChangeSet.class.getName())) {
+                    // BatchResult joined ChangeSet here because ModelBatch.apply
+                    // (RUMI-412) mutates just as much and returned a richer type,
+                    // so the ChangeSet-only scan could not see it — a mutating
+                    // operation slipping past the guard that exists to catch
+                    // exactly that. Any future result type needs adding here too.
+                    if (returnType.equals(ChangeSet.class.getName())
+                            || returnType.equals(BatchResult.class.getName())) {
                         out.add(ci.getSimpleName() + "#" + mi.getName());
                     }
                 }

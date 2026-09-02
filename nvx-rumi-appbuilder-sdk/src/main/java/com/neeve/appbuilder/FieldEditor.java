@@ -22,6 +22,7 @@
 package com.neeve.appbuilder;
 
 import com.neeve.appbuilder.model.ChangeSet;
+import com.neeve.appbuilder.model.FieldDef;
 import org.w3c.dom.Comment;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -31,6 +32,7 @@ import org.w3c.dom.NodeList;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import static com.neeve.appbuilder.MessageIntrospector.ADML_NAMESPACE;
@@ -98,6 +100,91 @@ public final class FieldEditor {
             field.setAttribute("id", String.valueOf(ModelIdAllocator.nextFieldId(type)));
         }
         return writeBack(doc, modelFile, dryRun);
+    }
+
+    /**
+     * Add several {@code <field>}s to one type in a single load-mutate-write
+     * (RUMI-412).
+     *
+     * <p>The point is the round trip, not the payload. Adding fields one at a
+     * time costs a full model turn each — 41 of them in the session behind this
+     * ticket, 19 in one 70-second run — and each turn re-reads the entire
+     * conversation. The XML this writes is identical either way.
+     *
+     * <p>Atomic by construction: one document is loaded, every field is added to
+     * it, and it is validated and written once. A rejected field means nothing
+     * is written, so a batch cannot leave a type half-populated.
+     *
+     * <p>Idempotent per field, matching {@link #addField}: a field that already
+     * exists is skipped rather than duplicated or treated as an error, so
+     * re-applying a model is safe. A batch in which every field already exists
+     * is a no-op.
+     *
+     * @param fields in declaration order; each may carry extra attributes
+     *        ({@code isKey}, {@code length}) exactly as {@link #addField} does.
+     */
+    public static ChangeSet addFields(Path appRoot, String serviceName, ModelScope scope,
+                                      String typeName, List<FieldDef> fields,
+                                      boolean dryRun) throws IOException {
+        if (fields == null || fields.isEmpty()) {
+            return ChangeSet.noop("no fields supplied for " + typeName);
+        }
+        Path modelFile = resolveModelFile(appRoot, serviceName, scope);
+        Document doc = load(modelFile);
+        Element type = requireType(doc, typeName, modelFile);
+
+        // Validate every name before touching the document. findField would NPE on
+        // a null name, and an NPE has no ExceptionMapper case, so the caller would
+        // get an opaque 500 for what is a malformed request. The single-field path
+        // is guarded at the resource; this one had nothing.
+        for (FieldDef f : fields) {
+            if (f.getName() == null || f.getName().isBlank()) {
+                throw new IllegalArgumentException(
+                    "every field needs a name; one in the batch for '" + typeName + "' has none");
+            }
+        }
+
+        List<String> added = new java.util.ArrayList<>();
+        List<String> skipped = new java.util.ArrayList<>();
+        for (FieldDef f : fields) {
+            if (findField(type, f.getName()) != null) {
+                skipped.add(f.getName());
+                continue;
+            }
+            Element field = doc.createElementNS(ADML_NAMESPACE, "field");
+            field.setAttribute("name", f.getName());
+            if (f.getType() != null) field.setAttribute("type", AdmTypes.normalizeFieldType(f.getType()));
+            if (f.getAttributes() != null) {
+                for (Map.Entry<String, String> e : f.getAttributes().entrySet()) {
+                    field.setAttribute(e.getKey(), e.getValue());
+                }
+            }
+            type.appendChild(field);
+            if (!field.hasAttribute("id")) {
+                // Allocated against the live element, so ids stay unique within
+                // the batch as well as across it.
+                field.setAttribute("id", String.valueOf(ModelIdAllocator.nextFieldId(type)));
+            }
+            added.add(f.getName());
+        }
+
+        if (added.isEmpty()) {
+            return ChangeSet.noop("every field already exists on " + typeName + ": " + String.join(", ", skipped));
+        }
+        ChangeSet cs = writeBack(doc, modelFile, dryRun);
+        return skipped.isEmpty() ? cs : withReason(cs, "skipped existing: " + String.join(", ", skipped));
+    }
+
+    /** Carry a note about skipped fields without losing the change set. */
+    private static ChangeSet withReason(ChangeSet cs, String reason) {
+        ChangeSet.Builder b = ChangeSet.builder()
+            .applied(cs.isApplied())
+            .noop(cs.isNoop())
+            .reason(reason)
+            .filesCreated(cs.getFilesCreated())
+            .filesModified(cs.getFilesModified())
+            .filesDeleted(cs.getFilesDeleted());
+        return b.build();
     }
 
     /**

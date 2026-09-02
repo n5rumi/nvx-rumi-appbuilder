@@ -83,6 +83,27 @@ info "Verifying that generated apps build and run"
 "${REPO_DIR}/ci/verify-generated-app.sh" \
     || fail "Generated-app verification failed — refusing to publish ${VERSION}"
 
+# ---- 0b. Prove the MCP tools actually work against the REST service --
+#
+# The sibling gate above proves the TEMPLATES are sound. This one proves the
+# three layers agree with each other, which nothing else here does: every MCP
+# test mocks the HTTP layer, so the suite asserts what we would have sent and
+# never that the service accepts it, and the REST tests drive the resources
+# directly. A field-name mismatch between the MCP's JSON and a REST DTO passes
+# the entire test suite and fails on a live agent box.
+#
+# It also compiles a model built entirely through apply_model, which is the one
+# path the unit suites cannot reach: batch-written ADML through code generation
+# to Java that references the generated accessors.
+#
+# Same reasoning as 0 for having no SKIP_ flag: skipping it would let through
+# exactly the defect it exists to catch. Adding it caught a scope that never
+# reached the editor (RUMI-412 review, finding 1) while 365 unit tests passed.
+
+info "Verifying the MCP tools end to end against the REST service"
+"${REPO_DIR}/ci/verify-mcp-end-to-end.sh" \
+    || fail "MCP end-to-end verification failed — refusing to publish ${VERSION}"
+
 # ---- 1. REST: matrix build + publish --------------------------------
 
 if [[ "${SKIP_REST:-}" != "1" ]]; then

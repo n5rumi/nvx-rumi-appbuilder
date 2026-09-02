@@ -46,6 +46,7 @@ EXPECTED_TOOLS: set[str] = {
     "remove_message_entity",
     # Fields
     "add_field",
+    "apply_model",
     "delete_field",
     "deprecate_field",
     "rename_field",

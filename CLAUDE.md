@@ -142,7 +142,19 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
   gives it the REST layer's 422 mapping. Do not change that hierarchy.
 - **A new mutating operation needs a test in `MutatingOperationValidityTest`.**
   `MutatingOperationCoverageTest` derives the operation set by scanning for
-  public static `ChangeSet`-returning methods and fails the build otherwise.
+  public static methods returning `ChangeSet` **or `BatchResult`**, and fails the
+  build otherwise. ⚠️ The scan keys on the *return type*, so an operation that
+  returns something else is invisible to it — `ModelBatch.apply` (RUMI-412) was,
+  until `BatchResult` was added to the scan. A new result type needs adding there
+  or the guard silently stops covering the thing it exists to cover.
+- **A new REST resource must be registered in `Main.ResourceConfig`.** Registration
+  is explicit rather than a package scan, so a resource class that is written but
+  not registered serves 404 with no error anywhere. `ResourceRegistrationTest`
+  compares the `@Path` classes on disk against what the config registers.
+- **A new MCP tool needs adding to `EXPECTED_TOOLS`**, and a new *verb* prefix needs
+  adding to `test_mutating_tools_use_a_mutating_http_method`. Both lists are
+  hand-maintained and both have gone stale: `update_` (RUMI-411) and `apply_`
+  (RUMI-412) each arrived with the guard blind to them.
 - ⚠️ **ADML has no `key` attribute on a field — it is `isKey`.** The SDK passes
   `FieldDef` attributes through verbatim, so a wrong name reaches the model and
   fails at codegen.

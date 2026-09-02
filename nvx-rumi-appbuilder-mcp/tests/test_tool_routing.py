@@ -162,6 +162,49 @@ async def test_add_handler_nested_path(mcp) -> None:
 
 
 @respx.mock
+async def test_apply_model_posts_the_whole_edit_list(mcp) -> None:
+    route = respx.post(f"{BASE}/v1/model/batch").mock(
+        return_value=httpx.Response(200, json={"items": [], "applied": True})
+    )
+    await mcp.call_tool(
+        "apply_model",
+        {
+            "app_root": "/ws/t",
+            "edits": [
+                {"kind": "message", "service": "proc", "name": "PlaceOrder",
+                 "fields": [{"name": "qty", "type": "Long"}]},
+                {"kind": "fields", "service": "proc", "name": "PlaceOrder",
+                 "scope": "messages", "fields": [{"name": "symbol", "type": "String"}]},
+            ],
+        },
+    )
+    body = route.calls.last.request.content
+    # Order matters on the wire: a fields edit following the message that
+    # defines it is the normal shape.
+    assert body.index(b"PlaceOrder") < body.index(b"symbol")
+    assert b"\"kind\": \"message\"" in body or b'"kind":"message"' in body
+
+
+@respx.mock
+async def test_add_field_sends_the_batch_array_when_given_one(mcp) -> None:
+    route = respx.post(f"{BASE}/v1/services/svc/fields").mock(
+        return_value=httpx.Response(200, json={"applied": True})
+    )
+    await mcp.call_tool(
+        "add_field",
+        {
+            "app_root": "/ws/t",
+            "service": "svc",
+            "scope": "messages",
+            "type": "Tick",
+            "fields": [{"name": "a", "type": "Long"}, {"name": "b", "type": "String"}],
+        },
+    )
+    body = route.calls.last.request.content
+    assert b'"a"' in body and b'"b"' in body
+
+
+@respx.mock
 async def test_list_config_fragments_sends_scope_path_and_selector(mcp) -> None:
     route = respx.get(f"{BASE}/v1/config/fragments").mock(
         return_value=httpx.Response(200, json=[])

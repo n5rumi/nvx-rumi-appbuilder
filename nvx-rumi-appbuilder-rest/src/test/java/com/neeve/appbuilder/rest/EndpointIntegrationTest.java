@@ -145,6 +145,62 @@ public class EndpointIntegrationTest {
     }
 
     @Test
+    public void modelBatch_appliesAWholeModelAndRollsBackOnFailure() throws Exception {
+        post("/v1/services?app_root=" + enc(appRoot),
+            "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}");
+
+        HttpResponse<String> ok = post("/v1/model/batch?app_root=" + enc(appRoot),
+            "{\"edits\":["
+          + "{\"kind\":\"message\",\"service\":\"proc\",\"name\":\"PlaceOrder\","
+          + "\"fields\":[{\"name\":\"qty\",\"type\":\"Long\"}]},"
+          + "{\"kind\":\"fields\",\"service\":\"proc\",\"name\":\"PlaceOrder\",\"scope\":\"messages\","
+          + "\"fields\":[{\"name\":\"symbol\",\"type\":\"String\"}]}"
+          + "]}");
+        assertEquals("batch should apply: " + ok.body(), 200, ok.statusCode());
+        String listed = get("/v1/services/proc/messages?app_root=" + enc(appRoot)).body();
+        assertTrue(listed.contains("PlaceOrder"));
+
+        // A batch whose second edit targets a message that does not exist must
+        // roll the first one back rather than half-apply.
+        String before = get("/v1/services/proc/messages?app_root=" + enc(appRoot)).body();
+        HttpResponse<String> bad = post("/v1/model/batch?app_root=" + enc(appRoot),
+            "{\"edits\":["
+          + "{\"kind\":\"message\",\"service\":\"proc\",\"name\":\"WouldHaveApplied\"},"
+          + "{\"kind\":\"fields\",\"service\":\"proc\",\"name\":\"NoSuchMessage\",\"scope\":\"messages\","
+          + "\"fields\":[{\"name\":\"x\",\"type\":\"Long\"}]}"
+          + "]}");
+        assertTrue("a failing batch must not return 200: " + bad.statusCode(), bad.statusCode() >= 400);
+        assertEquals("the batch must have rolled back completely",
+            before, get("/v1/services/proc/messages?app_root=" + enc(appRoot)).body());
+
+        // A malformed edit is rejected before anything is written.
+        assertEquals(400, post("/v1/model/batch?app_root=" + enc(appRoot),
+            "{\"edits\":[{\"kind\":\"nonsense\",\"name\":\"X\"}]}").statusCode());
+    }
+
+    @Test
+    public void fields_canBeAddedAsABatch() throws Exception {
+        post("/v1/services?app_root=" + enc(appRoot),
+            "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}");
+        post("/v1/services/proc/messages?app_root=" + enc(appRoot),
+            "{\"name\":\"Tick\",\"fields\":[{\"name\":\"seq\",\"type\":\"Long\"}]}");
+
+        HttpResponse<String> r = post("/v1/services/proc/fields?app_root=" + enc(appRoot),
+            "{\"scope\":\"messages\",\"type\":\"Tick\",\"fields\":["
+          + "{\"name\":\"bid\",\"type\":\"Double\"},{\"name\":\"ask\",\"type\":\"Double\"}]}");
+        assertEquals("batch fields should apply: " + r.body(), 200, r.statusCode());
+
+        String msg = get("/v1/services/proc/messages/Tick?app_root=" + enc(appRoot)).body();
+        assertTrue(msg.contains("bid"));
+        assertTrue(msg.contains("ask"));
+
+        // Both forms at once is ambiguous and must be refused, not half-honoured.
+        assertEquals(400, post("/v1/services/proc/fields?app_root=" + enc(appRoot),
+            "{\"scope\":\"messages\",\"type\":\"Tick\",\"name\":\"solo\",\"fieldType\":\"Long\","
+          + "\"fields\":[{\"name\":\"other\",\"type\":\"Long\"}]}").statusCode());
+    }
+
+    @Test
     public void configFragments_canBeNarrowedByScopeAndSelector() throws Exception {
         // Two xvm templates, so a narrowed read has something to exclude.
         post("/v1/config/fragments?app_root=" + enc(appRoot),

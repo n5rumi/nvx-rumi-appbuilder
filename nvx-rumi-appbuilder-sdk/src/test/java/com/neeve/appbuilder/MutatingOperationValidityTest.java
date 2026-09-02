@@ -23,7 +23,9 @@ package com.neeve.appbuilder;
 
 import com.neeve.appbuilder.model.ChangeSet;
 import com.neeve.appbuilder.model.ElementSelector;
+import com.neeve.appbuilder.model.BatchResult;
 import com.neeve.appbuilder.model.FieldDef;
+import com.neeve.appbuilder.model.ModelEdit;
 import com.neeve.appbuilder.test.ProjectValidity;
 import com.neeve.appbuilder.test.TestAppFactory;
 import org.junit.After;
@@ -140,6 +142,43 @@ public class MutatingOperationValidityTest {
         // An empty body is a legitimate update, not a removal, and must not
         // leave a method that no longer parses.
         valid(JavaSourceEditor.updateHandler(appRoot, "order-processor", "onOrder", "", false));
+        ProjectValidity.assertProjectValid(appRoot);
+    }
+
+    @Test
+    public void addingFieldsInABatchLeavesTheProjectValid() throws Exception {
+        TestAppFactory.addProcessor(appRoot, "order-processor");
+        MessageEditor.addMessage(appRoot, "order-processor", "OrderRequest",
+            List.of(new FieldDef("qty", "Long", Map.of())), false);
+
+        valid(FieldEditor.addFields(appRoot, "order-processor",
+            FieldEditor.ModelScope.SERVICE_MESSAGES, "OrderRequest",
+            List.of(new FieldDef("symbol", "String", Map.of()),
+                    new FieldDef("price", "Double", Map.of()),
+                    new FieldDef("side", "String", Map.of())), false));
+        ProjectValidity.assertProjectValid(appRoot);
+    }
+
+    @Test
+    public void applyingAModelBatchLeavesTheProjectValid() throws Exception {
+        TestAppFactory.addProcessor(appRoot, "order-processor");
+
+        BatchResult result = ModelBatch.apply(appRoot, List.of(
+            new ModelEdit(ModelEdit.Kind.MESSAGE, "order-processor", "PlaceOrder", null,
+                List.of(new FieldDef("qty", "Long", Map.of())), null, null),
+            new ModelEdit(ModelEdit.Kind.FIELDS, "order-processor", "PlaceOrder", "messages",
+                List.of(new FieldDef("symbol", "String", Map.of())), null, null),
+            new ModelEdit(ModelEdit.Kind.STATE_ENTITY, "order-processor", "Order", null,
+                List.of(new FieldDef("id", "String", Map.of("isKey", "true"))), null, null)
+        ), false);
+
+        assertTrue(result.isApplied());
+        assertEquals(3, result.getItems().size());
+        assertFalse("the batch must report the files it touched",
+            result.getFilesModified().isEmpty());
+        // assertProjectValid covers every governed file, so it subsumes checking
+        // the batch's own list — and would also catch a file the batch touched
+        // but failed to report.
         ProjectValidity.assertProjectValid(appRoot);
     }
 

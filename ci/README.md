@@ -82,6 +82,32 @@ bash /tmp/smoke-${VERSION}/rumi-appbuilder-rest/current/install.sh \
     --install-dir /tmp/smoke-${VERSION} --uninstall --force
 ```
 
+## MCP end-to-end verification (the second release gate)
+
+`ci/release.sh` also runs `ci/verify-mcp-end-to-end.sh` before publishing. It boots
+the JAX-RS layer on an ephemeral loopback port, drives the **real** MCP tool
+implementations against it, then builds a model **entirely through `apply_model`**
+and compiles the generated app.
+
+This exists because the three modules were each well tested and never tested
+*together*. Every MCP test mocks the HTTP layer with `respx`, so the suite asserts
+what the MCP *would have sent* and never that the service accepts it; the REST
+tests drive the resources directly. A field-name mismatch between the MCP's JSON
+and a REST DTO passes the entire suite and only fails on a live agent box — the
+same shape of failure the generated-app gate exists for, one layer up.
+
+It was not hypothetical. RUMI-412 shipped a `MESSAGE` edit whose `scope` never
+reached the editor at all, so `scope: "roe"` wrote into the service's private
+model and returned 200; 365 unit tests passed. Writing this check is also what
+found that `create_app` requires its `app_dir` to already exist and that the app
+lands at `<app_dir>/<prefix>-<name>` — neither of which a mocked test can know.
+
+Like the generated-app gate, it has **no `SKIP_` flag**. Skipping it would let
+through exactly the defect it exists to catch.
+
+Optional env: `PORT` (default `0`, an ephemeral port so concurrent builds on one
+agent cannot collide), `WORK_DIR`, `MVN`, `VENV`.
+
 ## Generated-app verification (the release gate)
 
 Before anything is published, `ci/release.sh` runs `ci/verify-generated-app.sh`.
