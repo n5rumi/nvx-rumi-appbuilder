@@ -27,6 +27,8 @@ import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.neeve.appbuilder.model.BatchResult;
+import com.neeve.appbuilder.model.ChangeSet;
 import com.neeve.appbuilder.model.HandlerDef;
 import jakarta.ws.rs.ext.ContextResolver;
 import jakarta.ws.rs.ext.Provider;
@@ -63,6 +65,16 @@ public class JacksonConfig implements ContextResolver<ObjectMapper> {
         // including GET /v1/services/{svc}. Scoped to this type rather than set
         // globally: flipping null-suppression for every DTO is a wider change
         // than it looks, and would drop keys clients may rely on being present.
+        // A write receipt carried five empty collections and a null reason on
+        // every response -- about 95 bytes of nothing per call, on a surface
+        // whose whole point is that calls are the expensive part (RUMI-414).
+        // Scoped to the two result types rather than set globally: flipping
+        // empty-suppression for every DTO would drop keys callers may rely on.
+        for (Class<?> resultType : new Class<?>[] { ChangeSet.class, BatchResult.class }) {
+            mapper.configOverride(resultType)
+                  .setInclude(JsonInclude.Value.construct(JsonInclude.Include.NON_EMPTY,
+                                                          JsonInclude.Include.ALWAYS));
+        }
         mapper.configOverride(HandlerDef.class)
               .setInclude(JsonInclude.Value.construct(JsonInclude.Include.NON_NULL,
                                                       JsonInclude.Include.ALWAYS));

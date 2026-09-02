@@ -113,6 +113,7 @@ public final class Main {
             // why-not-jersey-media-json-jackson note.
             register(JacksonJsonProvider.class);
             register(JacksonConfig.class);
+            register(CompactResultFilter.class);
 
             // Resources.
             register(com.neeve.appbuilder.rest.resources.Health.class);
