@@ -57,6 +57,32 @@ async def main():
         names = [f.get("name") for f in msg.get("fields", [])]
         check("batch fields really landed", {"qty","symbol","price"} <= set(names), str(names))
 
+        # --- scope must actually reach the editor (RUMI-412 review, finding 1) ---
+        # A scope that is accepted and then ignored writes to the wrong model and
+        # returns 200. Nothing in the mocked suite could see that, which is how
+        # it shipped; asserting the FILE is what makes this gate able to fail.
+        await call(mcp, "apply_model", app_root=root, edits=[
+            {"kind": "message", "service": "proc", "name": "SharedEvent", "scope": "roe",
+             "fields": [{"name": "id", "type": "String"}]},
+        ])
+        roe_models = []
+        svc_models = []
+        for d, _sub, files in os.walk(root):
+            for fn in files:
+                if not fn.endswith(".xml") or "main/models" not in d.replace(os.sep, "/"):
+                    continue
+                # Classify by MODULE, not by a path fragment: the ROE model dir
+                # ends in /roe rather than containing /roe/, and the service's
+                # own dirs are .../<pkg>/proc/... - so a substring test on the
+                # package path gets both wrong.
+                module = d.replace(os.sep, "/").split("/src/main/models")[0]
+                (roe_models if module.endswith("-roe") else svc_models).append(
+                    os.path.join(d, fn))
+        in_roe = any("SharedEvent" in open(f).read() for f in roe_models)
+        in_svc = any("SharedEvent" in open(f).read() for f in svc_models)
+        check("a roe-scoped message lands in the ROE model", in_roe, f"roe={roe_models}")
+        check("and NOT in the service model", not in_svc, f"svc={svc_models}")
+
         # --- RUMI-412: batch add_field ---
         await call(mcp, "add_message", app_root=root, service="proc", name="Tick",
                    fields=[{"name": "seq", "type": "Long"}])
