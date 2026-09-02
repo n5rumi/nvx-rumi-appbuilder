@@ -27,6 +27,7 @@ EXPECTED_TOOLS: set[str] = {
     "list_handlers",
     "get_handler",
     "add_handler",
+    "update_handler",
     "remove_handler",
     # Connectors
     "list_connectors",

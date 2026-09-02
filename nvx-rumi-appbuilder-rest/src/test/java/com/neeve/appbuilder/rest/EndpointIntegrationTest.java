@@ -145,6 +145,38 @@ public class EndpointIntegrationTest {
     }
 
     @Test
+    public void handlerBody_isReadableAndReplaceableOverHttp() throws Exception {
+        post("/v1/services?app_root=" + enc(appRoot),
+            "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}");
+        assertEquals(200, post("/v1/services/proc/handlers?app_root=" + enc(appRoot),
+            "{\"method\":\"onOrder\",\"messageType\":\"OrderRequest\",\"body\":\"int a = 1;\"}").statusCode());
+
+        // A listing stays cheap by default and carries bodies only on request.
+        assertFalse("list must not carry bodies by default",
+            get("/v1/services/proc/handlers?app_root=" + enc(appRoot)).body().contains("int a = 1;"));
+        assertTrue("include_body must opt in",
+            get("/v1/services/proc/handlers?include_body=true&app_root=" + enc(appRoot)).body().contains("int a = 1;"));
+
+        // The single get is where the body is the point.
+        assertTrue(get("/v1/services/proc/handlers/onOrder?app_root=" + enc(appRoot)).body().contains("int a = 1;"));
+
+        // Replace it.
+        HttpResponse<String> up = put("/v1/services/proc/handlers/onOrder?app_root=" + enc(appRoot),
+            "{\"body\":\"int b = 2;\"}");
+        assertEquals(200, up.statusCode());
+        String after = get("/v1/services/proc/handlers/onOrder?app_root=" + enc(appRoot)).body();
+        assertTrue(after.contains("int b = 2;"));
+        assertFalse(after.contains("int a = 1;"));
+
+        // A body that does not parse is a 400 and must leave the handler alone.
+        HttpResponse<String> bad = put("/v1/services/proc/handlers/onOrder?app_root=" + enc(appRoot),
+            "{\"body\":\"int a = ;\"}");
+        assertEquals("an unparseable body is a client error: " + bad.body(), 400, bad.statusCode());
+        assertTrue("the rejected update must not have damaged the handler",
+            get("/v1/services/proc/handlers/onOrder?app_root=" + enc(appRoot)).body().contains("int b = 2;"));
+    }
+
+    @Test
     public void handlers_messages_stateEntities_roundTripOnAddedProcessor() throws Exception {
         post("/v1/services?app_root=" + enc(appRoot),
             "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}");
@@ -322,6 +354,13 @@ public class EndpointIntegrationTest {
         return http.send(HttpRequest.newBuilder(URI.create(base + path))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+            HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> put(String path, String json) throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create(base + path))
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(json)).build(),
             HttpResponse.BodyHandlers.ofString());
     }
 

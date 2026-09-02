@@ -62,6 +62,22 @@ public final class HandlerIntrospector {
      * in source order.
      */
     public static List<HandlerDef> listHandlers(Path appRoot, String serviceName) throws IOException {
+        return listHandlers(appRoot, serviceName, false);
+    }
+
+    /**
+     * As {@link #listHandlers(Path, String)}, optionally carrying each
+     * handler's body.
+     *
+     * <p>Bodies are <b>off by default</b> and that is deliberate. A list call
+     * answers "what handlers are there?", and returning every body turns a
+     * cheap signature listing into a full dump of the service's logic — the
+     * exact shape of waste this surface exists to remove. Ask for one handler's
+     * body with {@link #getHandler}, or opt in here when you genuinely want
+     * them all.
+     */
+    public static List<HandlerDef> listHandlers(Path appRoot, String serviceName, boolean includeBodies)
+            throws IOException {
         Path mainJava = AppIntrospector.resolveMainJavaFile(appRoot, serviceName);
         if (!Files.exists(mainJava)) return Collections.emptyList();
         String source;
@@ -72,7 +88,7 @@ public final class HandlerIntrospector {
         } catch (Exception e) {
             throw new IOException("failed to parse " + mainJava, e);
         }
-        return parseHandlers(cu, source);
+        return parseHandlers(cu, includeBodies ? source : null);
     }
 
     /**
@@ -80,7 +96,9 @@ public final class HandlerIntrospector {
      * method with that name exists in the service's {@code Main.java}.
      */
     public static HandlerDef getHandler(Path appRoot, String serviceName, String methodName) throws IOException {
-        for (HandlerDef h : listHandlers(appRoot, serviceName)) {
+        // Bodies on: fetching one named handler is the case where the body is
+        // the point (RUMI-411), unlike the bulk listing.
+        for (HandlerDef h : listHandlers(appRoot, serviceName, true)) {
             if (methodName.equals(h.getMethodName())) return h;
         }
         return null;
