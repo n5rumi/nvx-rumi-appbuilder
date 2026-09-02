@@ -52,13 +52,26 @@ public class Fields extends AbstractResource {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Operation(summary = "Add a field to a message or entity",
-               description = "scope is messages|state|roe; type is the message/entity name. The field gets a stable, never-reused id.")
+               description = "scope is messages|state|roe; type is the message/entity name. Each field gets a stable, never-reused id. "
+                           + "Send a fields[] array to add several in one call - the whole batch is one load-validate-write, so a "
+                           + "rejected field means none are added. The single name/fieldType form still works.")
     public ChangeSet add(@QueryParam("app_root") String appRoot,
                          @PathParam("svc") String service,
                          @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
                          AddFieldRequest req) throws IOException {
-        if (req == null || req.getName() == null || req.getName().isBlank()) {
-            throw new IllegalArgumentException("field name is required");
+        if (req == null) throw new IllegalArgumentException("request body is required");
+        if (req.isBatch()) {
+            if (req.getName() != null && !req.getName().isBlank()) {
+                // Both forms at once is ambiguous: which field carries the
+                // attributes? Refuse rather than silently honouring one.
+                throw new IllegalArgumentException(
+                    "send either 'name' or 'fields', not both");
+            }
+            return FieldEditor.addFields(requireAbsoluteAppRoot(appRoot), service, req.toScope(),
+                req.getType(), req.toFieldDefs(), dryRun);
+        }
+        if (req.getName() == null || req.getName().isBlank()) {
+            throw new IllegalArgumentException("field name is required, or send a fields[] array");
         }
         return FieldEditor.addField(requireAbsoluteAppRoot(appRoot), service, req.toScope(),
             req.getType(), req.getName(), req.getFieldType(), req.getAttributes(), dryRun);

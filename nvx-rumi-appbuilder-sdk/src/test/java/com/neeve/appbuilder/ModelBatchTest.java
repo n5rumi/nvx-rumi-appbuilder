@@ -1,0 +1,196 @@
+/**
+ * Copyright 2022 N5 Technologies, Inc
+ *
+ * This product includes software developed at N5 Technologies, Inc
+ * (http://www.n5corp.com/) as well as software licenced to N5 Technologies,
+ * Inc under one or more contributor license agreements. See the NOTICE
+ * file distributed with this work for additional information regarding
+ * copyright ownership.
+ *
+ * N5 Technologies licenses this file to you under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at:
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.neeve.appbuilder;
+
+import com.neeve.appbuilder.model.BatchResult;
+import com.neeve.appbuilder.model.FieldDef;
+import com.neeve.appbuilder.model.ModelEdit;
+import com.neeve.appbuilder.test.TestAppFactory;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import static org.junit.Assert.*;
+
+/** RUMI-412: batching a model build into one call. */
+public class ModelBatchTest {
+
+    private Path tempDir;
+    private Path appRoot;
+
+    @Before
+    public void setUp() throws Exception {
+        tempDir = Files.createTempDirectory("modelbatch-");
+        appRoot = TestAppFactory.newApp("trading").packageName("com.example.trading").scaffoldAt(tempDir);
+        TestAppFactory.addProcessor(appRoot, "proc");
+    }
+
+    @After
+    public void tearDown() throws Exception {
+        TestAppFactory.deleteRecursive(tempDir);
+    }
+
+    private static ModelEdit message(String svc, String name, FieldDef... fields) {
+        return new ModelEdit(ModelEdit.Kind.MESSAGE, svc, name, null, List.of(fields), null, null);
+    }
+
+    private static FieldDef f(String name, String type) {
+        return new FieldDef(name, type, Map.of());
+    }
+
+    /** Every model file's bytes, so a rollback can be checked exactly. */
+    private Map<Path, String> modelSnapshot() throws Exception {
+        try (Stream<Path> w = Files.walk(appRoot)) {
+            return w.filter(Files::isRegularFile)
+                .filter(p -> p.toString().contains("main/models") && p.toString().endsWith(".xml"))
+                .collect(Collectors.toMap(p -> p, p -> {
+                    try { return Files.readString(p); } catch (Exception e) { throw new RuntimeException(e); }
+                }));
+        }
+    }
+
+    // ---- the point of the ticket ---------------------------------------
+
+    @Test
+    public void oneCallBuildsAWholeModel() throws Exception {
+        BatchResult r = ModelBatch.apply(appRoot, List.of(
+            message("proc", "PlaceOrder", f("qty", "Long"), f("symbol", "String")),
+            message("proc", "CancelOrder", f("orderId", "String")),
+            new ModelEdit(ModelEdit.Kind.STATE_ENTITY, "proc", "Order", null,
+                List.of(new FieldDef("id", "String", Map.of("isKey", "true"))), null, null),
+            new ModelEdit(ModelEdit.Kind.FIELDS, "proc", "PlaceOrder", "messages",
+                List.of(f("price", "Double")), null, null)
+        ), false);
+
+        assertTrue(r.isApplied());
+        assertEquals(4, r.getItems().size());
+        assertEquals(4, r.getChangedCount());
+        assertEquals(2, MessageIntrospector.listMessages(appRoot, "proc",
+            FieldEditor.ModelScope.SERVICE_MESSAGES).size());
+    }
+
+    @Test
+    public void itemsApplyInOrderSoAFieldCanFollowTheMessageThatDefinesIt() throws Exception {
+        // Reordering by kind would break this, which is the normal shape.
+        ModelBatch.apply(appRoot, List.of(
+            message("proc", "Tick"),
+            new ModelEdit(ModelEdit.Kind.FIELDS, "proc", "Tick", "messages",
+                List.of(f("last", "Double")), null, null)
+        ), false);
+
+        assertTrue(Files.readString(FieldEditor.resolveModelFile(appRoot, "proc",
+            FieldEditor.ModelScope.SERVICE_MESSAGES)).contains("last"));
+    }
+
+    // ---- all-or-nothing -------------------------------------------------
+
+    /**
+     * The load-bearing claim. A batch that fails partway must leave the app
+     * exactly as it was — otherwise "apply my model" becomes a call you cannot
+     * safely retry.
+     */
+    @Test
+    public void aFailedItemRollsTheWholeBatchBack() throws Exception {
+        Map<Path, String> before = modelSnapshot();
+
+        try {
+            ModelBatch.apply(appRoot, List.of(
+                message("proc", "GoodOne", f("a", "Long")),          // applies
+                new ModelEdit(ModelEdit.Kind.FIELDS, "proc", "NoSuchMessage", "messages",
+                    List.of(f("b", "Long")), null, null)             // fails
+            ), false);
+            fail("a field on a message that does not exist must fail the batch");
+        } catch (Exception expected) {
+            // the failure itself is what the caller needs; the state is the test
+        }
+
+        assertEquals("the batch must leave every model file exactly as it was",
+            before, modelSnapshot());
+    }
+
+    @Test
+    public void aMalformedItemIsRejectedBeforeAnythingIsWritten() throws Exception {
+        Map<Path, String> before = modelSnapshot();
+        try {
+            ModelBatch.apply(appRoot, List.of(
+                message("proc", "WouldHaveApplied", f("a", "Long")),
+                new ModelEdit(ModelEdit.Kind.COLLECTION, "proc", "Orders", null, List.of(), null, null)
+            ), false);
+            fail("a collection without is/contains must be rejected");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("Orders"));
+        }
+        assertEquals("validation happens before any write", before, modelSnapshot());
+    }
+
+    @Test
+    public void aDryRunWritesNothing() throws Exception {
+        Map<Path, String> before = modelSnapshot();
+        BatchResult r = ModelBatch.apply(appRoot, List.of(
+            message("proc", "Ghost", f("a", "Long"))), true);
+        assertFalse(r.isApplied());
+        assertEquals(before, modelSnapshot());
+    }
+
+    // ---- re-applying a model -------------------------------------------
+
+    @Test
+    public void reApplyingTheSameBatchIsSafeAndReportsWhatWasAlreadyThere() throws Exception {
+        List<ModelEdit> edits = List.of(message("proc", "PlaceOrder", f("qty", "Long")));
+        ModelBatch.apply(appRoot, edits, false);
+        Map<Path, String> afterFirst = modelSnapshot();
+
+        BatchResult second = ModelBatch.apply(appRoot, edits, false);
+
+        assertEquals("a re-apply must not rewrite the file", afterFirst, modelSnapshot());
+        assertEquals("and it must say so rather than claiming a change",
+            0, second.getChangedCount());
+        assertTrue(second.getItems().get(0).isNoop());
+    }
+
+    @Test
+    public void anEmptyBatchIsHarmless() throws Exception {
+        BatchResult r = ModelBatch.apply(appRoot, new ArrayList<>(), false);
+        assertTrue(r.getItems().isEmpty());
+        assertFalse(r.isApplied());
+    }
+
+    @Test
+    public void anUnknownScopeIsRejectedByName() throws Exception {
+        try {
+            ModelBatch.apply(appRoot, List.of(
+                new ModelEdit(ModelEdit.Kind.FIELDS, "proc", "X", "sate",
+                    List.of(f("a", "Long")), null, null)), false);
+            fail("a mistyped scope must be rejected, not silently defaulted");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("sate"));
+        }
+    }
+}

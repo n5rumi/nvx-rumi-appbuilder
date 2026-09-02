@@ -319,21 +319,36 @@ def build_server(base_url: str | None = None) -> FastMCP:
     # ---- Fields ------------------------------------------------------
 
     @mcp.tool()
+    def apply_model(
+        app_root: str,
+        edits: list[dict[str, Any]],
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Apply a whole model in ONE call. edits is an ordered list of {"kind","service","name","scope","fields","is","contains"} where kind is message|message_entity|state_entity|collection|fields. Reach for this FIRST when building or extending a model - one call instead of one per message, entity, collection and field. Order is preserved, so an edit can add a message and a later edit can add fields to it. All-or-nothing: a rejected edit rolls the whole batch back and the app is left exactly as it was. The result reports each item, including which were no-ops because they already existed, so re-applying a model is safe."""
+        return rest.post(
+            "/v1/model/batch",
+            params={"app_root": app_root, "dry_run": str(dry_run).lower()},
+            json={"edits": edits},
+        )
+
+    @mcp.tool()
     def add_field(
         app_root: str,
         service: str,
         scope: str,
         type: str,
-        name: str,
-        field_type: str,
+        name: str | None = None,
+        field_type: str | None = None,
         attributes: dict[str, str] | None = None,
+        fields: list[dict[str, Any]] | None = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Add a field to a message or entity. scope is messages|state|roe; type is the message/entity name. The field gets a stable, never-reused id."""
+        """Add one field, or several at once. scope is messages|state|roe; type is the message/entity name. PREFER the fields[] form - [{"name","type","attributes"}] - when adding more than one: it is one call and one write instead of a round trip per field, and a rejected field means none are added. Send either name or fields, not both. Each field gets a stable, never-reused id."""
         return rest.post(
             f"/v1/services/{service}/fields",
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},
-            json={"scope": scope, "type": type, "name": name, "fieldType": field_type, "attributes": attributes or {}},
+            json={"scope": scope, "type": type, "name": name, "fieldType": field_type,
+                  "attributes": attributes or {}, "fields": fields},
         )
 
     @mcp.tool()

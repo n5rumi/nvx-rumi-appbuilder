@@ -25,8 +25,12 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.neeve.appbuilder.FieldEditor;
 
+import com.neeve.appbuilder.model.FieldDef;
+
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Request body for {@code POST /v1/services/{svc}/fields}.
@@ -41,18 +45,35 @@ public final class AddFieldRequest {
     private final String name;
     private final String fieldType;
     private final Map<String, String> attributes;
+    private final List<FieldSpec> fields;
 
     @JsonCreator
     public AddFieldRequest(@JsonProperty("scope") String scope,
                            @JsonProperty("type") String type,
                            @JsonProperty("name") String name,
                            @JsonProperty("fieldType") String fieldType,
-                           @JsonProperty("attributes") Map<String, String> attributes) {
+                           @JsonProperty("attributes") Map<String, String> attributes,
+                           @JsonProperty("fields") List<FieldSpec> fields) {
         this.scope = scope;
         this.type = type;
         this.name = name;
         this.fieldType = fieldType;
         this.attributes = attributes == null ? Collections.emptyMap() : attributes;
+        this.fields = fields;
+    }
+
+    /**
+     * Several fields to add in one call (RUMI-412), or {@code null} for the
+     * single-field form. Same array shape {@code add_message_entity} already
+     * takes, so a caller building a model does not meet two conventions.
+     */
+    public List<FieldSpec> getFields() { return fields; }
+
+    /** True when the batch form was used. */
+    public boolean isBatch() { return fields != null && !fields.isEmpty(); }
+
+    public List<FieldDef> toFieldDefs() {
+        return fields.stream().map(FieldSpec::toSdk).collect(Collectors.toList());
     }
 
     public String getScope() { return scope; }
