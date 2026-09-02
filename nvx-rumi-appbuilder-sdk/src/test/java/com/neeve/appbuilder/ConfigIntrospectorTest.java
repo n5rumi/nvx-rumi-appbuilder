@@ -238,4 +238,89 @@ public class ConfigIntrospectorTest {
         assertTrue(ConfigIntrospector.listFragments(
             appRoot, null, List.of("apps", "templates"), null).isEmpty());
     }
+
+    // ---- review follow-ups on the narrowed read -------------------------
+
+    private void writeProfileAndRootXvms() throws Exception {
+        PhaseBTestSupport.writeConfigXml(appRoot,
+            "<model xmlns=\"http://www.neeveresearch.com/schema/x-ddl\">"
+          + "  <xvms><templates>"
+          + "    <xvm name=\"root-only\"><env><HEAP>1g</HEAP></env></xvm>"
+          + "  </templates></xvms>"
+          + "  <profiles><profile name=\"dev\">"
+          + "    <xvms><templates>"
+          + "      <xvm name=\"dev-only\"><env><HEAP>4g</HEAP></env></xvm>"
+          + "    </templates></xvms>"
+          + "  </profile></profiles>"
+          + "</model>");
+    }
+
+    /**
+     * A profile filter plus a relative scope path used to return the ROOT
+     * fragments and silently exclude every one of the profile's — a
+     * plausible-looking wrong answer, which is worse than an error.
+     */
+    @Test
+    public void listFragments_profileAndScopePathSeeTheProfilesFragmentsToo() throws Exception {
+        writeProfileAndRootXvms();
+        List<String> names = ConfigIntrospector
+            .listFragments(appRoot, "dev", List.of("xvms", "templates"), null)
+            .stream().map(ConfigFragment::getName).collect(Collectors.toList());
+
+        assertTrue("the profile's own fragment must not be dropped", names.contains("dev-only"));
+        assertTrue("and the root-level one is still in scope, as it is without a scope path",
+            names.contains("root-only"));
+    }
+
+    @Test
+    public void listFragments_fullProfilePathRestrictsToThatProfileAlone() throws Exception {
+        writeProfileAndRootXvms();
+        List<ConfigFragment> hit = ConfigIntrospector.listFragments(
+            appRoot, null, List.of("profiles", "dev", "xvms", "templates"), null);
+        assertEquals(1, hit.size());
+        assertEquals("dev-only", hit.get(0).getName());
+    }
+
+    /**
+     * The dangerous asymmetry: removeFragment navigates arbitrary paths, so
+     * scope ["xvms"] + tag "templates" deletes the whole subtree — while this
+     * read knows only the enumerated shapes. Answering "empty" would tell a
+     * caller that checked first that it was safe to delete.
+     */
+    @Test
+    public void listFragments_refusesAScopeItCannotEnumerateRatherThanReportingItEmpty() throws Exception {
+        writeProfileAndRootXvms();
+        try {
+            ConfigIntrospector.listFragments(appRoot, null, List.of("xvms"), null);
+            fail("a scope this read cannot enumerate must be refused, not answered empty");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("xvms"));
+            assertTrue("the message should name the shapes it does cover",
+                expected.getMessage().contains("xvms/templates"));
+        }
+    }
+
+    @Test
+    public void listFragments_refusesAnUnenumerableProfileScope() throws Exception {
+        writeProfileAndRootXvms();
+        try {
+            ConfigIntrospector.listFragments(appRoot, null, List.of("profiles", "dev", "buses"), null);
+            fail("profiles/<name>/buses is not enumerated and must be refused");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("profiles/dev/buses"));
+        }
+    }
+
+    @Test
+    public void listFragments_stillAcceptsEveryEnumeratedShape() throws Exception {
+        writeProfileAndRootXvms();
+        // buses is root-only; the profile form deliberately omits it.
+        for (List<String> scope : List.of(List.of("env"), List.of("buses"),
+                                          List.of("apps", "templates"), List.of("xvms", "templates"),
+                                          List.of("profiles", "dev", "env"),
+                                          List.of("profiles", "dev", "apps", "templates"),
+                                          List.of("profiles", "dev", "xvms", "templates"))) {
+            ConfigIntrospector.listFragments(appRoot, null, scope, null);  // must not throw
+        }
+    }
 }

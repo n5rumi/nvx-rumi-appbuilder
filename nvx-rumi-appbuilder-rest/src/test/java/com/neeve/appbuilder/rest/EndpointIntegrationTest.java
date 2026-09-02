@@ -173,6 +173,18 @@ public class EndpointIntegrationTest {
         assertTrue(buses.contains("\"tagName\":\"bus\""));
         assertFalse("an xvm must not appear under the buses scope", buses.contains("inference"));
 
+        // Blank selector params are unset, not a selector that matches nothing.
+        // Only the Python MCP omits them; a hand-built client sends ?tag=&name=.
+        String blank = get("/v1/config/fragments?app_root=" + enc(appRoot)
+            + "&scope_path=xvms&scope_path=templates&tag=&name=").body();
+        assertTrue("blank tag/name must not narrow to nothing", blank.contains("inference"));
+
+        // A scope this read cannot enumerate is refused, never reported empty:
+        // remove navigates paths the read cannot see, so "nothing there" would
+        // tell a caller that checked first that deleting was safe.
+        assertEquals(400, get("/v1/config/fragments?app_root=" + enc(appRoot)
+            + "&scope_path=xvms").statusCode());
+
         // A scope path that genuinely matches nothing is an empty list, not
         // everything - the failure mode of a filter that silently no-ops.
         assertEquals("[]", get("/v1/config/fragments?app_root=" + enc(appRoot)

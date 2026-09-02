@@ -95,9 +95,16 @@ public class Config extends AbstractResource {
         // an empty list is a legitimate scope path (the document root) as far as
         // equals() is concerned - so it has to mean "unset" explicitly.
         List<String> scope = (scopePath == null || scopePath.isEmpty()) ? null : scopePath;
-        ElementSelector selector = (tag == null && name == null)
+        // Blank is unset here too. Only the Python MCP omits an unset param; a
+        // hand-built curl or a generated client sends ?tag=&name=, and an empty
+        // tag matches no element at all -- returning [] indistinguishable from
+        // "this app has no fragments". The guard above already learned this for
+        // scope_path; tag and name need the same treatment.
+        String tagOrNull = (tag == null || tag.isEmpty()) ? null : tag;
+        String nameOrNull = (name == null || name.isEmpty()) ? null : name;
+        ElementSelector selector = (tagOrNull == null && nameOrNull == null)
             ? null
-            : new ElementSelector(tag, name == null ? Map.of() : Map.of("name", name));
+            : new ElementSelector(tagOrNull, nameOrNull == null ? Map.of() : Map.of("name", nameOrNull));
         return ConfigIntrospector.listFragments(requireAbsoluteAppRoot(appRoot), profile, scope, selector)
             .stream().map(ConfigFragmentView::from).collect(Collectors.toList());
     }

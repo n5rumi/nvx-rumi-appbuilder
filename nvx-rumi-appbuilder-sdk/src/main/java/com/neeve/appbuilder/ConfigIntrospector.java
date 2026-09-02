@@ -98,37 +98,113 @@ public final class ConfigIntrospector {
      * hand. Reading a whole generated file to answer a one-line question was the
      * single most expensive tool call in the session that prompted this.
      *
+     * <p>⚠️ The read and the write do <b>not</b> cover the same paths, and the
+     * gap is dangerous in one direction. {@code removeFragment} navigates an
+     * arbitrary path and deletes matching direct children, so
+     * {@code scopePath=["xvms"], tag="templates"} deletes the whole
+     * {@code <templates>} subtree — while this read only knows the seven
+     * enumerated scope shapes and would answer "nothing there". A caller that
+     * checked before deleting would be told it was safe. So a scope path this
+     * read cannot enumerate is <b>rejected</b> rather than answered with an
+     * empty list.
+     *
+     * <p>When {@code profile} is set, a relative {@code scopePath} matches both
+     * the root-level scope and that profile's, which is what
+     * {@link #listFragments(Path, String)} already does when no scope path is
+     * given. Pass the full {@code profiles/<name>/...} path to restrict to the
+     * profile alone.
+     *
      * @param scopePath exact scope path to restrict to, or {@code null} for any.
-     *        Exact rather than a prefix, so that a selector means the same thing
-     *        here as it does on remove — asymmetry between the two is how a
-     *        caller ends up deleting more than it inspected.
      * @param selector  match on tag name and/or attributes, or {@code null} for
      *        any.
+     * @throws IllegalArgumentException if {@code scopePath} is not a scope this
+     *         introspector enumerates.
      */
     public static List<ConfigFragment> listFragments(Path appRoot, String profile,
                                                      List<String> scopePath,
                                                      ElementSelector selector) throws IOException {
-        return filter(listFragments(appRoot, profile), scopePath, selector);
+        return filter(listFragments(appRoot, profile), profile, scopePath, selector);
     }
 
     /** Overload that takes an already-parsed document. */
     public static List<ConfigFragment> listFragments(Document doc, String profile,
                                                      List<String> scopePath,
                                                      ElementSelector selector) {
-        return filter(listFragments(doc, profile), scopePath, selector);
+        return filter(listFragments(doc, profile), profile, scopePath, selector);
     }
 
+    /** Root-level scope shapes this introspector enumerates. */
+    private static final List<List<String>> ROOT_SCOPES = List.of(
+        List.of("env"),
+        List.of("buses"),
+        List.of("apps", "templates"),
+        List.of("xvms", "templates"));
+
+    /**
+     * Scope shapes enumerated <em>inside</em> a profile — deliberately narrower
+     * than {@link #ROOT_SCOPES}: {@code buses} is collected at the root only, so
+     * {@code profiles/&lt;name&gt;/buses} is a path this read cannot answer even
+     * though {@code buses} on its own is fine.
+     */
+    private static final List<List<String>> PROFILE_SCOPES = List.of(
+        List.of("env"),
+        List.of("apps", "templates"),
+        List.of("xvms", "templates"));
+
     private static List<ConfigFragment> filter(List<ConfigFragment> all,
+                                               String profile,
                                                List<String> scopePath,
                                                ElementSelector selector) {
+        if (scopePath != null) assertEnumerableScope(scopePath);
         if (scopePath == null && selector == null) return all;
+
+        // With a profile set, a relative scope also matches that profile's copy
+        // of it — otherwise ?profile=dev&scope_path=xvms/templates would return
+        // the ROOT templates and silently exclude every one of dev's, which is a
+        // plausible-looking wrong answer rather than an error.
+        List<String> profileScoped = null;
+        if (profile != null && scopePath != null && !isProfilePath(scopePath)) {
+            List<String> p = new ArrayList<>(List.of("profiles", profile));
+            p.addAll(scopePath);
+            profileScoped = p;
+        }
+
         List<ConfigFragment> out = new ArrayList<>();
         for (ConfigFragment f : all) {
-            if (scopePath != null && !scopePath.equals(f.getScopePath())) continue;
+            if (scopePath != null
+                && !scopePath.equals(f.getScopePath())
+                && !(profileScoped != null && profileScoped.equals(f.getScopePath()))) {
+                continue;
+            }
             if (selector != null && !selector.matches(f.getElement())) continue;
             out.add(f);
         }
         return out;
+    }
+
+    private static boolean isProfilePath(List<String> scopePath) {
+        return scopePath.size() > 1 && "profiles".equals(scopePath.get(0));
+    }
+
+    /**
+     * Refuse a scope path this read cannot enumerate.
+     *
+     * <p>Returning an empty list would be the dangerous answer: {@code remove}
+     * navigates arbitrary paths, so "the read found nothing" must never be
+     * mistaken for "there is nothing to remove".
+     */
+    private static void assertEnumerableScope(List<String> scopePath) {
+        boolean inProfile = isProfilePath(scopePath);
+        List<String> relative = inProfile
+            ? scopePath.subList(2, scopePath.size())   // drop profiles/<name>
+            : scopePath;
+        if ((inProfile ? PROFILE_SCOPES : ROOT_SCOPES).contains(relative)) return;
+        throw new IllegalArgumentException(
+            "cannot enumerate the scope path " + String.join("/", scopePath)
+            + "; this read covers env, buses, apps/templates and xvms/templates at the"
+            + " root, and env, apps/templates and xvms/templates inside a profile."
+            + " Refusing rather than reporting it empty, because remove navigates paths"
+            + " this read cannot see.");
     }
 
     /** Overload that takes an already-parsed document. */
