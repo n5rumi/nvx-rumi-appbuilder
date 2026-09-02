@@ -67,9 +67,14 @@ public class MutatingOperationCoverageTest {
 
         Set<String> uncovered = new TreeSet<>();
         for (String op : operations) {
-            // Method name alone: the suite calls e.g. FieldEditor.renameField.
+            // Match ClassName.method( rather than the bare .method(. A bare match
+            // is fine for a distinctive name like renameField and dangerous for a
+            // common one: ModelBatch#apply (RUMI-412) would be satisfied by any
+            // stray Function.apply( in the suite, reporting covered with no test —
+            // the exact silent staleness this class exists to prevent.
+            String owner = op.substring(0, op.indexOf('#'));
             String method = op.substring(op.indexOf('#') + 1);
-            if (!suite.contains("." + method + "(")) {
+            if (!suite.contains(owner + "." + method + "(")) {
                 uncovered.add(op);
             }
         }

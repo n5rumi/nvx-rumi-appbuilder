@@ -193,4 +193,84 @@ public class ModelBatchTest {
             assertTrue(expected.getMessage().contains("sate"));
         }
     }
+
+    // ---- review follow-ups ----------------------------------------------
+
+    /**
+     * MESSAGE went through the 5-arg addMessage, which hard-codes
+     * SERVICE_MESSAGES — so scope:"roe" wrote into the service's private model
+     * and returned success. Silently writing to the wrong file is worse than
+     * failing.
+     */
+    @Test
+    public void aRoeScopedMessageLandsInRoeNotTheServiceModel() throws Exception {
+        ModelBatch.apply(appRoot, List.of(
+            new ModelEdit(ModelEdit.Kind.MESSAGE, "proc", "SharedEvent", "roe",
+                List.of(f("id", "String")), null, null)), false);
+
+        String roe = Files.readString(FieldEditor.resolveModelFile(appRoot, "proc",
+            FieldEditor.ModelScope.ROE_MESSAGES));
+        String svc = Files.readString(FieldEditor.resolveModelFile(appRoot, "proc",
+            FieldEditor.ModelScope.SERVICE_MESSAGES));
+        assertTrue("the ROE model must carry it", roe.contains("SharedEvent"));
+        assertFalse("the service model must not", svc.contains("SharedEvent"));
+    }
+
+    @Test
+    public void aBadScopeIsRejectedOnEveryKindNotJustFields() throws Exception {
+        for (ModelEdit.Kind kind : List.of(ModelEdit.Kind.MESSAGE, ModelEdit.Kind.STATE_ENTITY)) {
+            try {
+                ModelBatch.apply(appRoot, List.of(
+                    new ModelEdit(kind, "proc", "X", "sate", List.of(f("a", "Long")), null, null)), false);
+                fail("a mistyped scope must be rejected on " + kind);
+            } catch (IllegalArgumentException expected) {
+                assertTrue(expected.getMessage().contains("sate"));
+            }
+        }
+    }
+
+    /**
+     * A message and a state entity sharing a name is routine, so defaulting a
+     * FIELDS edit to the message model would append a state entity's fields to
+     * the message and report success.
+     */
+    @Test
+    public void aFieldsEditWithoutAScopeIsRefusedRatherThanGuessed() throws Exception {
+        ModelBatch.apply(appRoot, List.of(
+            new ModelEdit(ModelEdit.Kind.MESSAGE, "proc", "Order", null, List.of(f("a", "Long")), null, null),
+            new ModelEdit(ModelEdit.Kind.STATE_ENTITY, "proc", "Order", null,
+                List.of(new FieldDef("id", "String", Map.of("isKey", "true"))), null, null)), false);
+
+        try {
+            ModelBatch.apply(appRoot, List.of(
+                new ModelEdit(ModelEdit.Kind.FIELDS, "proc", "Order", null,
+                    List.of(f("extra", "Long")), null, null)), false);
+            fail("with a message and a state entity both named Order, guessing is not acceptable");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("scope"));
+        }
+    }
+
+    @Test
+    public void scopeAliasesMatchWhatTheFieldsEndpointAccepts() throws Exception {
+        // The same value must not work on one endpoint and 400 on the other.
+        ModelBatch.apply(appRoot, List.of(
+            new ModelEdit(ModelEdit.Kind.MESSAGE, "proc", "Aliased", " Service_Messages ",
+                List.of(f("a", "Long")), null, null)), false);
+        assertTrue(Files.readString(FieldEditor.resolveModelFile(appRoot, "proc",
+            FieldEditor.ModelScope.SERVICE_MESSAGES)).contains("Aliased"));
+    }
+
+    @Test
+    public void aNamelessFieldIsRejectedBeforeAnythingIsWritten() throws Exception {
+        Map<Path, String> before = modelSnapshot();
+        try {
+            ModelBatch.apply(appRoot, List.of(
+                message("proc", "Broken", new FieldDef(null, "Long", Map.of()))), false);
+            fail("a field with no name must be a rejected request, not an NPE");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().toLowerCase().contains("name"));
+        }
+        assertEquals(before, modelSnapshot());
+    }
 }

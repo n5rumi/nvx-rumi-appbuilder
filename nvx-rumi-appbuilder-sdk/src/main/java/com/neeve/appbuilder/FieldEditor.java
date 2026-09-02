@@ -133,6 +133,17 @@ public final class FieldEditor {
         Document doc = load(modelFile);
         Element type = requireType(doc, typeName, modelFile);
 
+        // Validate every name before touching the document. findField would NPE on
+        // a null name, and an NPE has no ExceptionMapper case, so the caller would
+        // get an opaque 500 for what is a malformed request. The single-field path
+        // is guarded at the resource; this one had nothing.
+        for (FieldDef f : fields) {
+            if (f.getName() == null || f.getName().isBlank()) {
+                throw new IllegalArgumentException(
+                    "every field needs a name; one in the batch for '" + typeName + "' has none");
+            }
+        }
+
         List<String> added = new java.util.ArrayList<>();
         List<String> skipped = new java.util.ArrayList<>();
         for (FieldDef f : fields) {

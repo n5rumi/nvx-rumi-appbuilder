@@ -103,16 +103,32 @@ public final class ModelBatch {
                     "collection '" + e.getName() + "' needs both 'is' and 'contains'");
             }
         }
-        if (e.getKind() == ModelEdit.Kind.FIELDS && e.getFields().isEmpty()) {
-            throw new IllegalArgumentException(
-                "FIELDS edit for '" + e.getName() + "' carries no fields");
+        if (e.getKind() == ModelEdit.Kind.FIELDS) {
+            if (e.getFields().isEmpty()) {
+                throw new IllegalArgumentException(
+                    "FIELDS edit for '" + e.getName() + "' carries no fields");
+            }
+            scopeOf(e, null);   // scope is mandatory here; throws if missing or unknown
+        } else if (e.getScope() != null) {
+            scopeOf(e, FieldEditor.ModelScope.SERVICE_MESSAGES);  // reject a bad scope up front
+        }
+        for (com.neeve.appbuilder.model.FieldDef f : e.getFields()) {
+            if (f.getName() == null || f.getName().isBlank()) {
+                throw new IllegalArgumentException(
+                    "a field on " + e.describe() + " has no name");
+            }
         }
     }
 
     private static ChangeSet applyOne(Path appRoot, ModelEdit e, boolean dryRun) throws IOException {
         switch (e.getKind()) {
             case MESSAGE:
-                return MessageEditor.addMessage(appRoot, e.getService(), e.getName(), e.getFields(), dryRun);
+                // The scope-aware overload, deliberately: the 5-arg one hard-codes
+                // SERVICE_MESSAGES, so scope:"roe" was silently writing the message
+                // into the service's private model and returning success.
+                return MessageEditor.addMessage(appRoot, e.getService(),
+                                                scopeOf(e, FieldEditor.ModelScope.SERVICE_MESSAGES),
+                                                e.getName(), e.getFields(), dryRun);
             case MESSAGE_ENTITY:
                 return EntityEditor.addEntity(appRoot, e.getService(), scopeOf(e, FieldEditor.ModelScope.SERVICE_MESSAGES),
                                               e.getName(), e.getFields(), dryRun);
@@ -122,22 +138,45 @@ public final class ModelBatch {
                 return CollectionEditor.addCollection(appRoot, e.getService(), e.getName(),
                                                       e.getIs(), e.getContains(), dryRun);
             case FIELDS:
-                return FieldEditor.addFields(appRoot, e.getService(), scopeOf(e, FieldEditor.ModelScope.SERVICE_MESSAGES),
+                // No default here. A message and a state entity sharing a name is
+                // routine in a Rumi app, so defaulting to messages would append a
+                // state entity's fields to the message of the same name and report
+                // success. Requiring the scope is the only answer that cannot be
+                // quietly wrong; validate() enforces it before anything is written.
+                return FieldEditor.addFields(appRoot, e.getService(), scopeOf(e, null),
                                              e.getName(), e.getFields(), dryRun);
             default:
                 throw new IllegalArgumentException("unhandled edit kind: " + e.getKind());
         }
     }
 
-    private static FieldEditor.ModelScope scopeOf(ModelEdit e, FieldEditor.ModelScope fallback) {
-        if (e.getScope() == null) return fallback;
-        switch (e.getScope()) {
-            case "messages": return FieldEditor.ModelScope.SERVICE_MESSAGES;
-            case "state":    return FieldEditor.ModelScope.SERVICE_STATE;
-            case "roe":      return FieldEditor.ModelScope.ROE_MESSAGES;
+    /**
+     * Parse an edit's scope.
+     *
+     * <p>Accepts exactly what {@code POST /v1/services/&#123;svc&#125;/fields} accepts —
+     * case-insensitive, trimmed, and the {@code service_messages} /
+     * {@code service_state} / {@code roe_messages} aliases. A second, stricter
+     * parser would mean the same value works on one endpoint and 400s on the
+     * other, on the very migration this call is asking callers to make.
+     */
+    static FieldEditor.ModelScope scopeOf(ModelEdit e, FieldEditor.ModelScope fallback) {
+        String raw = e.getScope();
+        if (raw == null || raw.isBlank()) {
+            if (fallback != null) return fallback;
+            throw new IllegalArgumentException(
+                "edit " + e.describe() + " needs an explicit scope (messages|state|roe): a message"
+                + " and a state entity can share a name, so guessing would silently edit the wrong one");
+        }
+        switch (raw.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "messages":
+            case "service_messages": return FieldEditor.ModelScope.SERVICE_MESSAGES;
+            case "state":
+            case "service_state":    return FieldEditor.ModelScope.SERVICE_STATE;
+            case "roe":
+            case "roe_messages":     return FieldEditor.ModelScope.ROE_MESSAGES;
             default:
                 throw new IllegalArgumentException(
-                    "unknown scope '" + e.getScope() + "' on " + e.describe()
+                    "unknown scope '" + raw + "' on " + e.describe()
                     + "; expected messages, state or roe");
         }
     }
