@@ -28,6 +28,8 @@ import com.neeve.appbuilder.model.ChangeSet;
 import com.neeve.appbuilder.model.ServiceInfo;
 import com.neeve.appbuilder.rest.dto.AddServiceRequest;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -63,6 +65,10 @@ public class Services extends AbstractResource {
     @Path("/{name}")
     @Operation(summary = "Get service detail",
                description = "Returns the full rolled-up view of a single service. 404 if the service isn't scaffolded.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ServiceInfo get(@QueryParam("app_root") String appRoot,
                            @PathParam("name") String name) throws IOException {
         ServiceInfo info = ServiceIntrospector.getService(requireAbsoluteAppRoot(appRoot), name);
@@ -74,6 +80,10 @@ public class Services extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Operation(summary = "Add a service to an app",
                description = "Scaffolds a new service under the app. Type must be processor, driver, connector, or webservice. HA model and partition settings apply to the clusterable types (processor, webservice).")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ServiceInfo add(@QueryParam("app_root") String appRoot,
                            AddServiceRequest req) throws Exception {
         java.nio.file.Path root = requireAbsoluteAppRoot(appRoot);
@@ -93,6 +103,10 @@ public class Services extends AbstractResource {
     @Path("/{name}")
     @Operation(summary = "Remove a service from an app",
                description = "Orchestrated reverse of service add: removes the module directory, parent-POM entry, system-POM dep, config fragments, and releases factory IDs. Supports dry_run to preview the full blast radius.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet remove(@QueryParam("app_root") String appRoot,
                             @PathParam("name") String name,
                             @QueryParam("dry_run") @DefaultValue("false") boolean dryRun) throws IOException {

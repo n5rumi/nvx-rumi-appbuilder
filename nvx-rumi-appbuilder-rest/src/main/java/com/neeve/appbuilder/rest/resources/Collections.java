@@ -27,6 +27,8 @@ import com.neeve.appbuilder.model.ChangeSet;
 import com.neeve.appbuilder.model.CollectionDef;
 import com.neeve.appbuilder.rest.dto.AddCollectionRequest;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -77,6 +79,10 @@ public class Collections extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Operation(summary = "Add a collection to a service's state model",
                description = "is is the kind (StringMap|IntMap|…|Queue); contains is the element type. Its local id is allocated automatically and never reused.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet add(@QueryParam("app_root") String appRoot,
                          @PathParam("svc") String service,
                          @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
@@ -91,6 +97,10 @@ public class Collections extends AbstractResource {
     @Path("/{name}")
     @Operation(summary = "Remove a collection",
                description = "Removes the named collection from the service's state.xml. Its id is reserved (tombstone) so it is never reused.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet remove(@QueryParam("app_root") String appRoot,
                             @PathParam("svc") String service,
                             @PathParam("name") String name,

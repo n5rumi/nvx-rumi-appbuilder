@@ -25,6 +25,8 @@ import com.neeve.appbuilder.FieldEditor;
 import com.neeve.appbuilder.model.ChangeSet;
 import com.neeve.appbuilder.rest.dto.AddFieldRequest;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -55,6 +57,10 @@ public class Fields extends AbstractResource {
                description = "scope is messages|state|roe; type is the message/entity name. Each field gets a stable, never-reused id. "
                            + "Send a fields[] array to add several in one call - the whole batch is one load-validate-write, so a "
                            + "rejected field means none are added. The single name/fieldType form still works.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet add(@QueryParam("app_root") String appRoot,
                          @PathParam("svc") String service,
                          @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
@@ -80,6 +86,10 @@ public class Fields extends AbstractResource {
     @DELETE
     @Operation(summary = "Delete a field",
                description = "Physically removes the field and reserves its id (tombstone) so it is never reused.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet delete(@QueryParam("app_root") String appRoot,
                             @PathParam("svc") String service,
                             @QueryParam("scope") String scope,
@@ -94,6 +104,10 @@ public class Fields extends AbstractResource {
     @Path("/deprecate")
     @Operation(summary = "Deprecate a field",
                description = "Keeps the field but marks its accessors @Deprecated. Distinct from delete.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet deprecate(@QueryParam("app_root") String appRoot,
                                @PathParam("svc") String service,
                                @QueryParam("scope") String scope,
@@ -108,6 +122,10 @@ public class Fields extends AbstractResource {
     @Path("/rename")
     @Operation(summary = "Rename a field",
                description = "Changes only the name; the id is unchanged (wire-safe). Hand-written Java referencing the old accessor still needs fixing.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet rename(@QueryParam("app_root") String appRoot,
                             @PathParam("svc") String service,
                             @QueryParam("scope") String scope,

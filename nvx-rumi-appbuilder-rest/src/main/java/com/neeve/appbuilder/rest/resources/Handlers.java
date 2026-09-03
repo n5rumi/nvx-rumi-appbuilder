@@ -28,6 +28,8 @@ import com.neeve.appbuilder.model.HandlerDef;
 import com.neeve.appbuilder.rest.dto.AddHandlerRequest;
 import com.neeve.appbuilder.rest.dto.UpdateHandlerRequest;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -83,6 +85,10 @@ public class Handlers extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Operation(summary = "Add a handler to a service",
                description = "Adds an @EventHandler method to the service's Main.java. If body is null the method starts with an empty body plus a TODO comment.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet add(@QueryParam("app_root") String appRoot,
                          @PathParam("svc") String service,
                          @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
@@ -100,6 +106,10 @@ public class Handlers extends AbstractResource {
                            + "rest of the file untouched. Idempotent: an unchanged body is a no-op rather than a rewrite. "
                            + "400 if the body does not parse, in which case the file is left exactly as it was. A handler that "
                            + "does not exist is reported as a no-op change set, not a 404, matching DELETE.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet update(@QueryParam("app_root") String appRoot,
                             @PathParam("svc") String service,
                             @PathParam("method") String method,
@@ -122,6 +132,10 @@ public class Handlers extends AbstractResource {
     @Path("/{method}")
     @Operation(summary = "Remove a handler from a service",
                description = "Removes the @EventHandler method from the service's Main.java.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet remove(@QueryParam("app_root") String appRoot,
                             @PathParam("svc") String service,
                             @PathParam("method") String method,

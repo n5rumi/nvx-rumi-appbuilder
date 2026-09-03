@@ -188,6 +188,42 @@ public class EndpointIntegrationTest {
         assertFalse("a batch receipt must not repeat the app root either: " + r,
             r.contains(appRoot));
         assertTrue(r.contains("messages.xml"));
+        // The assertions this test was missing. A bean-level inclusion override
+        // does not reach a nested type, so every BatchResult.Item was shipping
+        // "reason":null -- a 20-item batch carrying more null than the single
+        // write path ever saved, on the endpoint apply_model made primary.
+        assertFalse("no nulls on the wire: " + r, r.contains("null"));
+        assertFalse("no empty collections on the wire: " + r, r.contains("[]"));
+        assertTrue("each item still reports itself: " + r, r.contains("\"edit\""));
+    }
+
+    @Test
+    public void aServiceReceiptDoesNotRepeatTheAppRootEither() throws Exception {
+        // add_service starts every build and handed the app root straight back
+        // in moduleDir, so "every write is shorter" was not true without this.
+        String r = post("/v1/services?app_root=" + enc(appRoot),
+            "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}").body();
+        assertFalse("moduleDir must not repeat the app root: " + r, r.contains(appRoot));
+        assertTrue("but must still name the module: " + r, r.contains("proc"));
+
+        String detailed = post("/v1/services?detail=true&app_root=" + enc(appRoot),
+            "{\"name\":\"proc2\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}").body();
+        assertTrue("detail=true restores the absolute moduleDir: " + detailed,
+            detailed.contains(appRoot));
+    }
+
+    @Test
+    public void detailTrueRestoresTheKeysNotJustThePaths() throws Exception {
+        post("/v1/services?app_root=" + enc(appRoot),
+            "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}");
+        String detailed = post("/v1/services/proc/messages?detail=true&app_root=" + enc(appRoot),
+            "{\"name\":\"Full\",\"fields\":[{\"name\":\"a\",\"type\":\"Long\"}]}").body();
+        // A flag that restores the paths and not the keys is a flag that half
+        // works; the caller reading resp["filesCreated"] still has nothing.
+        assertTrue("filesCreated must come back: " + detailed, detailed.contains("filesCreated"));
+        assertTrue("factoryIdsReserved must come back: " + detailed,
+            detailed.contains("factoryIdsReserved"));
+        assertTrue(detailed.contains(appRoot));
     }
 
     @Test

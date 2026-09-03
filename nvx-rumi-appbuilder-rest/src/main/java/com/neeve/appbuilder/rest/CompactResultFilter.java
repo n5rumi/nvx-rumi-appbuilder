@@ -23,6 +23,9 @@ package com.neeve.appbuilder.rest;
 
 import com.neeve.appbuilder.model.BatchResult;
 import com.neeve.appbuilder.model.ChangeSet;
+import com.neeve.appbuilder.model.ServiceInfo;
+import com.neeve.appbuilder.rest.dto.CompactReceipt;
+import com.neeve.appbuilder.rest.dto.ServiceInfoView;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerResponseContext;
 import jakarta.ws.rs.container.ContainerResponseFilter;
@@ -30,9 +33,7 @@ import jakarta.ws.rs.ext.Provider;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
+import java.util.function.UnaryOperator;
 
 /**
  * Shorten a write receipt to what the caller did not already know (RUMI-414).
@@ -67,14 +68,19 @@ import java.util.List;
 @Provider
 public class CompactResultFilter implements ContainerResponseFilter {
 
+    /** Query parameter that opts out. Declared on every affected endpoint. */
+    public static final String DETAIL_PARAM = "detail";
+
+
     @Override
     public void filter(ContainerRequestContext request, ContainerResponseContext response) {
         Object entity = response.getEntity();
         if (entity == null) return;
-        if (!(entity instanceof ChangeSet) && !(entity instanceof BatchResult)) return;
+        boolean isReceipt = entity instanceof ChangeSet || entity instanceof BatchResult;
+        if (!isReceipt && !(entity instanceof ServiceInfo)) return;
 
-        if (Boolean.parseBoolean(request.getUriInfo().getQueryParameters().getFirst("detail"))) {
-            return;
+        if (Boolean.parseBoolean(request.getUriInfo().getQueryParameters().getFirst(DETAIL_PARAM))) {
+            return;   // the untouched SDK object: every key, absolute paths
         }
         String appRoot = request.getUriInfo().getQueryParameters().getFirst("app_root");
         if (appRoot == null || appRoot.isBlank()) return;
@@ -85,47 +91,26 @@ public class CompactResultFilter implements ContainerResponseFilter {
         } catch (Exception e) {
             return;   // an unparseable app_root is the resource's problem, not ours
         }
+        UnaryOperator<Path> shorten = p -> shorten(p, root);
 
         if (entity instanceof ChangeSet) {
-            response.setEntity(relativize((ChangeSet) entity, root));
+            response.setEntity(CompactReceipt.of((ChangeSet) entity, shorten));
+        } else if (entity instanceof BatchResult) {
+            response.setEntity(CompactReceipt.of((BatchResult) entity, shorten));
         } else {
-            response.setEntity(relativize((BatchResult) entity, root));
+            // ServiceInfo.moduleDir is the app root again, on the endpoint that
+            // starts every build. "Every write" was not true without this.
+            response.setEntity(ServiceInfoView.of((ServiceInfo) entity, shorten));
         }
     }
 
-    private static ChangeSet relativize(ChangeSet cs, Path root) {
-        ChangeSet.Builder b = ChangeSet.builder()
-            .applied(cs.isApplied())
-            .noop(cs.isNoop())
-            .reason(cs.getReason())
-            .filesCreated(relativize(cs.getFilesCreated(), root))
-            .filesModified(relativize(cs.getFilesModified(), root))
-            .filesDeleted(relativize(cs.getFilesDeleted(), root));
-        for (Integer id : cs.getFactoryIdsReserved()) b.addFactoryIdReserved(id);
-        for (Integer id : cs.getFactoryIdsReleased()) b.addFactoryIdReleased(id);
-        return b.build();
-    }
-
-    private static BatchResult relativize(BatchResult r, Path root) {
-        return new BatchResult(r.getItems(),
-                               new LinkedHashSet<>(relativize(r.getFilesModified(), root)),
-                               r.isApplied());
-    }
-
-    /**
-     * Relative to {@code root} where the file is under it, unchanged otherwise.
-     *
-     * <p>Unchanged rather than forced: a path outside the app root cannot be
-     * expressed relative to it without {@code ../..} segments, which are longer
-     * than the absolute path and harder to read. Nothing should produce one, but
-     * silently mangling it if something did would be worse than leaving it.
-     */
-    private static List<Path> relativize(List<Path> paths, Path root) {
-        List<Path> out = new ArrayList<>(paths.size());
-        for (Path p : paths) {
-            Path abs = p.toAbsolutePath().normalize();
-            out.add(abs.startsWith(root) ? root.relativize(abs) : p);
-        }
-        return out;
+    private static Path shorten(Path p, Path root) {
+        Path abs = p.toAbsolutePath().normalize();
+        // ABS, not the raw input, when it falls outside the root. A relative
+        // input returned unchanged is indistinguishable from one made relative
+        // to app_root, so the caller resolves the wrong file; and a path that
+        // only normalizes outside the root would keep the ".." segments this is
+        // meant to avoid.
+        return abs.startsWith(root) ? root.relativize(abs) : abs;
     }
 }
