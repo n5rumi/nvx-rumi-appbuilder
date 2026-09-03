@@ -18,6 +18,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from .client import AppBuilderClient
+from .usage import ToolUsage
 
 
 def build_server(base_url: str | None = None) -> FastMCP:
@@ -29,10 +30,24 @@ def build_server(base_url: str | None = None) -> FastMCP:
     """
     rest = AppBuilderClient(base_url=base_url)
     mcp = FastMCP("rumi-dev")
+    usage = ToolUsage()
+
+    def tool() -> Any:
+        """Register a tool and count its calls (RUMI-415).
+
+        Stands in for ``@mcp.tool()`` on every app-building tool below, so
+        adoption is recorded centrally rather than at 49 call sites.
+        """
+
+        def decorate(fn: Any) -> Any:
+            usage.register(fn.__name__)
+            return mcp.tool()(usage.counted(fn))
+
+        return decorate
 
     # ---- Apps --------------------------------------------------------
 
-    @mcp.tool()
+    @tool()
     def list_apps(under: str) -> list[str]:
         """List every Rumi app scaffolded under the given parent directory.
 
@@ -41,12 +56,12 @@ def build_server(base_url: str | None = None) -> FastMCP:
         """
         return rest.get("/v1/apps", {"under": under})
 
-    @mcp.tool()
+    @tool()
     def get_app(app_root: str) -> dict[str, Any]:
         """Return metadata for a scaffolded Rumi app (package, groupId, Rumi versions, encoding, messaging provider)."""
         return rest.get("/v1/apps/info", {"app_root": app_root})
 
-    @mcp.tool()
+    @tool()
     def create_app(
         app_name: str,
         app_dir: str,
@@ -89,17 +104,17 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     # ---- Services ----------------------------------------------------
 
-    @mcp.tool()
+    @tool()
     def list_services(app_root: str) -> list[dict[str, Any]]:
         """List every service (processor, driver, connector, webservice) in an app."""
         return rest.get("/v1/services", {"app_root": app_root})
 
-    @mcp.tool()
+    @tool()
     def get_service(app_root: str, name: str) -> dict[str, Any]:
         """Return a single service with rolled-up handlers, messages, state entities, and collections."""
         return rest.get(f"/v1/services/{name}", {"app_root": app_root})
 
-    @mcp.tool()
+    @tool()
     def add_service(
         app_root: str,
         name: str,
@@ -129,7 +144,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
             },
         )
 
-    @mcp.tool()
+    @tool()
     def remove_service(app_root: str, name: str, dry_run: bool = False) -> dict[str, Any]:
         """Orchestrated service removal: module dir, parent POM, system POM dep, config fragments, factory IDs."""
         return rest.delete(
@@ -139,7 +154,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     # ---- Handlers ----------------------------------------------------
 
-    @mcp.tool()
+    @tool()
     def list_handlers(app_root: str, service: str, include_body: bool = False) -> list[dict[str, Any]]:
         """List a service's @EventHandler methods. Bodies are omitted unless include_body is true - a listing answers what handlers exist; ask get_handler for one body rather than dumping every one."""
         return rest.get(
@@ -147,14 +162,14 @@ def build_server(base_url: str | None = None) -> FastMCP:
             {"app_root": app_root, "include_body": str(include_body).lower()},
         )
 
-    @mcp.tool()
+    @tool()
     def get_handler(app_root: str, service: str, method: str) -> dict[str, Any]:
         """Return a single handler's definition AND its body, verbatim and without the enclosing braces. Hand the body back to update_handler unchanged and the file is byte-identical."""
         return rest.get(
             f"/v1/services/{service}/handlers/{method}", {"app_root": app_root}
         )
 
-    @mcp.tool()
+    @tool()
     def add_handler(
         app_root: str,
         service: str,
@@ -170,7 +185,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
             json={"method": method, "messageType": message_type, "body": body},
         )
 
-    @mcp.tool()
+    @tool()
     def update_handler(
         app_root: str,
         service: str,
@@ -185,7 +200,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
             json={"body": body},
         )
 
-    @mcp.tool()
+    @tool()
     def remove_handler(
         app_root: str, service: str, method: str, dry_run: bool = False
     ) -> dict[str, Any]:
@@ -197,19 +212,19 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     # ---- Connectors --------------------------------------------------
 
-    @mcp.tool()
+    @tool()
     def list_connectors(app_root: str, service: str) -> list[dict[str, Any]]:
         """List the custom connectors (Rumi message-bus bindings) snapped into a service."""
         return rest.get(f"/v1/services/{service}/connectors", {"app_root": app_root})
 
-    @mcp.tool()
+    @tool()
     def get_connector(app_root: str, service: str, name: str) -> dict[str, Any]:
         """Return a single connector with its class, connector bus, and inbound channel."""
         return rest.get(
             f"/v1/services/{service}/connectors/{name}", {"app_root": app_root}
         )
 
-    @mcp.tool()
+    @tool()
     def add_connector(
         app_root: str, service: str, name: str, dry_run: bool = False
     ) -> dict[str, Any]:
@@ -220,7 +235,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
             json={"name": name},
         )
 
-    @mcp.tool()
+    @tool()
     def remove_connector(
         app_root: str, service: str, name: str, dry_run: bool = False
     ) -> dict[str, Any]:
@@ -232,19 +247,19 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     # ---- Messages ----------------------------------------------------
 
-    @mcp.tool()
+    @tool()
     def list_messages(app_root: str, service: str, scope: str = "messages") -> list[dict[str, Any]]:
         """List X-ADML message types. scope is messages (the service's own model, default) or roe (the shared app-wide model)."""
         return rest.get(f"/v1/services/{service}/messages", {"app_root": app_root, "scope": scope})
 
-    @mcp.tool()
+    @tool()
     def get_message(app_root: str, service: str, name: str, scope: str = "messages") -> dict[str, Any]:
         """Return a single message type with its fields and local ID. scope is messages|roe."""
         return rest.get(
             f"/v1/services/{service}/messages/{name}", {"app_root": app_root, "scope": scope}
         )
 
-    @mcp.tool()
+    @tool()
     def add_message(
         app_root: str,
         service: str,
@@ -260,7 +275,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
             json={"name": name, "fields": fields or []},
         )
 
-    @mcp.tool()
+    @tool()
     def remove_message(
         app_root: str, service: str, name: str, scope: str = "messages",
         force: bool = False, dry_run: bool = False
@@ -273,19 +288,19 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     # ---- Message-model embedded entities -----------------------------
 
-    @mcp.tool()
+    @tool()
     def list_message_entities(app_root: str, service: str, scope: str = "messages") -> list[dict[str, Any]]:
         """List embedded X-ADML entities in a message model (entities used as message field types). scope is messages|roe. (State entities are separate — see list_state_entities.)"""
         return rest.get(f"/v1/services/{service}/message-entities", {"app_root": app_root, "scope": scope})
 
-    @mcp.tool()
+    @tool()
     def get_message_entity(app_root: str, service: str, name: str, scope: str = "messages") -> dict[str, Any]:
         """Return a single embedded entity from a message model with its fields and local id. scope is messages|roe."""
         return rest.get(
             f"/v1/services/{service}/message-entities/{name}", {"app_root": app_root, "scope": scope}
         )
 
-    @mcp.tool()
+    @tool()
     def add_message_entity(
         app_root: str,
         service: str,
@@ -305,7 +320,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
             json={"name": name, "attributes": attrs, "fields": fields or []},
         )
 
-    @mcp.tool()
+    @tool()
     def remove_message_entity(
         app_root: str, service: str, name: str, scope: str = "messages",
         force: bool = False, dry_run: bool = False
@@ -318,7 +333,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     # ---- Fields ------------------------------------------------------
 
-    @mcp.tool()
+    @tool()
     def apply_model(
         app_root: str,
         edits: list[dict[str, Any]],
@@ -331,7 +346,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
             json={"edits": edits},
         )
 
-    @mcp.tool()
+    @tool()
     def add_field(
         app_root: str,
         service: str,
@@ -351,7 +366,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
                   "attributes": attributes or {}, "fields": fields},
         )
 
-    @mcp.tool()
+    @tool()
     def delete_field(
         app_root: str, service: str, scope: str, type: str, name: str, dry_run: bool = False
     ) -> dict[str, Any]:
@@ -361,7 +376,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
             params={"app_root": app_root, "scope": scope, "type": type, "name": name, "dry_run": str(dry_run).lower()},
         )
 
-    @mcp.tool()
+    @tool()
     def deprecate_field(
         app_root: str, service: str, scope: str, type: str, name: str, dry_run: bool = False
     ) -> dict[str, Any]:
@@ -371,7 +386,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
             params={"app_root": app_root, "scope": scope, "type": type, "name": name, "dry_run": str(dry_run).lower()},
         )
 
-    @mcp.tool()
+    @tool()
     def rename_field(
         app_root: str, service: str, scope: str, type: str, name: str, to: str, dry_run: bool = False
     ) -> dict[str, Any]:
@@ -383,17 +398,17 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     # ---- API operations ---------------------------------------------
 
-    @mcp.tool()
+    @tool()
     def list_operations(app_root: str, service: str) -> list[dict[str, Any]]:
         """List the request-reply API operations in a service's api.xml."""
         return rest.get(f"/v1/services/{service}/operations", {"app_root": app_root})
 
-    @mcp.tool()
+    @tool()
     def get_operation(app_root: str, service: str, name: str) -> dict[str, Any]:
         """Return a single API operation (its request and response messages)."""
         return rest.get(f"/v1/services/{service}/operations/{name}", {"app_root": app_root})
 
-    @mcp.tool()
+    @tool()
     def add_operation(
         app_root: str,
         service: str,
@@ -412,7 +427,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
                   "restPath": rest_path, "restMethod": rest_method},
         )
 
-    @mcp.tool()
+    @tool()
     def remove_operation(
         app_root: str, service: str, name: str, dry_run: bool = False
     ) -> dict[str, Any]:
@@ -422,7 +437,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},
         )
 
-    @mcp.tool()
+    @tool()
     def rename_operation(
         app_root: str, service: str, name: str, to: str, dry_run: bool = False
     ) -> dict[str, Any]:
@@ -434,14 +449,14 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     # ---- State entities ---------------------------------------------
 
-    @mcp.tool()
+    @tool()
     def list_state_entities(app_root: str, service: str) -> list[dict[str, Any]]:
         """List X-ADML state entities defined in the service's state.xml."""
         return rest.get(
             f"/v1/services/{service}/state-entities", {"app_root": app_root}
         )
 
-    @mcp.tool()
+    @tool()
     def get_state_entity(app_root: str, service: str, name: str) -> dict[str, Any]:
         """Return a single state entity with its fields, keys, and attributes."""
         return rest.get(
@@ -449,7 +464,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
             {"app_root": app_root},
         )
 
-    @mcp.tool()
+    @tool()
     def add_state_entity(
         app_root: str,
         service: str,
@@ -465,7 +480,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
             json={"name": name, "attributes": attributes or {}, "fields": fields or []},
         )
 
-    @mcp.tool()
+    @tool()
     def remove_state_entity(
         app_root: str, service: str, name: str, force: bool = False, dry_run: bool = False
     ) -> dict[str, Any]:
@@ -477,19 +492,19 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     # ---- Collections -------------------------------------------------
 
-    @mcp.tool()
+    @tool()
     def list_collections(app_root: str, service: str) -> list[dict[str, Any]]:
         """List X-ADML collections (maps/queues) in the service's state model."""
         return rest.get(f"/v1/services/{service}/collections", {"app_root": app_root})
 
-    @mcp.tool()
+    @tool()
     def get_collection(app_root: str, service: str, name: str) -> dict[str, Any]:
         """Return a single state collection with its kind, element type, and local id."""
         return rest.get(
             f"/v1/services/{service}/collections/{name}", {"app_root": app_root}
         )
 
-    @mcp.tool()
+    @tool()
     def add_collection(
         app_root: str,
         service: str,
@@ -506,7 +521,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
             json={"name": name, "is": is_, "contains": contains, "attributes": attributes or {}},
         )
 
-    @mcp.tool()
+    @tool()
     def remove_collection(
         app_root: str, service: str, name: str, dry_run: bool = False
     ) -> dict[str, Any]:
@@ -518,12 +533,12 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     # ---- Config ------------------------------------------------------
 
-    @mcp.tool()
+    @tool()
     def get_config(app_root: str) -> str:
         """Return the WHOLE rendered config.xml as text. Prefer list_config_fragments with a scope_path and selector when you want one part of it - this returns the entire file however narrow the question."""
         return rest.get_text("/v1/config", {"app_root": app_root})
 
-    @mcp.tool()
+    @tool()
     def list_config_fragments(
         app_root: str,
         profile: str | None = None,
@@ -537,7 +552,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
             params["scope_path"] = scope_path
         return rest.get("/v1/config/fragments", params)
 
-    @mcp.tool()
+    @tool()
     def add_config_fragment(
         app_root: str, scope_path: list[str], xml: str, dry_run: bool = False
     ) -> dict[str, Any]:
@@ -548,7 +563,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
             json={"scopePath": scope_path, "xml": xml},
         )
 
-    @mcp.tool()
+    @tool()
     def remove_config_fragment(
         app_root: str,
         scope_path: list[str],
@@ -563,21 +578,38 @@ def build_server(base_url: str | None = None) -> FastMCP:
             json={"scopePath": scope_path, "tag": tag, "name": name},
         )
 
-    @mcp.tool()
+    @tool()
     def validate_config(app_root: str) -> dict[str, Any]:
         """Run X-DDL schema validation. Returns a ValidationResult envelope with ok flag plus an errors list (each has severity, line, column, message)."""
         return rest.post("/v1/config/validate", params={"app_root": app_root})
 
     # ---- Factory IDs ------------------------------------------------
 
-    @mcp.tool()
+    @tool()
     def list_factory_ids(app_root: str) -> dict[str, str]:
         """Return a map of every used factory ID to its owner description."""
         return rest.get("/v1/factory-ids", {"app_root": app_root})
 
-    @mcp.tool()
+    @tool()
     def next_factory_id(app_root: str) -> dict[str, int]:
         """Return the lowest unused factory ID as {"nextAvailableId": N}. Not reserved — callers should allocate through the SDK's add endpoints."""
         return rest.get("/v1/factory-ids/next", {"app_root": app_root})
+
+    # ---- Instrumentation ---------------------------------------------
+
+    # Registered directly rather than through `tool()`: this reports on the
+    # app-building surface and is not part of it, so it stays out of both
+    # halves of the ratio it exists to show.
+    @mcp.tool()
+    def tool_usage_report() -> dict[str, Any]:
+        """Report which Dev MCP tools have been called in this server process, how often, and which have never been called.
+
+        Use it to check that structural questions are going to the tools
+        rather than to shell inspection. `never_called` is the interesting
+        half. Counts run from `started_at` (this process's start) and outlive
+        any one conversation, so to scope a single build, call this at the
+        start and end and diff `by_tool`.
+        """
+        return usage.report()
 
     return mcp

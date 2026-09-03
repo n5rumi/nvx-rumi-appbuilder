@@ -70,13 +70,22 @@ def _arguments_for(tool: Any) -> dict[str, Any]:
     return {name: _sample_for(properties.get(name, {})) for name in required}
 
 
+# The one tool that is deliberately local. It reports on the app-building
+# surface rather than being part of it, and what is worth counting is which
+# TOOL the agent reached for — REST sees only endpoints, several of which back
+# more than one tool. Named explicitly so the guard below keeps its teeth for
+# everything else; a second entry here needs the same justification.
+LOCAL_ONLY_TOOLS: set[str] = {"tool_usage_report"}
+
+
 @respx.mock
 async def test_every_registered_tool_reaches_the_rest_service(mcp) -> None:
     """No registered tool is a dead end.
 
     Any tool that never issues a request is either unwired or quietly doing
     its own thing — both of which defeat the point of the MCP layer being a
-    thin, uniform pass-through to REST.
+    thin, uniform pass-through to REST. The sole exception is listed in
+    LOCAL_ONLY_TOOLS above.
     """
     # One catch-all route: this test is about whether a request happens at
     # all, not where it goes. The hand-written tests own path precision.
@@ -89,6 +98,8 @@ async def test_every_registered_tool_reaches_the_rest_service(mcp) -> None:
 
     silent: list[str] = []
     for tool in tools:
+        if tool.name in LOCAL_ONLY_TOOLS:
+            continue
         before = route.call_count
         try:
             await mcp.call_tool(tool.name, _arguments_for(tool))

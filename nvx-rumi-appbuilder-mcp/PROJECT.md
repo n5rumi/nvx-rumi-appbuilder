@@ -31,7 +31,13 @@ go REST-direct. Both paths reach the same code underneath.
 
 ## Tool Catalog
 
-1:1 with the REST endpoints — see `../PROJECT.md`. MCP tool names use
+1:1 with the REST endpoints — see `../PROJECT.md` — with one deliberate
+exception, `tool_usage_report` (RUMI-415), which answers from counters held in
+this process rather than calling REST. It exists because adoption of the tool
+surface could otherwise only be reconstructed from a transcript after the fact,
+and because the unit worth counting is the *tool* the agent reached for, which
+REST cannot see: several tools share one endpoint. The reachability guard in
+`tests/test_tool_coverage.py` exempts it by name rather than being relaxed. MCP tool names use
 the `<verb>_<entity>` convention: `add_service` (with a `type` arg of
 `processor|driver|connector|webservice`), `add_handler`, `remove_message`,
 `add_connector`/`remove_connector`, etc. Every mutation tool takes
