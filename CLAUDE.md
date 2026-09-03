@@ -226,6 +226,23 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
   escapes, and validates the shape — keep all three if you touch it, and test
   with a TTY (`script -q /dev/null …`), not just a pipe.
 
+## ⚠️ Two release gates, neither with a skip flag
+
+`ci/release.sh` runs both before publishing anything.
+
+- `ci/verify-generated-app.sh` — proves the **templates** produce apps that build and run.
+- `ci/verify-mcp-end-to-end.sh` — proves the **three modules agree with each other**. Every
+  MCP test mocks the HTTP layer, so the suite asserts what the MCP *would have sent* and never
+  that the service accepts it; the REST tests drive resources directly. Nothing put the two
+  together until this existed, which is how RUMI-412 shipped a `scope` that was accepted and
+  then ignored while 365 unit tests passed. It boots the REST layer on an ephemeral port,
+  drives the real MCP tools, then builds a model entirely through `apply_model` and compiles
+  the generated app.
+
+Neither carries a `SKIP_` flag, deliberately: skipping either lets through exactly the defect
+it exists to catch. The MCP gate is proven to gate — reintroducing the RUMI-412 scope bug
+makes it fail.
+
 ## Key Design Decisions
 
 - **Three modules, not one.** Each serves a different consumer shape.
