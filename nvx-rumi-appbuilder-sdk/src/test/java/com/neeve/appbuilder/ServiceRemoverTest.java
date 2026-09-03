@@ -144,6 +144,87 @@ public class ServiceRemoverTest {
             config.contains("other-template"));
     }
 
+    /**
+     * RUMI-422. Removing the templates but not the instances that point at them
+     * left the app unbootable: valid XML, a success result, and a first-boot
+     * failure naming the template rather than the removal that orphaned it.
+     */
+    @Test
+    public void removeService_stripsInstancesNotJustTemplates() throws Exception {
+        PhaseBTestSupport.writeParentPom(appRoot,
+            "test-trading-roe", "test-trading-system", "test-trading-feeder");
+        Files.createDirectories(appRoot.resolve("test-trading-feeder"));
+
+        PhaseBTestSupport.writeConfigXml(appRoot,
+            "<model xmlns=\"http://www.neeveresearch.com/schema/x-ddl\">" +
+            "<apps>" +
+            "  <templates>" +
+            "    <app name=\"trading-feeder-template\"/>" +
+            "    <app name=\"trading-keeper-template\"/>" +
+            "  </templates>" +
+            "  <app name=\"trading-feeder-1\" template=\"trading-feeder-template\"/>" +
+            "  <app name=\"trading-keeper-1\" template=\"trading-keeper-template\"/>" +
+            "</apps>" +
+            "<xvms>" +
+            "  <templates>" +
+            "    <xvm name=\"trading-feeder-xvm-template\"/>" +
+            "  </templates>" +
+            "  <xvm name=\"trading-feeder-1-1\" template=\"trading-feeder-template\"/>" +
+            "  <xvm name=\"trading-keeper-1-1\" template=\"trading-keeper-template\"/>" +
+            "</xvms>" +
+            "<profiles>" +
+            "  <profile name=\"cloud\">" +
+            "    <xvms><xvm name=\"trading-feeder-1-1\" template=\"trading-feeder-template\"/></xvms>" +
+            "  </profile>" +
+            "  <profile name=\"standalone\">" +
+            "    <xvms><xvm name=\"trading-feeder-1-1\" template=\"trading-feeder-template\"/></xvms>" +
+            "  </profile>" +
+            "</profiles>" +
+            "</model>");
+
+        ServiceRemover.removeService(appRoot, "feeder", false);
+
+        Path configPath = appRoot.resolve("test-trading-system").resolve("conf/config.xml");
+        String config = Files.readString(configPath);
+
+        assertFalse("no reference to the removed service survives anywhere",
+            config.contains("trading-feeder"));
+        assertTrue("the other service's template is untouched",
+            config.contains("trading-keeper-template"));
+        assertTrue("the other service's app instance is untouched",
+            config.contains("trading-keeper-1"));
+        assertTrue("the other service's xvm instance is untouched",
+            config.contains("trading-keeper-1-1"));
+    }
+
+    /**
+     * An instance someone renamed off the scaffolder's convention is still
+     * orphaned by the removal, so it is matched on the template it references
+     * rather than only on its own name.
+     */
+    @Test
+    public void removeService_stripsRenamedInstanceByTemplateReference() throws Exception {
+        PhaseBTestSupport.writeParentPom(appRoot,
+            "test-trading-roe", "test-trading-system", "test-trading-feeder");
+        Files.createDirectories(appRoot.resolve("test-trading-feeder"));
+
+        PhaseBTestSupport.writeConfigXml(appRoot,
+            "<model xmlns=\"http://www.neeveresearch.com/schema/x-ddl\">" +
+            "<apps>" +
+            "  <templates><app name=\"trading-feeder-template\"/></templates>" +
+            "  <app name=\"market-data-primary\" template=\"trading-feeder-template\"/>" +
+            "</apps>" +
+            "</model>");
+
+        ServiceRemover.removeService(appRoot, "feeder", false);
+
+        String config = Files.readString(
+            appRoot.resolve("test-trading-system").resolve("conf/config.xml"));
+        assertFalse("instance removed via its template reference, despite the name",
+            config.contains("market-data-primary"));
+        assertFalse("template removed", config.contains("trading-feeder-template"));
+    }
+
     @Test
     public void removeService_reportsFactoryIdsReleasedInChangeSet() throws Exception {
         PhaseBTestSupport.writeParentPom(appRoot,
