@@ -34,8 +34,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -53,9 +56,14 @@ import java.util.stream.Stream;
  *       they are never reused (a recycled factory id is a wire-compat hazard).
  *   <li>Remove the module entry from the parent POM.
  *   <li>Remove the service dependency block from the system module POM.
- *   <li>Remove config fragments injected for this service (app/xvm
- *       templates named after the service) from config.xml, including
- *       under each profile.
+ *   <li>Remove config fragments injected for this service from config.xml,
+ *       including under each profile: both the app/xvm <em>templates</em>
+ *       named after the service, and the app/xvm <em>instances</em> that
+ *       reference those templates. Leaving the instances behind is what
+ *       RUMI-422 was: the removal reported success, the file stayed valid
+ *       XML, and the app failed at first boot with
+ *       {@code Template '...' does not exist}, naming the template rather
+ *       than the removal that orphaned it.
  *   <li>Remove script fragments injected for this service from the
  *       deployment scripts.
  * </ol>
@@ -260,6 +268,19 @@ public final class ServiceRemover {
 
         List<Element> toRemove = new ArrayList<>();
         collectFragmentsToRemove(doc.getDocumentElement(), namePrefix, fullServiceName, toRemove);
+
+        // The templates are only half of it. Every app/xvm INSTANCE that points
+        // at one of them has to go too, or the app stops booting -- see the
+        // class javadoc. Collect the template names first, then sweep the
+        // instances that reference them.
+        Set<String> removedTemplateNames = new HashSet<>();
+        for (Element e : toRemove) {
+            String n = e.getAttribute("name");
+            if (n != null && !n.isEmpty()) removedTemplateNames.add(n);
+        }
+        collectInstancesToRemove(doc.getDocumentElement(), namePrefix, fullServiceName,
+                                 removedTemplateNames, toRemove);
+
         if (toRemove.isEmpty()) return false;
         if (dryRun) return true;
 
@@ -290,6 +311,92 @@ public final class ServiceRemover {
         }
     }
 
+    /**
+     * Every name the scaffolder gives a fragment of one service, and nothing else.
+     *
+     * <p>Four shapes exist, from {@code templates/maven/config/**}:
+     * {@code {service}} (a connector's bus), {@code {service}-template},
+     * {@code {service}-{partition}} and
+     * {@code {service}-{partition}-{instance}}, the last two numeric.
+     *
+     * <p>Anchoring on those rather than on {@code startsWith(service + "-")}
+     * is load-bearing: a sibling service whose name extends this one, say
+     * {@code orderFeedReplay} beside {@code orderFeed}, shares the prefix.
+     * A prefix test removes the sibling's fragments too and reports success,
+     * leaving a service with a module and a POM entry but no config and no XVM.
+     */
+    private static boolean nameBelongsToService(String name, String fullServiceName) {
+        if (name == null || name.isEmpty()) return false;
+        if (name.equals(fullServiceName)) return true;
+        if (!name.startsWith(fullServiceName + "-")) return false;
+        String suffix = name.substring(fullServiceName.length() + 1);
+        if (suffix.equals("template")) return true;
+        return INSTANCE_SUFFIX.matcher(suffix).matches();
+    }
+
+    /** {partition} or {partition}-{instance}, both numeric. */
+    private static final Pattern INSTANCE_SUFFIX = Pattern.compile("\\d+(-\\d+)*");
+
+    /**
+     * Collect everything belonging to this service that is <em>not</em> a
+     * template: app and xvm instances, a connector's bus, and app references
+     * nested inside an XVM that itself survives.
+     *
+     * <p>Matched by name, because that is the only handle that works
+     * everywhere. A profile-scoped override carries no {@code template}
+     * attribute at all — {@code profiles/*}/xvms/config.xml} injects a bare
+     * name-keyed {@code <xvm name="..." enabled="..."/>} — so a template-only
+     * match would silently leave every profile override behind. The template
+     * reference is still used as a second signal where it exists.
+     */
+    private static void collectInstancesToRemove(Element root, String namePrefix, String exactName,
+                                                 Set<String> removedTemplateNames, List<Element> out) {
+        collectInstancesUnder(root, "apps", exactName, removedTemplateNames, out);
+        collectInstancesUnder(root, "xvms", exactName, removedTemplateNames, out);
+        collectInstancesUnder(root, "buses", exactName, removedTemplateNames, out);
+        Element profiles = firstChild(root, "profiles");
+        if (profiles != null) {
+            NodeList kids = profiles.getChildNodes();
+            for (int i = 0; i < kids.getLength(); i++) {
+                Node n = kids.item(i);
+                if (n.getNodeType() != Node.ELEMENT_NODE || !"profile".equals(n.getLocalName())) continue;
+                collectInstancesUnder((Element) n, "apps", exactName, removedTemplateNames, out);
+                collectInstancesUnder((Element) n, "xvms", exactName, removedTemplateNames, out);
+                collectInstancesUnder((Element) n, "buses", exactName, removedTemplateNames, out);
+            }
+        }
+    }
+
+    private static void collectInstancesUnder(Element ancestor, String container, String exactName,
+                                              Set<String> removedTemplateNames, List<Element> out) {
+        Element cur = firstChild(ancestor, container);
+        if (cur == null) return;
+        NodeList kids = cur.getChildNodes();
+        for (int i = 0; i < kids.getLength(); i++) {
+            Node n = kids.item(i);
+            if (n.getNodeType() != Node.ELEMENT_NODE) continue;
+            Element e = (Element) n;
+            // <templates> is collected by collectFragmentsUnder; descending
+            // here as well would queue the same element twice.
+            if ("templates".equals(e.getLocalName())) continue;
+
+            String template = e.getAttribute("template");
+            boolean byTemplate = template != null && !template.isEmpty()
+                                 && removedTemplateNames.contains(template);
+            if (byTemplate || nameBelongsToService(e.getAttribute("name"), exactName)) {
+                out.add(e);
+                continue;   // the whole element goes; no need to look inside it
+            }
+
+            // An XVM that survives may still host an app of the removed
+            // service: xvms/config.xml nests <apps><app name="{service}-{n}"/>.
+            // Left behind, that is the same dangling reference one level down.
+            if ("xvm".equals(e.getLocalName())) {
+                collectInstancesUnder(e, "apps", exactName, removedTemplateNames, out);
+            }
+        }
+    }
+
     private static void collectFragmentsUnder(Element ancestor, List<String> path,
                                               String namePrefix, String exactName, List<Element> out) {
         Element cur = ancestor;
@@ -302,9 +409,7 @@ public final class ServiceRemover {
             Node n = kids.item(i);
             if (n.getNodeType() != Node.ELEMENT_NODE) continue;
             Element e = (Element) n;
-            String name = e.getAttribute("name");
-            if (name == null) continue;
-            if (name.equals(exactName) || name.startsWith(namePrefix)) {
+            if (nameBelongsToService(e.getAttribute("name"), exactName)) {
                 out.add(e);
             }
         }
