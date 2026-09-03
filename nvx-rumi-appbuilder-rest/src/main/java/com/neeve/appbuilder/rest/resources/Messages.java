@@ -28,6 +28,8 @@ import com.neeve.appbuilder.model.MessageDef;
 import com.neeve.appbuilder.rest.dto.AddFieldRequest;
 import com.neeve.appbuilder.rest.dto.AddMessageRequest;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -84,6 +86,10 @@ public class Messages extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Operation(summary = "Add a message type",
                description = "Adds a new message type to the model (scope=messages|roe; default messages). The local message ID is allocated automatically and never reused.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet add(@QueryParam("app_root") String appRoot,
                          @PathParam("svc") String service,
                          @QueryParam("scope") @DefaultValue("messages") String scope,
@@ -98,6 +104,10 @@ public class Messages extends AbstractResource {
     @Path("/{name}")
     @Operation(summary = "Remove a message type",
                description = "Removes the named message (scope=messages|roe). Blocked (409-style) when an api operation or @EventHandler in the service still references it, unless force=true. Its id is reserved (tombstone) so it is never reused.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet remove(@QueryParam("app_root") String appRoot,
                             @PathParam("svc") String service,
                             @PathParam("name") String name,

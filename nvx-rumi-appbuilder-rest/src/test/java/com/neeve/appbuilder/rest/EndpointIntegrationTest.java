@@ -145,6 +145,88 @@ public class EndpointIntegrationTest {
     }
 
     @Test
+    public void writeReceiptsAreCompactButRecoverable() throws Exception {
+        post("/v1/services?app_root=" + enc(appRoot),
+            "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}");
+
+        String receipt = post("/v1/services/proc/messages?app_root=" + enc(appRoot),
+            "{\"name\":\"Tick\",\"fields\":[{\"name\":\"seq\",\"type\":\"Long\"}]}").body();
+
+        // The caller supplied app_root; handing it back on every path is noise.
+        assertFalse("the receipt must not repeat the app root: " + receipt,
+            receipt.contains(appRoot));
+        assertTrue("but it must still say which file changed: " + receipt,
+            receipt.contains("messages.xml"));
+        // Five empty collections and a null reason on every write add up.
+        assertFalse("empty collections should not be serialized: " + receipt,
+            receipt.contains("[]"));
+        assertFalse("a null reason should not be serialized: " + receipt,
+            receipt.contains("null"));
+        assertTrue("and applied must survive, since it is the answer: " + receipt,
+            receipt.contains("\"applied\":true"));
+
+        // detail=true is the escape hatch for a caller that wants absolutes.
+        String detailed = post("/v1/services/proc/messages?detail=true&app_root=" + enc(appRoot),
+            "{\"name\":\"Tick2\",\"fields\":[{\"name\":\"seq\",\"type\":\"Long\"}]}").body();
+        assertTrue("detail=true must restore the absolute form: " + detailed,
+            detailed.contains(appRoot));
+
+        // Worth measuring rather than asserting a feeling.
+        System.out.println("[RUMI-414] compact=" + receipt.length()
+            + "B detailed=" + detailed.length() + "B");
+        assertTrue("the compact form must actually be smaller",
+            receipt.length() < detailed.length());
+    }
+
+    @Test
+    public void aBatchReceiptIsCompactedToo() throws Exception {
+        post("/v1/services?app_root=" + enc(appRoot),
+            "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}");
+        String r = post("/v1/model/batch?app_root=" + enc(appRoot),
+            "{\"edits\":[{\"kind\":\"message\",\"service\":\"proc\",\"name\":\"Batched\","
+          + "\"scope\":\"messages\",\"fields\":[{\"name\":\"a\",\"type\":\"Long\"}]}]}").body();
+        assertFalse("a batch receipt must not repeat the app root either: " + r,
+            r.contains(appRoot));
+        assertTrue(r.contains("messages.xml"));
+        // The assertions this test was missing. A bean-level inclusion override
+        // does not reach a nested type, so every BatchResult.Item was shipping
+        // "reason":null -- a 20-item batch carrying more null than the single
+        // write path ever saved, on the endpoint apply_model made primary.
+        assertFalse("no nulls on the wire: " + r, r.contains("null"));
+        assertFalse("no empty collections on the wire: " + r, r.contains("[]"));
+        assertTrue("each item still reports itself: " + r, r.contains("\"edit\""));
+    }
+
+    @Test
+    public void aServiceReceiptDoesNotRepeatTheAppRootEither() throws Exception {
+        // add_service starts every build and handed the app root straight back
+        // in moduleDir, so "every write is shorter" was not true without this.
+        String r = post("/v1/services?app_root=" + enc(appRoot),
+            "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}").body();
+        assertFalse("moduleDir must not repeat the app root: " + r, r.contains(appRoot));
+        assertTrue("but must still name the module: " + r, r.contains("proc"));
+
+        String detailed = post("/v1/services?detail=true&app_root=" + enc(appRoot),
+            "{\"name\":\"proc2\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}").body();
+        assertTrue("detail=true restores the absolute moduleDir: " + detailed,
+            detailed.contains(appRoot));
+    }
+
+    @Test
+    public void detailTrueRestoresTheKeysNotJustThePaths() throws Exception {
+        post("/v1/services?app_root=" + enc(appRoot),
+            "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}");
+        String detailed = post("/v1/services/proc/messages?detail=true&app_root=" + enc(appRoot),
+            "{\"name\":\"Full\",\"fields\":[{\"name\":\"a\",\"type\":\"Long\"}]}").body();
+        // A flag that restores the paths and not the keys is a flag that half
+        // works; the caller reading resp["filesCreated"] still has nothing.
+        assertTrue("filesCreated must come back: " + detailed, detailed.contains("filesCreated"));
+        assertTrue("factoryIdsReserved must come back: " + detailed,
+            detailed.contains("factoryIdsReserved"));
+        assertTrue(detailed.contains(appRoot));
+    }
+
+    @Test
     public void modelBatch_appliesAWholeModelAndRollsBackOnFailure() throws Exception {
         post("/v1/services?app_root=" + enc(appRoot),
             "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}");

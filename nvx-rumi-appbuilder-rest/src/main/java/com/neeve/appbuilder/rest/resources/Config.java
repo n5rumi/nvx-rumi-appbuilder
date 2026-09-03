@@ -31,6 +31,8 @@ import com.neeve.appbuilder.rest.dto.AddConfigFragmentRequest;
 import com.neeve.appbuilder.rest.dto.ConfigFragmentView;
 import com.neeve.appbuilder.rest.dto.RemoveConfigFragmentRequest;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -115,6 +117,10 @@ public class Config extends AbstractResource {
     @Produces(MediaType.APPLICATION_JSON)
     @Operation(summary = "Add a config fragment",
                description = "Adds the given XML fragment under the specified scope path (e.g. [\"apps\",\"templates\"], [\"buses\"]). Idempotent — a structurally identical fragment is a no-op.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet addFragment(@QueryParam("app_root") String appRoot,
                                  @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
                                  AddConfigFragmentRequest req) throws IOException {
@@ -129,6 +135,10 @@ public class Config extends AbstractResource {
     @Produces(MediaType.APPLICATION_JSON)
     @Operation(summary = "Remove config fragment(s)",
                description = "Removes every fragment matching the selector (tag, name, or both) under the specified scope path.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet removeFragment(@QueryParam("app_root") String appRoot,
                                     @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
                                     RemoveConfigFragmentRequest req) throws IOException {

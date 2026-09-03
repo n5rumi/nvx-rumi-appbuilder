@@ -29,6 +29,8 @@ import com.neeve.appbuilder.model.EntityDef;
 import com.neeve.appbuilder.rest.dto.AddEntityRequest;
 import com.neeve.appbuilder.rest.dto.AddFieldRequest;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -88,6 +90,10 @@ public class MessageEntities extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Operation(summary = "Add an embedded entity to a message model",
                description = "Adds a new embedded entity (scope=messages|roe; default messages). Defaults asEmbedded=true (an entity used as a message field type must be embedded); pass attributes.asEmbedded=false to override. Its local id is allocated automatically and never reused.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet add(@QueryParam("app_root") String appRoot,
                          @PathParam("svc") String service,
                          @QueryParam("scope") @DefaultValue("messages") String scope,
@@ -106,6 +112,10 @@ public class MessageEntities extends AbstractResource {
     @Path("/{name}")
     @Operation(summary = "Remove an embedded entity",
                description = "Removes the named embedded entity (scope=messages|roe). Blocked when a field/collection in the model still references it, unless force=true. Its id is reserved (tombstone) so it is never reused.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet remove(@QueryParam("app_root") String appRoot,
                             @PathParam("svc") String service,
                             @PathParam("name") String name,

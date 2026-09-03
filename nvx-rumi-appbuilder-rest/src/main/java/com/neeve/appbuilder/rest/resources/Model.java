@@ -25,6 +25,8 @@ import com.neeve.appbuilder.ModelBatch;
 import com.neeve.appbuilder.model.BatchResult;
 import com.neeve.appbuilder.rest.dto.ModelBatchRequest;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
@@ -52,6 +54,10 @@ public class Model extends AbstractResource {
                            + "separately, including which ones were no-ops because they already existed, so re-applying a model "
                            + "is safe and informative. Prefer this over one call per element: the payload is the same, the "
                            + "round trips are not.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public BatchResult apply(@QueryParam("app_root") String appRoot,
                              @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
                              ModelBatchRequest req) throws IOException {

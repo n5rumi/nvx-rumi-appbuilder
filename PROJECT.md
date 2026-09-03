@@ -191,19 +191,49 @@ single source of truth.
   touching disk and returns it. The REST layer passes it through; the
   MCP layer passes it through. Agents are instructed in their system
   prompts to prefer dry-runs before destructive operations.
-- **Structured change-set return.** Every mutation returns:
+- **Structured change-set return.** Every mutation returns a receipt. Two
+  things about the shape below had drifted from the code and are corrected
+  here: the keys are camelCase, not snake_case, and `filesModified` is a list
+  of paths, not of `{path, diff}` objects.
+
+  The default is the **short form** (RUMI-414). Paths are relative to the
+  `app_root` the request supplied — handing it back was about two thirds of a
+  receipt — and empty collections and a null `reason` are omitted. `applied`
+  and `noop` are always present, because absent is not the same answer as
+  `false` to anything reading this.
+
   ```
   {
-    "applied": bool,         // false if dry_run
-    "files_created": [...],
-    "files_modified": [{"path": ..., "diff": ...}],
-    "files_deleted": [...],
-    "factory_ids_reserved": [...],
-    "factory_ids_released": [...],
-    "noop": bool,
-    "reason": "..."          // optional explanation
+    "applied": true,
+    "filesModified": ["demo-roe/src/main/models/com/demo/roe/messages.xml"],
+    "noop": false
   }
   ```
+
+  Pass **`detail=true`** for the full form: every key present, paths absolute.
+  It is declared on every endpoint that returns a receipt, so it shows up in
+  `GET /openapi` rather than being folklore.
+
+  ```
+  {
+    "applied": true,
+    "filesCreated": [],
+    "filesModified": ["/abs/path/demo/demo-roe/src/main/models/com/demo/roe/messages.xml"],
+    "filesDeleted": [],
+    "factoryIdsReserved": [],
+    "factoryIdsReleased": [],
+    "noop": false,
+    "reason": null
+  }
+  ```
+
+  `POST /v1/model/batch` returns the same envelope with an `items` array, one
+  entry per edit (`edit`, `applied`, `noop`, and `reason` when there is one), so
+  a caller re-applying a model can see which items were no-ops because they
+  already existed. ⚠️ The per-item trimming is done by `CompactReceipt`, not by
+  a Jackson inclusion override: a bean-level override does not reach a nested
+  type, so an override on the batch result still let every item ship
+  `"reason": null`.
 
 ## Upstream SDK Gap-Fill (Phases A–E)
 

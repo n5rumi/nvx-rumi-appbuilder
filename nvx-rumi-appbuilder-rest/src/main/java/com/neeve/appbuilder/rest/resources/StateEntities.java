@@ -27,6 +27,8 @@ import com.neeve.appbuilder.model.ChangeSet;
 import com.neeve.appbuilder.model.EntityDef;
 import com.neeve.appbuilder.rest.dto.AddStateEntityRequest;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -75,6 +77,10 @@ public class StateEntities extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Operation(summary = "Add a state entity to a service",
                description = "Adds a new state entity to the service's state.xml. Fields can carry attributes like key=true.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet add(@QueryParam("app_root") String appRoot,
                          @PathParam("svc") String service,
                          @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
@@ -88,6 +94,10 @@ public class StateEntities extends AbstractResource {
     @Path("/{name}")
     @Operation(summary = "Remove a state entity",
                description = "Removes the named entity from the service's state.xml. Blocked when a field/collection in the model still references it, unless force=true.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet remove(@QueryParam("app_root") String appRoot,
                             @PathParam("svc") String service,
                             @PathParam("name") String name,

@@ -63,6 +63,12 @@ public class JacksonConfig implements ContextResolver<ObjectMapper> {
         // including GET /v1/services/{svc}. Scoped to this type rather than set
         // globally: flipping null-suppression for every DTO is a wider change
         // than it looks, and would drop keys clients may rely on being present.
+        // Receipt trimming is NOT done here. A bean-level override does not
+        // reach a nested type, so suppressing empties on BatchResult still let
+        // every BatchResult.Item ship "reason":null; and a mapper rule cannot
+        // see the request, so detail=true would restore the paths and not the
+        // keys. CompactReceipt does both, chosen per-request by
+        // CompactResultFilter (RUMI-414).
         mapper.configOverride(HandlerDef.class)
               .setInclude(JsonInclude.Value.construct(JsonInclude.Include.NON_NULL,
                                                       JsonInclude.Include.ALWAYS));

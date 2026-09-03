@@ -27,6 +27,8 @@ import com.neeve.appbuilder.model.ChangeSet;
 import com.neeve.appbuilder.model.ConnectorDef;
 import com.neeve.appbuilder.rest.dto.AddConnectorRequest;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -76,6 +78,10 @@ public class Connectors extends AbstractResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Operation(summary = "Add a connector to a service",
                description = "Snaps a custom connector into the service: a Connector class under the service's connector subpackage, a connector:// bus binding, and the app messaging reference. Idempotent; supports dry_run.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet add(@QueryParam("app_root") String appRoot,
                          @PathParam("svc") String service,
                          @QueryParam("dry_run") @DefaultValue("false") boolean dryRun,
@@ -90,6 +96,10 @@ public class Connectors extends AbstractResource {
     @Path("/{name}")
     @Operation(summary = "Remove a connector from a service",
                description = "Reverts the connector: deletes the Connector class, removes the bus binding and the app messaging reference. Supports dry_run.")
+    @Parameter(in = ParameterIn.QUERY, name = "detail",
+               description = "Return the full result: every key present and paths absolute. "
+                           + "By default paths are relative to the app_root you supplied and "
+                           + "empty collections are omitted (RUMI-414).")
     public ChangeSet remove(@QueryParam("app_root") String appRoot,
                             @PathParam("svc") String service,
                             @PathParam("name") String name,
