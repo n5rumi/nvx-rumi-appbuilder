@@ -127,7 +127,7 @@ public class ServiceRemoverTest {
             "</apps>" +
             "<profiles><profile name=\"cloud\">" +
             "  <xvms><templates>" +
-            "    <xvm name=\"trading-feeder-xvm-template\"/>" +
+            "    <xvm name=\"trading-feeder-template\"/>" +
             "  </templates></xvms>" +
             "</profile></profiles>" +
             "</model>");
@@ -139,7 +139,7 @@ public class ServiceRemoverTest {
         assertFalse("service-named app template removed",
             config.contains("trading-feeder-template"));
         assertFalse("profile xvm template for service removed",
-            config.contains("trading-feeder-xvm-template"));
+            config.contains("trading-feeder-template"));
         assertTrue("unrelated template preserved",
             config.contains("other-template"));
     }
@@ -167,7 +167,7 @@ public class ServiceRemoverTest {
             "</apps>" +
             "<xvms>" +
             "  <templates>" +
-            "    <xvm name=\"trading-feeder-xvm-template\"/>" +
+            "    <xvm name=\"trading-feeder-template\"/>" +
             "  </templates>" +
             "  <xvm name=\"trading-feeder-1-1\" template=\"trading-feeder-template\"/>" +
             "  <xvm name=\"trading-keeper-1-1\" template=\"trading-keeper-template\"/>" +
@@ -266,21 +266,27 @@ public class ServiceRemoverTest {
             "test-trading-roe", "test-trading-system", "test-trading-proc");
         Files.createDirectories(appRoot.resolve("test-trading-proc"));
 
+        // Names as the scaffolder actually emits them (templates/maven/config/**):
+        // {service}, {service}-template, {service}-{partition}[-{instance}].
+        // Profiles carry INSTANCE overrides, not template overrides, and those
+        // overrides carry no template attribute -- so they are only reachable
+        // by name.
         PhaseBTestSupport.writeConfigXml(appRoot,
             "<model xmlns=\"http://www.neeveresearch.com/schema/x-ddl\">" +
-            "<apps><templates>" +
-            "  <app name=\"trading-proc-template\"/>" +
-            "</templates></apps>" +
-            "<xvms><templates>" +
-            "  <xvm name=\"trading-proc-xvm-template\"/>" +
-            "</templates></xvms>" +
+            "<apps>" +
+            "  <templates><app name=\"trading-proc-template\"/></templates>" +
+            "  <app name=\"trading-proc-1\" template=\"trading-proc-template\"/>" +
+            "</apps>" +
+            "<xvms>" +
+            "  <templates><xvm name=\"trading-proc-template\"/></templates>" +
+            "  <xvm name=\"trading-proc-1-1\" template=\"trading-proc-template\"/>" +
+            "</xvms>" +
             "<profiles>" +
             "  <profile name=\"cloud\">" +
-            "    <apps><templates><app name=\"trading-proc-cloud-template\"/></templates></apps>" +
-            "    <xvms><templates><xvm name=\"trading-proc-cloud-xvm-template\"/></templates></xvms>" +
+            "    <xvms><xvm name=\"trading-proc-1-1\" enabled=\"true\"/></xvms>" +
             "  </profile>" +
             "  <profile name=\"standalone\">" +
-            "    <apps><templates><app name=\"trading-proc-sa-template\"/></templates></apps>" +
+            "    <xvms><xvm name=\"trading-proc-1-1\" enabled=\"true\"/></xvms>" +
             "  </profile>" +
             "</profiles>" +
             "</model>");
@@ -288,10 +294,108 @@ public class ServiceRemoverTest {
         ServiceRemover.removeService(appRoot, "proc", false);
 
         String config = Files.readString(appRoot.resolve("test-trading-system").resolve("conf/config.xml"));
-        assertFalse(config.contains("trading-proc-template"));
-        assertFalse(config.contains("trading-proc-xvm-template"));
-        assertFalse(config.contains("trading-proc-cloud-template"));
-        assertFalse(config.contains("trading-proc-cloud-xvm-template"));
-        assertFalse(config.contains("trading-proc-sa-template"));
+        assertFalse("nothing named for the service survives in any scope",
+            config.contains("trading-proc"));
+    }
+
+    /**
+     * RUMI-422 review. A sibling service whose kebab name extends the removed
+     * one shares its prefix, so a startsWith test takes the sibling's fragments
+     * too -- and reports success, leaving a service with a module and a POM
+     * entry but no config and no XVM.
+     */
+    @Test
+    public void removeService_leavesSiblingWhoseNameExtendsIt() throws Exception {
+        PhaseBTestSupport.writeParentPom(appRoot,
+            "test-trading-roe", "test-trading-system",
+            "test-trading-order-feed", "test-trading-order-feed-replay");
+        Files.createDirectories(appRoot.resolve("test-trading-order-feed"));
+        Files.createDirectories(appRoot.resolve("test-trading-order-feed-replay"));
+
+        PhaseBTestSupport.writeConfigXml(appRoot,
+            "<model xmlns=\"http://www.neeveresearch.com/schema/x-ddl\">" +
+            "<apps>" +
+            "  <templates>" +
+            "    <app name=\"trading-order-feed-template\"/>" +
+            "    <app name=\"trading-order-feed-replay-template\"/>" +
+            "  </templates>" +
+            "  <app name=\"trading-order-feed-1\" template=\"trading-order-feed-template\"/>" +
+            "  <app name=\"trading-order-feed-replay-1\" template=\"trading-order-feed-replay-template\"/>" +
+            "</apps>" +
+            "<xvms>" +
+            "  <xvm name=\"trading-order-feed-1-1\" template=\"trading-order-feed-template\"/>" +
+            "  <xvm name=\"trading-order-feed-replay-1-1\" template=\"trading-order-feed-replay-template\"/>" +
+            "</xvms>" +
+            "</model>");
+
+        ServiceRemover.removeService(appRoot, "orderFeed", false);
+
+        String config = Files.readString(appRoot.resolve("test-trading-system").resolve("conf/config.xml"));
+        assertFalse("the removed service is gone",
+            config.contains("trading-order-feed-template\""));
+        assertTrue("sibling template survives",
+            config.contains("trading-order-feed-replay-template"));
+        assertTrue("sibling app instance survives",
+            config.contains("trading-order-feed-replay-1"));
+        assertTrue("sibling xvm survives",
+            config.contains("trading-order-feed-replay-1-1"));
+    }
+
+    /**
+     * A connector service injects a bus named exactly after the service. Left
+     * behind, it names a class that no longer exists.
+     */
+    @Test
+    public void removeService_stripsTheServiceBus() throws Exception {
+        PhaseBTestSupport.writeParentPom(appRoot,
+            "test-trading-roe", "test-trading-system", "test-trading-feeder");
+        Files.createDirectories(appRoot.resolve("test-trading-feeder"));
+
+        PhaseBTestSupport.writeConfigXml(appRoot,
+            "<model xmlns=\"http://www.neeveresearch.com/schema/x-ddl\">" +
+            "<buses>" +
+            "  <bus name=\"trading-feeder\" descriptor=\"connector://.&amp;classname=x.feeder.connector.Main\"/>" +
+            "  <bus name=\"trading-main\" descriptor=\"loopback://x\"/>" +
+            "</buses>" +
+            "</model>");
+
+        ServiceRemover.removeService(appRoot, "feeder", false);
+
+        String config = Files.readString(appRoot.resolve("test-trading-system").resolve("conf/config.xml"));
+        assertFalse("the service's own bus is removed", config.contains("trading-feeder"));
+        assertTrue("the shared bus is untouched", config.contains("trading-main"));
+    }
+
+    /**
+     * An XVM that survives can still host an app of the removed service:
+     * xvms/config.xml nests &lt;apps&gt;&lt;app name="{service}-{n}"/&gt;. That is the
+     * same dangling reference one level down.
+     */
+    @Test
+    public void removeService_stripsNestedAppRefInsideASurvivingXvm() throws Exception {
+        PhaseBTestSupport.writeParentPom(appRoot,
+            "test-trading-roe", "test-trading-system", "test-trading-feeder");
+        Files.createDirectories(appRoot.resolve("test-trading-feeder"));
+
+        PhaseBTestSupport.writeConfigXml(appRoot,
+            "<model xmlns=\"http://www.neeveresearch.com/schema/x-ddl\">" +
+            "<xvms>" +
+            "  <xvm name=\"trading-shared-1-1\">" +
+            "    <apps>" +
+            "      <app name=\"trading-feeder-1\" autoStart=\"true\"/>" +
+            "      <app name=\"trading-keeper-1\" autoStart=\"true\"/>" +
+            "    </apps>" +
+            "  </xvm>" +
+            "</xvms>" +
+            "</model>");
+
+        ServiceRemover.removeService(appRoot, "feeder", false);
+
+        String config = Files.readString(appRoot.resolve("test-trading-system").resolve("conf/config.xml"));
+        assertTrue("the shared xvm itself survives", config.contains("trading-shared-1-1"));
+        assertFalse("its reference to the removed app is gone",
+            config.contains("trading-feeder-1"));
+        assertTrue("the other app it hosts is untouched",
+            config.contains("trading-keeper-1"));
     }
 }

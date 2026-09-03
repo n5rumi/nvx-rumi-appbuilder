@@ -38,6 +38,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -311,34 +312,62 @@ public final class ServiceRemover {
     }
 
     /**
-     * Collect the app/xvm <em>instances</em> belonging to this service, at the
-     * root and under every profile.
+     * Every name the scaffolder gives a fragment of one service, and nothing else.
      *
-     * <p>Matched two ways, deliberately. An instance is taken if its
-     * {@code template} attribute names one of the templates being removed —
-     * which is the relationship that actually breaks — or if its own name
-     * follows the scaffolder's {@code {service}-N} convention. The first catches
-     * an instance somebody renamed; the second catches one whose template
-     * attribute was already dangling before this removal.
+     * <p>Four shapes exist, from {@code templates/maven/config/**}:
+     * {@code {service}} (a connector's bus), {@code {service}-template},
+     * {@code {service}-{partition}} and
+     * {@code {service}-{partition}-{instance}}, the last two numeric.
+     *
+     * <p>Anchoring on those rather than on {@code startsWith(service + "-")}
+     * is load-bearing: a sibling service whose name extends this one, say
+     * {@code orderFeedReplay} beside {@code orderFeed}, shares the prefix.
+     * A prefix test removes the sibling's fragments too and reports success,
+     * leaving a service with a module and a POM entry but no config and no XVM.
+     */
+    private static boolean nameBelongsToService(String name, String fullServiceName) {
+        if (name == null || name.isEmpty()) return false;
+        if (name.equals(fullServiceName)) return true;
+        if (!name.startsWith(fullServiceName + "-")) return false;
+        String suffix = name.substring(fullServiceName.length() + 1);
+        if (suffix.equals("template")) return true;
+        return INSTANCE_SUFFIX.matcher(suffix).matches();
+    }
+
+    /** {partition} or {partition}-{instance}, both numeric. */
+    private static final Pattern INSTANCE_SUFFIX = Pattern.compile("\\d+(-\\d+)*");
+
+    /**
+     * Collect everything belonging to this service that is <em>not</em> a
+     * template: app and xvm instances, a connector's bus, and app references
+     * nested inside an XVM that itself survives.
+     *
+     * <p>Matched by name, because that is the only handle that works
+     * everywhere. A profile-scoped override carries no {@code template}
+     * attribute at all — {@code profiles/*}/xvms/config.xml} injects a bare
+     * name-keyed {@code <xvm name="..." enabled="..."/>} — so a template-only
+     * match would silently leave every profile override behind. The template
+     * reference is still used as a second signal where it exists.
      */
     private static void collectInstancesToRemove(Element root, String namePrefix, String exactName,
                                                  Set<String> removedTemplateNames, List<Element> out) {
-        collectInstancesUnder(root, "apps", namePrefix, exactName, removedTemplateNames, out);
-        collectInstancesUnder(root, "xvms", namePrefix, exactName, removedTemplateNames, out);
+        collectInstancesUnder(root, "apps", exactName, removedTemplateNames, out);
+        collectInstancesUnder(root, "xvms", exactName, removedTemplateNames, out);
+        collectInstancesUnder(root, "buses", exactName, removedTemplateNames, out);
         Element profiles = firstChild(root, "profiles");
         if (profiles != null) {
             NodeList kids = profiles.getChildNodes();
             for (int i = 0; i < kids.getLength(); i++) {
                 Node n = kids.item(i);
                 if (n.getNodeType() != Node.ELEMENT_NODE || !"profile".equals(n.getLocalName())) continue;
-                collectInstancesUnder((Element) n, "apps", namePrefix, exactName, removedTemplateNames, out);
-                collectInstancesUnder((Element) n, "xvms", namePrefix, exactName, removedTemplateNames, out);
+                collectInstancesUnder((Element) n, "apps", exactName, removedTemplateNames, out);
+                collectInstancesUnder((Element) n, "xvms", exactName, removedTemplateNames, out);
+                collectInstancesUnder((Element) n, "buses", exactName, removedTemplateNames, out);
             }
         }
     }
 
-    private static void collectInstancesUnder(Element ancestor, String container,
-                                              String namePrefix, String exactName,
+    private static void collectInstancesUnder(Element ancestor, String container, String exactName,
                                               Set<String> removedTemplateNames, List<Element> out) {
         Element cur = firstChild(ancestor, container);
         if (cur == null) return;
@@ -347,16 +376,24 @@ public final class ServiceRemover {
             Node n = kids.item(i);
             if (n.getNodeType() != Node.ELEMENT_NODE) continue;
             Element e = (Element) n;
-            // The nested <templates> block is handled by collectFragmentsUnder;
-            // stepping into it here would double-remove.
+            // <templates> is collected by collectFragmentsUnder; descending
+            // here as well would queue the same element twice.
             if ("templates".equals(e.getLocalName())) continue;
+
             String template = e.getAttribute("template");
-            String name = e.getAttribute("name");
             boolean byTemplate = template != null && !template.isEmpty()
                                  && removedTemplateNames.contains(template);
-            boolean byName = name != null
-                             && (name.equals(exactName) || name.startsWith(namePrefix));
-            if (byTemplate || byName) out.add(e);
+            if (byTemplate || nameBelongsToService(e.getAttribute("name"), exactName)) {
+                out.add(e);
+                continue;   // the whole element goes; no need to look inside it
+            }
+
+            // An XVM that survives may still host an app of the removed
+            // service: xvms/config.xml nests <apps><app name="{service}-{n}"/>.
+            // Left behind, that is the same dangling reference one level down.
+            if ("xvm".equals(e.getLocalName())) {
+                collectInstancesUnder(e, "apps", exactName, removedTemplateNames, out);
+            }
         }
     }
 
@@ -372,9 +409,7 @@ public final class ServiceRemover {
             Node n = kids.item(i);
             if (n.getNodeType() != Node.ELEMENT_NODE) continue;
             Element e = (Element) n;
-            String name = e.getAttribute("name");
-            if (name == null) continue;
-            if (name.equals(exactName) || name.startsWith(namePrefix)) {
+            if (nameBelongsToService(e.getAttribute("name"), exactName)) {
                 out.add(e);
             }
         }
