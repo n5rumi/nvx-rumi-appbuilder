@@ -75,6 +75,8 @@ EXPECTED_TOOLS: set[str] = {
     # Factory IDs
     "list_factory_ids",
     "next_factory_id",
+    # Instrumentation (RUMI-415) — reports on the surface, is not part of it
+    "tool_usage_report",
 }
 
 
