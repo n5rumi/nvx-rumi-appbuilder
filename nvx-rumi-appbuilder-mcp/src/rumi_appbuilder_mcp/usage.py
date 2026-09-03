@@ -15,6 +15,7 @@ MCP layer that is deliberately not a pass-through to REST.
 from __future__ import annotations
 
 import functools
+import inspect
 import time
 from collections import Counter
 from typing import Any, Callable, TypeVar
@@ -56,7 +57,24 @@ class ToolUsage:
         untyped `*args/**kwargs`: verified by removing it, which turns 32 tests
         red across routing, coverage and usage. That blast radius is the point
         — the failure is loud, so this does not need a guard of its own.
+
+        The async branch is NOT speculative tidiness. `inspect.signature`
+        follows `__wrapped__`, but `inspect.iscoroutinefunction` does not — so
+        a sync wrapper around an `async def` tool registers as `is_async=False`,
+        and FastMCP calls it and hands pydantic an un-awaited coroutine. The
+        REST call never happens and the tool "succeeds" with a coroutine object.
+        Every tool here is sync today, so the trap only springs for whoever
+        adds the first async one, which is precisely why it is closed now.
         """
+
+        if inspect.iscoroutinefunction(fn):
+
+            @functools.wraps(fn)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                self._counts[fn.__name__] += 1
+                return await fn(*args, **kwargs)
+
+            return async_wrapper  # type: ignore[return-value]
 
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:

@@ -13,7 +13,7 @@ layer on the one beneath it:
 |---|---|---|
 | `nvx-rumi-appbuilder-sdk/` | Java | The library. All scaffolder logic lives here — `ApplicationBuilder`, `ServiceBuilder`, `ConfigInjector`, etc. Consumed directly by `nvx-rumi-cli` (no runtime dependency on the REST service). |
 | `nvx-rumi-appbuilder-rest/` | Java | A canonical Rumi REST service (Mgmt-Agent-style lifecycle, Datafye-API-REST-style resource classes) that wraps the SDK and exposes every scaffolder operation as a REST endpoint. Consumed by Sutra, the Rumi Support Agent, CI jobs, and anything else that wants app-building via HTTP. |
-| `nvx-rumi-appbuilder-mcp/` | Python | A Model Context Protocol server that wraps the REST service. Each MCP tool is a typed call to one REST endpoint. Consumed by external coding assistants (Claude Code, Cursor, etc.) and optionally by agents that prefer the MCP interface for tool-call visibility. |
+| `nvx-rumi-appbuilder-mcp/` | Python | A Model Context Protocol server that wraps the REST service. Each MCP tool is a typed call to one REST endpoint, with a single deliberate exception: `tool_usage_report` (RUMI-415) reports on tool adoption from counters held in this process, because what is worth counting is which *tool* was reached for and REST sees only endpoints. It is named in `LOCAL_ONLY_TOOLS` in the coverage tests; a second such tool needs the same justification. Consumed by external coding assistants (Claude Code, Cursor, etc.) and optionally by agents that prefer the MCP interface for tool-call visibility. |
 
 ## Scope
 

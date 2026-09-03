@@ -92,16 +92,25 @@ async def test_report_tool_is_registered(mcp) -> None:
 
 @pytest.mark.asyncio
 async def test_wrapping_did_not_flatten_the_tool_schemas(mcp) -> None:
-    """Schemas still come from the real signatures, not the wrapper."""
+    """Schemas still come from the real signatures, not the wrapper.
+
+    Swept across EVERY registered tool rather than sampled. An earlier version
+    of this test made its "no args/kwargs leaked" assertion against
+    `tool_usage_report` -- the one tool that never goes through `counted()` --
+    so it stayed green with `functools.wraps` removed, which is the single
+    regression it existed to catch.
+    """
     tools = {t.name: t for t in await mcp.list_tools()}
 
     add_service = tools["add_service"].inputSchema
     assert {"app_root", "name", "type"} <= set(add_service["properties"])
-    assert "kwargs" not in add_service["properties"]
-    assert "args" not in add_service["properties"]
 
-    # A tool with no arguments must not have grown any.
-    assert not tools["tool_usage_report"].inputSchema.get("required")
+    flattened = sorted(
+        name
+        for name, tool in tools.items()
+        if {"args", "kwargs"} & set((tool.inputSchema or {}).get("properties", {}))
+    )
+    assert not flattened, f"these tools registered an untyped wrapper: {flattened}"
 
 
 @respx.mock
@@ -130,3 +139,27 @@ async def test_the_report_tool_is_not_in_the_surface_it_reports_on(mcp) -> None:
     assert "tool_usage_report" not in report["by_tool"]
     # Counted surface is every registered tool except the instrument itself.
     assert report["tools_registered"] == len(registered) - 1
+
+
+@pytest.mark.asyncio
+async def test_an_async_tool_is_awaited_and_counted() -> None:
+    """A sync wrapper around an async tool is a silent wrong answer.
+
+    `inspect.signature` follows `__wrapped__`; `inspect.iscoroutinefunction`
+    does not. Wrapped with a plain sync wrapper, an async tool registers as
+    is_async=False, FastMCP calls it without awaiting, and pydantic is handed a
+    coroutine object as the result -- so the tool "succeeds" having done
+    nothing. No async tool exists yet, which is exactly why this is pinned now.
+    """
+    import inspect
+
+    u = ToolUsage()
+
+    async def get_thing(app_root: str) -> str:
+        return "done"
+
+    wrapped = u.counted(get_thing)
+    assert inspect.iscoroutinefunction(wrapped), "async tool wrapped as sync"
+    assert inspect.signature(wrapped) == inspect.signature(get_thing)
+    assert await wrapped("/tmp") == "done"
+    assert u.report()["by_tool"] == {"get_thing": 1}
