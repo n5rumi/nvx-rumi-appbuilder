@@ -22,6 +22,7 @@
 package com.neeve.appbuilder;
 
 import com.neeve.appbuilder.model.BatchResult;
+import com.neeve.appbuilder.model.CollectionDef;
 import com.neeve.appbuilder.model.EntityDef;
 import com.neeve.appbuilder.model.FieldDef;
 import com.neeve.appbuilder.model.ModelEdit;
@@ -126,6 +127,75 @@ public class ModelBatchTest {
             FieldEditor.ModelScope.SERVICE_MESSAGES);
         assertEquals("asEmbedded survives the batch path",
             "true", money.getAttributes().get("asEmbedded"));
+    }
+
+    /**
+     * RUMI-424 review. A message entity used as a field type must be embedded or
+     * ADM codegen rejects the referencing model, and being a field type is the
+     * usual reason to declare one. add_message_entity defaults asEmbedded=true;
+     * without the same default here the two paths produced different models from
+     * the same request, and the batch one did not compile.
+     */
+    @Test
+    public void aMessageEntityIsEmbeddedByDefault() throws Exception {
+        ModelBatch.apply(appRoot, List.of(
+            new ModelEdit(ModelEdit.Kind.MESSAGE_ENTITY, "proc", "Money", null,
+                List.of(new FieldDef("amount", "Long", Map.of())), null, null)), false);
+
+        EntityDef money = MessageIntrospector.getEntity(appRoot, "proc", "Money",
+            FieldEditor.ModelScope.SERVICE_MESSAGES);
+        assertEquals("defaults to embedded, like the per-element tool",
+            "true", money.getAttributes().get("asEmbedded"));
+    }
+
+    @Test
+    public void anExplicitAsEmbeddedFalseIsHonoured() throws Exception {
+        ModelBatch.apply(appRoot, List.of(
+            new ModelEdit(ModelEdit.Kind.MESSAGE_ENTITY, "proc", "Standalone", null,
+                List.of(new FieldDef("v", "Long", Map.of())),
+                null, null, Map.of("asEmbedded", "false"))), false);
+
+        EntityDef e = MessageIntrospector.getEntity(appRoot, "proc", "Standalone",
+            FieldEditor.ModelScope.SERVICE_MESSAGES);
+        assertEquals("the default never overrides an explicit choice",
+            "false", e.getAttributes().get("asEmbedded"));
+    }
+
+    /** RUMI-424 review: the same silent drop, one case label along. */
+    @Test
+    public void aCollectionCarriesItsAttributes() throws Exception {
+        ModelBatch.apply(appRoot, List.of(
+            new ModelEdit(ModelEdit.Kind.STATE_ENTITY, "proc", "Order", null,
+                List.of(new FieldDef("id", "String", Map.of("isKey", "true"))), null, null),
+            new ModelEdit(ModelEdit.Kind.COLLECTION, "proc", "Orders", null,
+                List.of(), "StringMap", "Order", Map.of("transactional", "true"))), false);
+
+        CollectionDef orders = StateIntrospector.getCollection(appRoot, "proc", "Orders");
+        assertEquals("collection attributes survive the batch path",
+            "true", orders.getAttributes().get("transactional"));
+    }
+
+    /**
+     * Nothing on the MESSAGE or FIELDS path can carry entity attributes, so
+     * accepting them could only discard them -- which is the failure this whole
+     * ticket is about. Refuse instead.
+     */
+    @Test
+    public void attributesOnAKindThatCannotApplyThemAreRefused() {
+        for (ModelEdit.Kind k : List.of(ModelEdit.Kind.MESSAGE, ModelEdit.Kind.FIELDS)) {
+            try {
+                ModelBatch.apply(appRoot, List.of(
+                    new ModelEdit(k, "proc", "Thing", "messages",
+                        List.of(new FieldDef("v", "Long", Map.of())),
+                        null, null, Map.of("asEmbedded", "true"))), false);
+                fail("expected " + k + " to refuse entity attributes");
+            } catch (IllegalArgumentException expected) {
+                assertTrue("names the offending key: " + expected.getMessage(),
+                    expected.getMessage().contains("attributes"));
+            } catch (Exception e) {
+                fail("expected IllegalArgumentException for " + k + ", got " + e);
+            }
+        }
     }
 
     /** An edit with no attributes must be unchanged by the new parameter. */

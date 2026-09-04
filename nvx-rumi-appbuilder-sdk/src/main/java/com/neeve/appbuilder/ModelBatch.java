@@ -112,12 +112,39 @@ public final class ModelBatch {
         } else if (e.getScope() != null) {
             scopeOf(e, FieldEditor.ModelScope.SERVICE_MESSAGES);  // reject a bad scope up front
         }
+        // MESSAGE and FIELDS have no attribute-carrying overload, so accepting
+        // an attributes map there could only discard it -- and a field accepted
+        // and discarded is what cost the reporting agent a four-call bisection.
+        if (!e.getAttributes().isEmpty()
+            && (e.getKind() == ModelEdit.Kind.MESSAGE || e.getKind() == ModelEdit.Kind.FIELDS)) {
+            throw new IllegalArgumentException(
+                e.describe() + " carries 'attributes', which a " + e.getKind()
+                + " edit cannot apply. Entity attributes belong on a state_entity,"
+                + " message_entity or collection edit; per-field attributes go on the field.");
+        }
         for (com.neeve.appbuilder.model.FieldDef f : e.getFields()) {
             if (f.getName() == null || f.getName().isBlank()) {
                 throw new IllegalArgumentException(
                     "a field on " + e.describe() + " has no name");
             }
         }
+    }
+
+    /**
+     * A message entity defaults to embedded, matching {@code add_message_entity}.
+     *
+     * <p>Not cosmetic parity: {@link EntityEditor#addEntity} notes that an entity
+     * used as a field type within a message or another entity MUST be embedded or
+     * ADM codegen rejects the referencing model -- and being a field type is the
+     * usual reason to declare one. Without this default the same logical request
+     * produced a codegen-breaking model through the batch path and a working one
+     * through the per-element tool.
+     */
+    private static Map<String, String> embeddedByDefault(Map<String, String> attrs) {
+        if (attrs.containsKey("asEmbedded")) return attrs;
+        Map<String, String> out = new LinkedHashMap<>(attrs);
+        out.put("asEmbedded", "true");
+        return out;
     }
 
     private static ChangeSet applyOne(Path appRoot, ModelEdit e, boolean dryRun) throws IOException {
@@ -135,13 +162,19 @@ public final class ModelBatch {
                 // the batch path could not declare an embedded entity at all
                 // while add_message_entity could (RUMI-424).
                 return EntityEditor.addEntity(appRoot, e.getService(), scopeOf(e, FieldEditor.ModelScope.SERVICE_MESSAGES),
-                                              e.getName(), e.getAttributes(), e.getFields(), dryRun);
+                                              e.getName(), embeddedByDefault(e.getAttributes()),
+                                              e.getFields(), dryRun);
             case STATE_ENTITY:
                 return StateEditor.addStateEntity(appRoot, e.getService(), e.getName(),
                                                   e.getAttributes(), e.getFields(), dryRun);
             case COLLECTION:
-                return CollectionEditor.addCollection(appRoot, e.getService(), e.getName(),
-                                                      e.getIs(), e.getContains(), dryRun);
+                // The extraAttrs overload, for the same reason as the entities
+                // above: the shorter one passes null and silently discarded
+                // whatever the caller sent (RUMI-424 on the neighbouring label).
+                return CollectionEditor.addCollection(appRoot, e.getService(),
+                                                      FieldEditor.ModelScope.SERVICE_STATE,
+                                                      e.getName(), e.getIs(), e.getContains(),
+                                                      e.getAttributes(), dryRun);
             case FIELDS:
                 // No default here. A message and a state entity sharing a name is
                 // routine in a Rumi app, so defaulting to messages would append a

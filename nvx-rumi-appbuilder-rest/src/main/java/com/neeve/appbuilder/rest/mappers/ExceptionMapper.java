@@ -21,8 +21,10 @@
  */
 package com.neeve.appbuilder.rest.mappers;
 
+import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import java.util.Collection;
 import java.util.List;
@@ -89,16 +91,6 @@ public class ExceptionMapper implements jakarta.ws.rs.ext.ExceptionMapper<Throwa
     }
 
     private static Mapping map(Throwable t) {
-        // A body we could not bind is the CALLER's problem, so name what was
-        // wrong with it. Jersey wraps these, so walk the chain. This has to run
-        // before the fall-through: everything Jackson throws used to land on
-        // "An internal error occurred", which is right for a server fault and
-        // useless here -- it cost a reporting agent a four-call bisection to
-        // find an unknown property (RUMI-425).
-        JsonProcessingException bind = firstJsonFailure(t);
-        if (bind != null) {
-            return new Mapping(400, "BadRequest", describeBindFailure(bind));
-        }
         // JAX-RS exceptions — let their status stand, wrap description.
         if (t instanceof NotFoundException) {
             return new Mapping(404, "NotFound", messageOr(t, "Resource not found"));
@@ -127,17 +119,50 @@ public class ExceptionMapper implements jakarta.ws.rs.ext.ExceptionMapper<Throwa
             }
             return new Mapping(422, "Unprocessable", messageOr(t, "Operation not allowed in current state"));
         }
+        // A body we could not READ is the caller's problem, so name what was
+        // wrong with it. Deliberately last, and deliberately narrow.
+        //
+        // Last, because a JAX-RS exception carrying a Jackson cause is still a
+        // 404: running this first turned NotFoundException("no such app", jsonCause)
+        // into a 400.
+        //
+        // Narrow, because Jackson raises on the way OUT too. JsonMappingException
+        // is thrown by both sides, so matching that parent classified a failing
+        // response serialization as a bad request -- wrong status, and it echoed
+        // the exception text into the body of a class whose javadoc promises not
+        // to leak internals. It also silenced the fault: a mapping under 500
+        // skips the SEVERE log in toResponse, so a genuine server error stopped
+        // reaching the service log at all. MismatchedInputException and
+        // JsonParseException are raised only while reading.
+        DeserializationFailure bind = firstReadFailure(t);
+        if (bind != null) {
+            return new Mapping(400, "BadRequest", describeBindFailure(bind.cause));
+        }
+
         return new Mapping(500, "InternalError", "An internal error occurred");
     }
 
-    /** The first Jackson failure in the cause chain, or null. */
-    private static JsonProcessingException firstJsonFailure(Throwable t) {
-        for (Throwable c = t; c != null; c = c.getCause()) {
-            if (c instanceof JsonProcessingException) return (JsonProcessingException) c;
-            if (c.getCause() == c) break;   // defensive: a self-referencing cause
+    /** Carries the matched cause so the caller cannot re-widen the type by accident. */
+    private record DeserializationFailure(JsonProcessingException cause) {}
+
+    /**
+     * The first READ-side Jackson failure in the cause chain, or null.
+     *
+     * <p>Bounded rather than cycle-checked: {@code initCause} refuses {@code this}
+     * but permits a longer loop, and a non-terminating walk here would hang the
+     * request thread inside the exception mapper. Real chains are a few deep.
+     */
+    private static DeserializationFailure firstReadFailure(Throwable t) {
+        int depth = 0;
+        for (Throwable c = t; c != null && depth < MAX_CAUSE_DEPTH; c = c.getCause(), depth++) {
+            if (c instanceof MismatchedInputException || c instanceof JsonParseException) {
+                return new DeserializationFailure((JsonProcessingException) c);
+            }
         }
         return null;
     }
+
+    private static final int MAX_CAUSE_DEPTH = 16;
 
     /**
      * Name the property and, where Jackson knows it, where it sat in the

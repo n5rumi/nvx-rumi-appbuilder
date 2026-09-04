@@ -21,6 +21,7 @@
  */
 package com.neeve.appbuilder.rest;
 
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.neeve.appbuilder.rest.dto.ErrorResponse;
 import com.neeve.appbuilder.rest.dto.ModelBatchRequest;
@@ -95,6 +96,48 @@ public class ExceptionMapperTest {
         assertEquals(500, r.getStatus());
         assertEquals("InternalError", body(r).getCode());
         assertEquals("An internal error occurred", body(r).getDescription());
+    }
+
+    /**
+     * RUMI-425 review. The first version matched JsonMappingException, which
+     * Jackson raises on the way OUT as well, so a failing RESPONSE serialization
+     * became a 400 that echoed internals into the body -- and, being under 500,
+     * skipped the SEVERE log, so a genuine fault stopped reaching the service log.
+     */
+    @Test
+    public void aWriteSideJacksonFaultStaysA500() {
+        // What JacksonJsonProvider.writeTo raises when a DTO getter throws.
+        JsonMappingException writeSide =
+            JsonMappingException.from((com.fasterxml.jackson.core.JsonGenerator) null,
+                "secret internal detail: /home/x/key");
+
+        Response r = mapOf(writeSide);
+        assertEquals("a write-side failure is a server fault", 500, r.getStatus());
+        assertEquals("InternalError", body(r).getCode());
+        assertEquals("and says nothing revealing",
+            "An internal error occurred", body(r).getDescription());
+        assertFalse("the internal detail is not echoed",
+            body(r).getDescription().contains("/home/x/key"));
+    }
+
+    /**
+     * The block sits below the JAX-RS tests, so a 404 carrying a Jackson cause
+     * is still a 404. Running it first turned this into a 400.
+     */
+    @Test
+    public void aJaxRsStatusIsNotOverriddenByAJacksonCause() throws Exception {
+        Throwable bind;
+        try {
+            json.readValue("{\"edits\":[{\"kind\":\"state_entity\",\"name\":\"X\",\"nope\":1}]}",
+                ModelBatchRequest.class);
+            throw new AssertionError("expected a bind failure");
+        } catch (AssertionError e) {
+            throw e;
+        } catch (Exception e) {
+            bind = e;
+        }
+        Response r = mapOf(new jakarta.ws.rs.NotFoundException("no such app", bind));
+        assertEquals("the JAX-RS status wins", 404, r.getStatus());
     }
 
     @Test
