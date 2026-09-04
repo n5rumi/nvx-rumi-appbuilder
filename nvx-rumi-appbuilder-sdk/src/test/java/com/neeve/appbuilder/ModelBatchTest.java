@@ -198,6 +198,41 @@ public class ModelBatchTest {
         }
     }
 
+    /**
+     * RUMI-427 review. A state entity and a collection always write the state
+     * model, so a scope saying otherwise was accepted and then dropped -- the
+     * same accept-and-drop trap as RUMI-424, and it would have written to the
+     * state model while reporting success.
+     */
+    @Test
+    public void aScopeThatContradictsWhereTheKindWritesIsRefused() {
+        for (ModelEdit.Kind k : List.of(ModelEdit.Kind.STATE_ENTITY, ModelEdit.Kind.COLLECTION)) {
+            try {
+                ModelBatch.apply(appRoot, List.of(
+                    new ModelEdit(k, "proc", "Thing", "messages",
+                        List.of(new FieldDef("id", "String", Map.of("isKey", "true"))),
+                        "StringMap", "Order")), false);
+                fail("expected " + k + " to refuse scope 'messages'");
+            } catch (IllegalArgumentException expected) {
+                assertTrue("explains where the kind writes: " + expected.getMessage(),
+                    expected.getMessage().contains("state model"));
+            } catch (Exception e) {
+                fail("expected IllegalArgumentException for " + k + ", got " + e);
+            }
+        }
+    }
+
+    /** Saying 'state' explicitly is redundant but true, so it is allowed. */
+    @Test
+    public void anExplicitStateScopeIsAccepted() throws Exception {
+        ModelBatch.apply(appRoot, List.of(
+            new ModelEdit(ModelEdit.Kind.STATE_ENTITY, "proc", "Redundant", "state",
+                List.of(new FieldDef("id", "String", Map.of("isKey", "true"))), null, null)), false);
+
+        assertNotNull("the entity was created",
+            StateIntrospector.getStateEntity(appRoot, "proc", "Redundant"));
+    }
+
     /** An edit with no attributes must be unchanged by the new parameter. */
     @Test
     public void anEntityWithoutAttributesIsUnaffected() throws Exception {

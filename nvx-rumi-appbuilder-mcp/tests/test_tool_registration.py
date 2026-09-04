@@ -105,10 +105,17 @@ async def test_apply_model_documents_what_a_caller_cannot_guess() -> None:
     desc = tools["apply_model"].description or ""
 
     assert "attributes" in desc, "the edit shape must name attributes (RUMI-424)"
-    assert "REQUIRED" in desc and "fields" in desc, \
+
+    # Contiguous phrases, not loose tokens. "fields", "messages", "state" and
+    # "roe" all occur elsewhere in this docstring (in the edit-shape list and
+    # inside message_entity/state_entity), so asserting on them separately
+    # passed even with the whole clause deleted.
+    assert 'REQUIRED for kind:"fields"' in desc, \
         "the scope requirement for a fields edit must be stated (RUMI-427)"
-    for scope in ("messages", "state", "roe"):
-        assert scope in desc, f"the legal scope '{scope}' must be named"
+    assert "scope is messages|state|roe" in desc, \
+        "the legal scope values must be named together (RUMI-427)"
+    assert "always writes the service state model" in desc, \
+        "state_entity/collection scope handling must be stated (RUMI-427 review)"
 
 
 @pytest.mark.asyncio
