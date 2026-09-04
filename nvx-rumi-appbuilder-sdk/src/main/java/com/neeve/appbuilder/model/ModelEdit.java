@@ -22,6 +22,8 @@
 package com.neeve.appbuilder.model;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Objects;
 
@@ -60,9 +62,23 @@ public final class ModelEdit {
     private final List<FieldDef> fields;
     private final String is;         // COLLECTION only
     private final String contains;   // COLLECTION only
+    /**
+     * Entity-level attributes, for STATE_ENTITY and MESSAGE_ENTITY. Empty for
+     * every other kind. {@code asEmbedded="true"} lives here, which is how the
+     * ADM language declares an embedded entity -- so without this the batch
+     * path could not express a routine model (RUMI-424).
+     */
+    private final Map<String, String> attributes;
 
+    /** Retained for callers that predate attributes; no entity attributes. */
     public ModelEdit(Kind kind, String service, String name, String scope,
                      List<FieldDef> fields, String is, String contains) {
+        this(kind, service, name, scope, fields, is, contains, null);
+    }
+
+    public ModelEdit(Kind kind, String service, String name, String scope,
+                     List<FieldDef> fields, String is, String contains,
+                     Map<String, String> attributes) {
         this.kind = Objects.requireNonNull(kind, "kind");
         this.service = service;
         this.name = Objects.requireNonNull(name, "name");
@@ -71,6 +87,9 @@ public final class ModelEdit {
                                      : Collections.unmodifiableList(fields);
         this.is = is;
         this.contains = contains;
+        this.attributes = attributes == null || attributes.isEmpty()
+            ? Collections.emptyMap()
+            : Collections.unmodifiableMap(new LinkedHashMap<>(attributes));
     }
 
     public Kind getKind() { return kind; }
@@ -78,6 +97,7 @@ public final class ModelEdit {
     public String getName() { return name; }
     public String getScope() { return scope; }
     public List<FieldDef> getFields() { return fields; }
+    public Map<String, String> getAttributes() { return attributes; }
     public String getIs() { return is; }
     public String getContains() { return contains; }
 

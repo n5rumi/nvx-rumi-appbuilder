@@ -28,6 +28,7 @@ import com.neeve.appbuilder.model.ModelEdit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
@@ -43,6 +44,13 @@ public final class ModelBatchRequest {
         private final List<FieldSpec> fields;
         private final String is;
         private final String contains;
+        /**
+         * Entity-level attributes for a state_entity or message_entity edit —
+         * {@code asEmbedded="true"} above all, which is how the ADM language
+         * declares an embedded entity. Absent here, the batch path silently
+         * dropped it while the per-element tools accepted it (RUMI-424).
+         */
+        private final Map<String, String> attributes;
 
         @JsonCreator
         public Edit(@JsonProperty("kind") String kind,
@@ -51,7 +59,8 @@ public final class ModelBatchRequest {
                     @JsonProperty("scope") String scope,
                     @JsonProperty("fields") List<FieldSpec> fields,
                     @JsonProperty("is") String is,
-                    @JsonProperty("contains") String contains) {
+                    @JsonProperty("contains") String contains,
+                    @JsonProperty("attributes") Map<String, String> attributes) {
             this.kind = kind;
             this.service = service;
             this.name = name;
@@ -59,6 +68,7 @@ public final class ModelBatchRequest {
             this.fields = fields == null ? Collections.emptyList() : fields;
             this.is = is;
             this.contains = contains;
+            this.attributes = attributes == null ? Collections.emptyMap() : attributes;
         }
 
         public String getKind() { return kind; }
@@ -68,6 +78,7 @@ public final class ModelBatchRequest {
         public List<FieldSpec> getFields() { return fields; }
         public String getIs() { return is; }
         public String getContains() { return contains; }
+        public Map<String, String> getAttributes() { return attributes; }
 
         ModelEdit toSdk() {
             if (kind == null) {
@@ -86,7 +97,7 @@ public final class ModelBatchRequest {
             }
             return new ModelEdit(k, service, name, scope,
                 fields.stream().map(FieldSpec::toSdk).collect(Collectors.toList()),
-                is, contains);
+                is, contains, attributes);
         }
     }
 

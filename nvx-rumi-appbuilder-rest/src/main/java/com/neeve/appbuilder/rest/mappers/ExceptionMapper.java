@@ -21,6 +21,14 @@
  */
 package com.neeve.appbuilder.rest.mappers;
 
+import com.fasterxml.jackson.core.JsonParseException;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.exc.MismatchedInputException;
+import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
+import java.util.Collection;
+import java.util.List;
+import java.util.stream.Collectors;
 import com.neeve.appbuilder.rest.Main;
 import com.neeve.appbuilder.rest.dto.ErrorResponse;
 import com.neeve.trace.Tracer;
@@ -111,7 +119,95 @@ public class ExceptionMapper implements jakarta.ws.rs.ext.ExceptionMapper<Throwa
             }
             return new Mapping(422, "Unprocessable", messageOr(t, "Operation not allowed in current state"));
         }
+        // A body we could not READ is the caller's problem, so name what was
+        // wrong with it. Deliberately last, and deliberately narrow.
+        //
+        // Last, because a JAX-RS exception carrying a Jackson cause is still a
+        // 404: running this first turned NotFoundException("no such app", jsonCause)
+        // into a 400.
+        //
+        // Narrow, because Jackson raises on the way OUT too. JsonMappingException
+        // is thrown by both sides, so matching that parent classified a failing
+        // response serialization as a bad request -- wrong status, and it echoed
+        // the exception text into the body of a class whose javadoc promises not
+        // to leak internals. It also silenced the fault: a mapping under 500
+        // skips the SEVERE log in toResponse, so a genuine server error stopped
+        // reaching the service log at all. MismatchedInputException and
+        // JsonParseException are raised only while reading.
+        DeserializationFailure bind = firstReadFailure(t);
+        if (bind != null) {
+            return new Mapping(400, "BadRequest", describeBindFailure(bind.cause));
+        }
+
         return new Mapping(500, "InternalError", "An internal error occurred");
+    }
+
+    /** Carries the matched cause so the caller cannot re-widen the type by accident. */
+    private record DeserializationFailure(JsonProcessingException cause) {}
+
+    /**
+     * The first READ-side Jackson failure in the cause chain, or null.
+     *
+     * <p>Bounded rather than cycle-checked: {@code initCause} refuses {@code this}
+     * but permits a longer loop, and a non-terminating walk here would hang the
+     * request thread inside the exception mapper. Real chains are a few deep.
+     */
+    private static DeserializationFailure firstReadFailure(Throwable t) {
+        int depth = 0;
+        for (Throwable c = t; c != null && depth < MAX_CAUSE_DEPTH; c = c.getCause(), depth++) {
+            if (c instanceof MismatchedInputException || c instanceof JsonParseException) {
+                return new DeserializationFailure((JsonProcessingException) c);
+            }
+        }
+        return null;
+    }
+
+    private static final int MAX_CAUSE_DEPTH = 16;
+
+    /**
+     * Name the property and, where Jackson knows it, where it sat in the
+     * payload. The original message carries a source location that means
+     * nothing to a caller, so only the useful half is passed on.
+     */
+    private static String describeBindFailure(JsonProcessingException e) {
+        StringBuilder sb = new StringBuilder("Could not read the request body");
+        if (e instanceof UnrecognizedPropertyException) {
+            UnrecognizedPropertyException u = (UnrecognizedPropertyException) e;
+            sb.append(": unknown property '").append(u.getPropertyName()).append("'");
+            String path = pathOf(u);
+            if (!path.isEmpty()) sb.append(" at ").append(path);
+            Collection<Object> known = u.getKnownPropertyIds();
+            if (known != null && !known.isEmpty()) {
+                sb.append(". Known properties: ");
+                sb.append(known.stream().map(String::valueOf).sorted()
+                               .collect(Collectors.joining(", ")));
+            }
+            return sb.toString();
+        }
+        if (e instanceof JsonMappingException) {
+            String path = pathOf((JsonMappingException) e);
+            if (!path.isEmpty()) sb.append(" at ").append(path);
+            String m = e.getOriginalMessage();
+            if (m != null && !m.isBlank()) sb.append(": ").append(m);
+            return sb.toString();
+        }
+        String m = e.getOriginalMessage();
+        return m == null || m.isBlank() ? sb.toString() : sb + ": " + m;
+    }
+
+    private static String pathOf(JsonMappingException e) {
+        List<JsonMappingException.Reference> refs = e.getPath();
+        if (refs == null || refs.isEmpty()) return "";
+        StringBuilder p = new StringBuilder();
+        for (JsonMappingException.Reference r : refs) {
+            if (r.getFieldName() != null) {
+                if (p.length() > 0) p.append('.');
+                p.append(r.getFieldName());
+            } else if (r.getIndex() >= 0) {
+                p.append('[').append(r.getIndex()).append(']');
+            }
+        }
+        return p.toString();
     }
 
     private static String messageOr(Throwable t, String fallback) {
