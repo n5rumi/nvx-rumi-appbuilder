@@ -92,6 +92,26 @@ async def test_server_registers_every_expected_tool() -> None:
 
 
 @pytest.mark.asyncio
+async def test_apply_model_documents_what_a_caller_cannot_guess() -> None:
+    """RUMI-427 (and RUMI-424 before it).
+
+    The description is the only place a caller learns the edit shape: these
+    tools are loaded on demand, so nothing else is in front of the model. Two
+    requirements have now been discovered by having a call rejected instead —
+    `attributes`, and `scope` on a fields edit — so both are pinned here.
+    """
+    mcp = build_server("http://localhost:3200")
+    tools = {t.name: t for t in await mcp.list_tools()}
+    desc = tools["apply_model"].description or ""
+
+    assert "attributes" in desc, "the edit shape must name attributes (RUMI-424)"
+    assert "REQUIRED" in desc and "fields" in desc, \
+        "the scope requirement for a fields edit must be stated (RUMI-427)"
+    for scope in ("messages", "state", "roe"):
+        assert scope in desc, f"the legal scope '{scope}' must be named"
+
+
+@pytest.mark.asyncio
 async def test_server_name_is_rumi_dev() -> None:
     # The server advertises itself as rumi-dev, which is what clients
     # see as the mcp__rumi-dev__<tool> prefix.
