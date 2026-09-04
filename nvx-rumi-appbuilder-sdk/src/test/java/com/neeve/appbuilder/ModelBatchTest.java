@@ -22,6 +22,7 @@
 package com.neeve.appbuilder;
 
 import com.neeve.appbuilder.model.BatchResult;
+import com.neeve.appbuilder.model.EntityDef;
 import com.neeve.appbuilder.model.FieldDef;
 import com.neeve.appbuilder.model.ModelEdit;
 import com.neeve.appbuilder.test.TestAppFactory;
@@ -94,6 +95,49 @@ public class ModelBatchTest {
         assertEquals(4, r.getChangedCount());
         assertEquals(2, MessageIntrospector.listMessages(appRoot, "proc",
             FieldEditor.ModelScope.SERVICE_MESSAGES).size());
+    }
+
+    /**
+     * RUMI-424. The batch path called the overloads that pass an empty
+     * attribute map, so {@code asEmbedded="true"} was dropped and a model
+     * needing an embedded entity could not be authored in one call at all --
+     * while the per-element tools accepted the same attribute.
+     */
+    @Test
+    public void aStateEntityCarriesItsEntityLevelAttributes() throws Exception {
+        ModelBatch.apply(appRoot, List.of(
+            new ModelEdit(ModelEdit.Kind.STATE_ENTITY, "proc", "ProductProfile", null,
+                List.of(new FieldDef("productName", "String", Map.of())),
+                null, null, Map.of("asEmbedded", "true"))), false);
+
+        EntityDef profile = StateIntrospector.getStateEntity(appRoot, "proc", "ProductProfile");
+        assertEquals("asEmbedded survives the batch path",
+            "true", profile.getAttributes().get("asEmbedded"));
+    }
+
+    @Test
+    public void aMessageEntityCarriesItsEntityLevelAttributes() throws Exception {
+        ModelBatch.apply(appRoot, List.of(
+            new ModelEdit(ModelEdit.Kind.MESSAGE_ENTITY, "proc", "Money", null,
+                List.of(new FieldDef("amount", "Long", Map.of())),
+                null, null, Map.of("asEmbedded", "true"))), false);
+
+        EntityDef money = MessageIntrospector.getEntity(appRoot, "proc", "Money",
+            FieldEditor.ModelScope.SERVICE_MESSAGES);
+        assertEquals("asEmbedded survives the batch path",
+            "true", money.getAttributes().get("asEmbedded"));
+    }
+
+    /** An edit with no attributes must be unchanged by the new parameter. */
+    @Test
+    public void anEntityWithoutAttributesIsUnaffected() throws Exception {
+        ModelBatch.apply(appRoot, List.of(
+            new ModelEdit(ModelEdit.Kind.STATE_ENTITY, "proc", "Plain", null,
+                List.of(new FieldDef("id", "String", Map.of("isKey", "true"))),
+                null, null)), false);
+
+        EntityDef plain = StateIntrospector.getStateEntity(appRoot, "proc", "Plain");
+        assertNull("no asEmbedded was asked for", plain.getAttributes().get("asEmbedded"));
     }
 
     @Test

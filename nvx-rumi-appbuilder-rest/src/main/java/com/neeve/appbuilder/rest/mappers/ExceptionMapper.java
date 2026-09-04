@@ -21,6 +21,12 @@
  */
 package com.neeve.appbuilder.rest.mappers;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
+import java.util.Collection;
+import java.util.List;
+import java.util.stream.Collectors;
 import com.neeve.appbuilder.rest.Main;
 import com.neeve.appbuilder.rest.dto.ErrorResponse;
 import com.neeve.trace.Tracer;
@@ -83,6 +89,16 @@ public class ExceptionMapper implements jakarta.ws.rs.ext.ExceptionMapper<Throwa
     }
 
     private static Mapping map(Throwable t) {
+        // A body we could not bind is the CALLER's problem, so name what was
+        // wrong with it. Jersey wraps these, so walk the chain. This has to run
+        // before the fall-through: everything Jackson throws used to land on
+        // "An internal error occurred", which is right for a server fault and
+        // useless here -- it cost a reporting agent a four-call bisection to
+        // find an unknown property (RUMI-425).
+        JsonProcessingException bind = firstJsonFailure(t);
+        if (bind != null) {
+            return new Mapping(400, "BadRequest", describeBindFailure(bind));
+        }
         // JAX-RS exceptions — let their status stand, wrap description.
         if (t instanceof NotFoundException) {
             return new Mapping(404, "NotFound", messageOr(t, "Resource not found"));
@@ -112,6 +128,61 @@ public class ExceptionMapper implements jakarta.ws.rs.ext.ExceptionMapper<Throwa
             return new Mapping(422, "Unprocessable", messageOr(t, "Operation not allowed in current state"));
         }
         return new Mapping(500, "InternalError", "An internal error occurred");
+    }
+
+    /** The first Jackson failure in the cause chain, or null. */
+    private static JsonProcessingException firstJsonFailure(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause()) {
+            if (c instanceof JsonProcessingException) return (JsonProcessingException) c;
+            if (c.getCause() == c) break;   // defensive: a self-referencing cause
+        }
+        return null;
+    }
+
+    /**
+     * Name the property and, where Jackson knows it, where it sat in the
+     * payload. The original message carries a source location that means
+     * nothing to a caller, so only the useful half is passed on.
+     */
+    private static String describeBindFailure(JsonProcessingException e) {
+        StringBuilder sb = new StringBuilder("Could not read the request body");
+        if (e instanceof UnrecognizedPropertyException) {
+            UnrecognizedPropertyException u = (UnrecognizedPropertyException) e;
+            sb.append(": unknown property '").append(u.getPropertyName()).append("'");
+            String path = pathOf(u);
+            if (!path.isEmpty()) sb.append(" at ").append(path);
+            Collection<Object> known = u.getKnownPropertyIds();
+            if (known != null && !known.isEmpty()) {
+                sb.append(". Known properties: ");
+                sb.append(known.stream().map(String::valueOf).sorted()
+                               .collect(Collectors.joining(", ")));
+            }
+            return sb.toString();
+        }
+        if (e instanceof JsonMappingException) {
+            String path = pathOf((JsonMappingException) e);
+            if (!path.isEmpty()) sb.append(" at ").append(path);
+            String m = e.getOriginalMessage();
+            if (m != null && !m.isBlank()) sb.append(": ").append(m);
+            return sb.toString();
+        }
+        String m = e.getOriginalMessage();
+        return m == null || m.isBlank() ? sb.toString() : sb + ": " + m;
+    }
+
+    private static String pathOf(JsonMappingException e) {
+        List<JsonMappingException.Reference> refs = e.getPath();
+        if (refs == null || refs.isEmpty()) return "";
+        StringBuilder p = new StringBuilder();
+        for (JsonMappingException.Reference r : refs) {
+            if (r.getFieldName() != null) {
+                if (p.length() > 0) p.append('.');
+                p.append(r.getFieldName());
+            } else if (r.getIndex() >= 0) {
+                p.append('[').append(r.getIndex()).append(']');
+            }
+        }
+        return p.toString();
     }
 
     private static String messageOr(Throwable t, String fallback) {

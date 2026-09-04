@@ -130,10 +130,15 @@ public final class ModelBatch {
                                                 scopeOf(e, FieldEditor.ModelScope.SERVICE_MESSAGES),
                                                 e.getName(), e.getFields(), dryRun);
             case MESSAGE_ENTITY:
+                // The attribute-taking overloads, deliberately: the shorter ones
+                // pass an empty map, so asEmbedded="true" was being dropped and
+                // the batch path could not declare an embedded entity at all
+                // while add_message_entity could (RUMI-424).
                 return EntityEditor.addEntity(appRoot, e.getService(), scopeOf(e, FieldEditor.ModelScope.SERVICE_MESSAGES),
-                                              e.getName(), e.getFields(), dryRun);
+                                              e.getName(), e.getAttributes(), e.getFields(), dryRun);
             case STATE_ENTITY:
-                return StateEditor.addStateEntity(appRoot, e.getService(), e.getName(), e.getFields(), dryRun);
+                return StateEditor.addStateEntity(appRoot, e.getService(), e.getName(),
+                                                  e.getAttributes(), e.getFields(), dryRun);
             case COLLECTION:
                 return CollectionEditor.addCollection(appRoot, e.getService(), e.getName(),
                                                       e.getIs(), e.getContains(), dryRun);
