@@ -110,7 +110,22 @@ public final class ModelBatch {
             }
             scopeOf(e, null);   // scope is mandatory here; throws if missing or unknown
         } else if (e.getScope() != null) {
-            scopeOf(e, FieldEditor.ModelScope.SERVICE_MESSAGES);  // reject a bad scope up front
+            FieldEditor.ModelScope asked =
+                scopeOf(e, FieldEditor.ModelScope.SERVICE_MESSAGES);  // reject a bad scope up front
+            // A state entity and a collection ALWAYS write the state model --
+            // applyOne does not pass a scope for the first and hard-codes it for
+            // the second. Accepting a contradicting one and then ignoring it is
+            // the accept-and-drop trap this batch path has already been bitten
+            // by once (RUMI-424): {"kind":"collection","scope":"messages"} would
+            // report success and write to state. Refuse instead of misleading.
+            boolean alwaysState = e.getKind() == ModelEdit.Kind.STATE_ENTITY
+                               || e.getKind() == ModelEdit.Kind.COLLECTION;
+            if (alwaysState && asked != FieldEditor.ModelScope.SERVICE_STATE) {
+                throw new IllegalArgumentException(
+                    e.describe() + " was given scope '" + e.getScope() + "', but a "
+                    + e.getKind() + " edit always writes the service's state model."
+                    + " Drop the scope, or use 'state' if you want to say so explicitly.");
+            }
         }
         // MESSAGE and FIELDS have no attribute-carrying overload, so accepting
         // an attributes map there could only discard it -- and a field accepted
