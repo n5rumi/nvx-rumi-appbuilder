@@ -7,6 +7,16 @@
     <name>{{AppDisplayName}} Parent</name>
 
     <properties>
+        <!-- Every JVM that boots a service needs these: EmbeddedXVM reaches into
+             JDK internals that Java 17 closes by default. Shared by surefire and
+             by the in-process runner (./run-in-process.sh) so the two cannot
+             drift apart. -->
+        <!-- Extra -D flags for ./run-in-process.sh, forwarded to the FORKED
+             runner JVM. MAVEN_OPTS cannot do this: it applies to Maven's own
+             JVM, and the runner is a separate process, so a port override set
+             that way is silently ignored and the service still collides. -->
+        <rumi.inprocess.args></rumi.inprocess.args>
+        <rumi.jvm.args>-Xmx2g -Djava.net.preferIPv4Stack=true --add-opens=java.base/jdk.internal.ref=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.management/sun.management=ALL-UNNAMED</rumi.jvm.args>
         <nvx.rumi.version>{{RumiVersion}}</nvx.rumi.version>
         <nvx.rumi.bindings.version>{{RumiBindingsVersion}}</nvx.rumi.bindings.version>
         <nvx.rumi.management.version>{{RumiMgmtVersion}}</nvx.rumi.management.version>

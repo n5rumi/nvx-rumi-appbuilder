@@ -214,6 +214,32 @@ verify_mode() {
         exit 1
     fi
     info "[${label}] Generated app built and ran cleanly against Rumi ${RUMI_VERSION}"
+
+    # ---- the in-process runner (RUMI-426) ----------------------------------
+    # Asserted here rather than in a unit test because none of it exists until an
+    # app is scaffolded: the runner is a TEMPLATE, and a template that references
+    # a missing API or ships at mode 644 passes every test in this repo.
+    local runner="${app}/test-demo-system/src/main/java/com/example/demo/InProcessRun.java"
+    [[ -f "${runner}" ]] || fail "[${label}] No in-process runner was scaffolded"
+    [[ -x "${app}/run-in-process.sh" ]] \
+        || fail "[${label}] run-in-process.sh is not executable -- ./run-in-process.sh will fail with permission denied"
+    # The name is load-bearing: "local" already means the Docker deployment that
+    # proves the cloud profile, and an agent asked to run an app reached for that
+    # word unprompted in three separate builds.
+    ! grep -qiE 'LocalRun|run-local' "${runner}" "${app}/run-in-process.sh" \
+        || fail "[${label}] The runner calls itself 'local', which already means the Docker deployment"
+    grep -q 'in-process' "${app}/README.md" \
+        || fail "[${label}] The generated README does not explain the in-process runner"
+    # A scaffolded app compiles at release 8 while it runs on 17, so anything the
+    # JDK gained after 8 compiles nowhere. The compile above catches it, but name
+    # the usual offenders so the failure says WHY rather than 'cannot find symbol'.
+    # Comment lines stripped first: the runner's javadoc deliberately NAMES the
+    # APIs it must not use, and grepping the raw file flagged that prose. A check
+    # that fires on its own documentation trains people to delete the check.
+    ! sed -E 's://.*::' "${runner}" | grep -vE '^[[:space:]]*(\*|/\*)' \
+        | grep -qE 'ProcessHandle|List\.of\(|Map\.of\(|Set\.of\(' \
+        || fail "[${label}] The runner uses a post-Java-8 API; scaffolded modules compile at release 8"
+    info "[${label}] In-process runner scaffolded and named correctly"
 }
 
 for mode in ${MODES:-samples bare}; do

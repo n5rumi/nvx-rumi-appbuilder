@@ -79,12 +79,39 @@ class TemplateProcessor {
                     String replacedContent = applyTokens(content, tokens);
                     Files.createDirectories(target.getParent());
                     Files.writeString(target, replacedContent);
+                    makeExecutableIfScript(target);
                 }
             }
             catch (IOException e) {
                 throw new RuntimeException(e);
             }
         });
+    }
+
+    /**
+     * Give a scaffolded {@code .sh} the executable bit.
+     *
+     * <p>Nothing in the copy above preserves file modes, so a shell script the
+     * template ships as executable arrives at 644 and {@code ./script.sh} fails
+     * with "permission denied". That reads as a broken scaffold rather than a
+     * missing bit, and the workaround (`bash script.sh`) teaches people to
+     * ignore the entrypoint we told them to use.
+     *
+     * <p>Best-effort on purpose: a filesystem without POSIX permissions (or a
+     * Windows checkout) is not a scaffolding failure, and the script still runs
+     * via {@code bash}. Keyed on the extension rather than a list of names so a
+     * new script does not have to remember to register itself.
+     */
+    private static void makeExecutableIfScript(Path target) {
+        if (!target.getFileName().toString().endsWith(".sh")) {
+            return;
+        }
+        try {
+            target.toFile().setExecutable(true, false);
+        }
+        catch (RuntimeException ignored) {
+            // see above: not worth failing a scaffold over
+        }
     }
 
     static String applyTokens(String input, Map<String, String> tokens) {

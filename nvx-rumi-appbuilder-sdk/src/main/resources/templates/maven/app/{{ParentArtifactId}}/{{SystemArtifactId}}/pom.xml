@@ -32,15 +32,21 @@
     <build>
         <plugins>
             <!-- EmbeddedXVM reaches into JDK internals that Java 17 blocks by
-                 default, so the test JVM needs the add-opens flags below. -->
+                 default, so any JVM that boots a service needs the add-opens
+                 flags. That is BOTH the test JVM and the in-process runner, so
+                 the flags live in one property (rumi.jvm.args, in the parent) —
+                 two copies drift, and the failure when they do is an obscure
+                 InaccessibleObjectException rather than anything that names the
+                 flag it is missing. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
                 <configuration>
-                    <argLine>-Xmx2g -Djava.net.preferIPv4Stack=true --add-opens=java.base/jdk.internal.ref=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.management/sun.management=ALL-UNNAMED</argLine>
+                    <argLine>${rumi.jvm.args}</argLine>
                 </configuration>
             </plugin>
+
             <plugin>
                 <groupId>com.neeve</groupId>
                 <artifactId>nvx-rumi-xar-maven-plugin</artifactId>
@@ -117,5 +123,52 @@
                 </plugins>
             </build>
         </profile>
+        <!-- ./run-in-process.sh activates this. The execution is bound to a PHASE
+             rather than invoked as `exec:exec` on the command line, because a CLI
+             goal runs on EVERY project in the reactor: the script needs `-am` so
+             the sibling service modules are built (that is what removes the need
+             for `mvn install`), and the parent pom is then in the reactor too and
+             has no exec configuration, so the build fails with "the parameter
+             'executable' is missing" before anything starts.
+
+             Keeping it in a profile that only this module declares means `-am`
+             can pull the siblings in without them inheriting an execution that
+             makes no sense for them. -->
+        <profile>
+            <id>in-process</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.1.1</version>
+                        <executions>
+                            <execution>
+                                <id>run-in-process</id>
+                                <phase>process-classes</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <executable>java</executable>
+                            <classpathScope>compile</classpathScope>
+                            <!-- `exec:exec` and not `exec:java`, deliberately:
+                                 exec:java runs in Maven's own JVM, which cannot be
+                                 given the add-opens flags EmbeddedXVM needs, so the
+                                 engine fails to start there. Forking also makes
+                                 %classpath the REACTOR's classpath, which is what
+                                 lets this run without `mvn install`.
+                                 basedir: InProcessRun resolves conf/config.xml
+                                 against it, and a forked JVM does not inherit
+                                 Maven's notion of it. -->
+                            <commandlineArgs>${rumi.jvm.args} ${rumi.inprocess.args} -Dbasedir=${project.basedir} -classpath %classpath {{AppPackageName}}.InProcessRun</commandlineArgs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
+
 </project>
