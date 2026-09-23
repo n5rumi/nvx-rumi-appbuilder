@@ -48,10 +48,17 @@ import com.neeve.util.UtlFile;
  *
  * <pre>./run-in-process.sh</pre>
  *
- * <p>which is {@code mvn -am -pl {{SystemArtifactId}} compile exec:exec} from the
- * app root. The {@code -am} matters: it builds the sibling service modules in the
- * same reactor, which is what removes the need for {@code mvn install} or a
- * hand-built classpath.
+ * <p>which is {@code mvn -am -pl {{SystemArtifactId}} -Pin-process process-classes}
+ * from the app root. Two parts of that are load-bearing. The {@code -am} builds the
+ * sibling service modules in the same reactor, which is what removes the need for
+ * {@code mvn install} or a hand-built classpath. And the run is a PHASE-bound
+ * execution inside a profile rather than {@code exec:exec} on the command line,
+ * because a command-line goal runs on every project in the reactor and {@code -am}
+ * puts the parent POM there, which has no exec configuration.
+ *
+ * <p>Anything you pass to the script reaches the runner's JVM:
+ * {@code ./run-in-process.sh -D{{AppTokenName}}.local.<service>.http.port=8188}, for
+ * a port something else on the machine already holds.
  *
  * <h2>What it starts, and why not everything</h2>
  *
@@ -134,9 +141,18 @@ public final class InProcessRun {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> haltingStop(started), "in-process-shutdown"));
 
         try {
+            // DISTINCT xvms, in first-seen order. The map is keyed by APP, and one
+            // xvm can host several apps -- iterating its values would then create
+            // the same xvm twice, on the same acceptor and the same rdat store.
+            Map<String, String> appsByXvm = new LinkedHashMap<String, String>();
             for (Map.Entry<String, String> entry : xvmsByApp.entrySet()) {
-                String appName = entry.getKey();
-                String xvmName = entry.getValue();
+                String existing = appsByXvm.get(entry.getValue());
+                appsByXvm.put(entry.getValue(),
+                    existing == null ? entry.getKey() : existing + ", " + entry.getKey());
+            }
+            for (Map.Entry<String, String> entry : appsByXvm.entrySet()) {
+                String xvmName = entry.getKey();
+                String appName = entry.getValue();
                 Properties env = new Properties();
                 env.setProperty("nv.ddl.profiles", "test");
                 env.setProperty("x.env.ROOT_DIR", runRoot.getCanonicalPath());
@@ -195,7 +211,12 @@ public final class InProcessRun {
                 if (xvm.getState() != EmbeddedXVM.State.Started) {
                     System.err.println("[in-process] a service is no longer running ("
                         + xvm.getState() + ") -- stopping the rest.");
-                    stopOnce(xvms);
+                    // haltingStop, NOT stopOnce: an unbounded stop on this thread
+                    // would hang exactly as the signal path does, never reach the
+                    // exit below, and leave STOPPING set so a later Ctrl-C found
+                    // the hook a no-op. That is the unkillable process this file
+                    // is supposed to prevent, reached by the other door.
+                    haltingStop(xvms);
                     return true;
                 }
             }
@@ -286,8 +307,8 @@ public final class InProcessRun {
         Map<String, TreeMap<String, String>> candidates = new LinkedHashMap<String, TreeMap<String, String>>();
         for (Element xvm : childrenNamed(xvms, "xvm")) {
             String xvmName = xvm.getAttribute("name");
-            if (xvmName.isEmpty() || "false".equalsIgnoreCase(xvm.getAttribute("enabled"))) {
-                continue;   // an explicitly disabled xvm is not a candidate
+            if (xvmName.isEmpty() || !isEnabled(xvm.getAttribute("enabled"))) {
+                continue;   // a disabled xvm is not a candidate
             }
             Element apps = firstChild(xvm, "apps");
             if (apps == null) {
@@ -308,6 +329,40 @@ public final class InProcessRun {
             chosen.put(e.getKey(), e.getValue().firstKey());
         }
         return chosen;
+    }
+
+    /**
+     * Whether an {@code enabled} attribute means yes.
+     *
+     * <p>The scaffolder writes it as a DDL placeholder rather than a literal:
+     * {@code enabled="${app.local.svc.xvm.enabled::true}"}. So a check for the
+     * string "false" is dead code, and this file had one -- the flag looked
+     * honoured and nothing honoured it.
+     *
+     * <p>Resolves exactly the {@code ${key::default}} form against system
+     * properties, which is what the script's passthrough sets, so
+     * {@code ./run-in-process.sh -Dapp.local.svc.xvm.enabled=false} leaves that
+     * service out of the preview. Anything more complex is the DDL engine's job
+     * and is deliberately not reimplemented here: an expression this does not
+     * recognise is treated as enabled, because failing to start a service the
+     * config wanted is worse than starting one it did not.
+     */
+    static boolean isEnabled(String attribute) {
+        if (attribute == null || attribute.trim().isEmpty()) {
+            return true;    // absent means enabled
+        }
+        String value = attribute.trim();
+        if (value.startsWith("${") && value.endsWith("}")) {
+            String inner = value.substring(2, value.length() - 1);
+            int sep = inner.indexOf("::");
+            String key = sep >= 0 ? inner.substring(0, sep) : inner;
+            String fallback = sep >= 0 ? inner.substring(sep + 2) : "true";
+            if (key.contains("${") || fallback.contains("${")) {
+                return true;   // nested expression: not ours to resolve
+            }
+            value = System.getProperty(key, fallback);
+        }
+        return !"false".equalsIgnoreCase(value.trim());
     }
 
     private static Element firstChild(Element parent, String name) {

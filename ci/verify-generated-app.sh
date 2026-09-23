@@ -236,10 +236,96 @@ verify_mode() {
     # Comment lines stripped first: the runner's javadoc deliberately NAMES the
     # APIs it must not use, and grepping the raw file flagged that prose. A check
     # that fires on its own documentation trains people to delete the check.
-    ! sed -E 's://.*::' "${runner}" | grep -vE '^[[:space:]]*(\*|/\*)' \
-        | grep -qE 'ProcessHandle|List\.of\(|Map\.of\(|Set\.of\(' \
-        || fail "[${label}] The runner uses a post-Java-8 API; scaffolded modules compile at release 8"
+    #
+    # Materialised into a variable rather than piped into `grep -q`, because under
+    # `pipefail` a `grep -q` that matches exits early, the upstream filter dies of
+    # SIGPIPE (141), the pipeline status goes non-zero, `!` inverts THAT, and the
+    # check silently passes. Latent while the file is small; a no-op once it grows
+    # past the pipe buffer.
+    local runner_code
+    runner_code="$(sed -E 's://.*::' "${runner}" | grep -vE '^[[:space:]]*(\*|/\*)' || true)"
+    if printf '%s' "${runner_code}" | grep -qE 'ProcessHandle|List\.of\(|Map\.of\(|Set\.of\('; then
+        fail "[${label}] The runner uses a post-Java-8 API; scaffolded modules compile at release 8"
+    fi
+    # A literal `--` inside an XML comment is illegal and Maven rejects the POM.
+    # This repo has been bitten by it before (see the header), and it recurred
+    # three times writing the runner, so it is a check rather than a habit.
+    local bad_pom
+    bad_pom="$(python3 - "${app}" <<'PYEOF'
+import re, sys, pathlib
+bad = []
+for f in pathlib.Path(sys.argv[1]).rglob("pom.xml"):
+    for m in re.finditer(r"<!--(.*?)-->", f.read_text(), re.S):
+        if re.search(r"(?<!<!)--(?!>)", m.group(1)):
+            bad.append(str(f))
+print("\n".join(sorted(set(bad))))
+PYEOF
+)"
+    [[ -z "${bad_pom}" ]] || fail "[${label}] Illegal '--' inside an XML comment: ${bad_pom}"
+
     info "[${label}] In-process runner scaffolded and named correctly"
+
+    # ---- and prove it actually RUNS -----------------------------------------
+    # Compiling it proves almost nothing about the thing users invoke: the
+    # profile, the -pl/-am reactor invocation, %classpath, -Dbasedir, the config
+    # parsing and XVM selection, and the store separation are ALL unexercised by a
+    # compile. That is exactly the "passes every test, explodes in the user's app"
+    # shape this script exists for.
+    #
+    # The gateway port is moved off 8080 on purpose: a developer machine often has
+    # something on it, and a bind failure here would look like a runner defect.
+    info "[${label}] Running the in-process runner"
+    local run_log="${WORK_DIR}/${label}-in-process.log"
+    (cd "${app}" && ./run-in-process.sh -Ddemo.local.gateway.http.port=8188 \
+        > "${run_log}" 2>&1) &
+    local runner_job=$!
+    local waited=0
+    while (( waited < 300 )); do
+        grep -q 'service(s): pid=' "${run_log}" 2>/dev/null && break
+        kill -0 "${runner_job}" 2>/dev/null || break
+        sleep 5; waited=$(( waited + 5 ))
+    done
+    if ! grep -q 'service(s): pid=' "${run_log}"; then
+        echo >&2; echo "!! [${label}] The in-process runner never came up. Log:" >&2
+        tail -30 "${run_log}" >&2
+        kill -9 "${runner_job}" 2>/dev/null || true
+        exit 1
+    fi
+    local run_pid
+    run_pid="$(grep -oE 'pid=[0-9]+' "${run_log}" | head -1 | cut -d= -f2)"
+    # A (sev) line means a service faulted after starting -- the runner cannot
+    # currently detect that itself, which is why the gate looks.
+    # The runner's own advisory line contains the literal "(sev)" (it tells you to
+    # look for one), so exclude its output. This is the second check here to fire
+    # on prose it documents: a grep for a token the code also NAMES has to exclude
+    # the naming, or it reports a fault on a healthy run.
+    # awk, not `grep | grep -v`: the runner's own advisory line contains the
+    # literal "(sev)" (it tells you to look for one), so the naming has to be
+    # excluded or a healthy run reports a fault. And `grep -v` is not portable
+    # here for the exit code -- ugrep, which shadows grep on some developer
+    # machines, returns 1 from `-v` even when it prints matching lines, so
+    # `grep -v ... && ...` silently never fires.
+    if awk '/\(sev\)/ && $0 !~ /^\[in-process\]/{f=1} END{exit !f}' "${run_log}"; then
+        echo >&2; echo "!! [${label}] A service faulted after starting:" >&2
+        awk '/\(sev\)/ && $0 !~ /^\[in-process\]/' "${run_log}" | head -5 >&2
+        kill -TERM "${run_pid}" 2>/dev/null || true
+        exit 1
+    fi
+    [[ -d "${app}/test-demo-system/target/inprocess" ]] \
+        || fail "[${label}] The runner did not use its own store root (target/inprocess)"
+    # And it must be killable: the graceful path can hang inside the engine, so
+    # the runner bounds it and halts. If this times out, that bound is broken.
+    kill -TERM "${run_pid}" 2>/dev/null || true
+    local gone=0
+    for _ in $(seq 1 12); do
+        sleep 3
+        kill -0 "${run_pid}" 2>/dev/null || { gone=1; break; }
+    done
+    if (( gone == 0 )); then
+        kill -9 "${run_pid}" 2>/dev/null || true
+        fail "[${label}] The runner did not exit on SIGTERM -- the bounded shutdown is broken"
+    fi
+    info "[${label}] In-process runner started, served, and exited on SIGTERM"
 }
 
 for mode in ${MODES:-samples bare}; do

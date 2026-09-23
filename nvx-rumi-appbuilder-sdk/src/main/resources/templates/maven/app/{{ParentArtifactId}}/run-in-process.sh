@@ -26,4 +26,8 @@ cd "$(dirname "$0")"
 #   ./run-in-process.sh -D{{AppTokenName}}.local.<service>.http.port=8188
 EXTRA=()
 if [ "$#" -gt 0 ]; then EXTRA=("-Drumi.inprocess.args=$*"); fi
-exec mvn -q -am -pl {{SystemArtifactId}} -Pin-process process-classes "${EXTRA[@]}"
+# ${EXTRA[@]:+...} and not "${EXTRA[@]}": expanding an EMPTY array under `set -u`
+# is an unbound-variable error in bash < 4.4, and /bin/bash on macOS is 3.2 -- so
+# the plain form breaks the no-argument invocation, which is the documented one.
+# CI on bash 5 can never catch it.
+exec mvn -q -am -pl {{SystemArtifactId}} -Pin-process process-classes ${EXTRA[@]:+"${EXTRA[@]}"}

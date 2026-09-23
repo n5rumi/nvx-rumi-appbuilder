@@ -152,7 +152,13 @@
                             </execution>
                         </executions>
                         <configuration>
-                            <executable>java</executable>
+                            <!-- ${java.home}, not a bare `java`: exec resolves a
+                                 bare name off PATH, where a JDK 8 rejects the
+                                 add-opens flags outright. ${java.home} is the JVM
+                                 Maven is running on, which is the one that just
+                                 compiled this app. (This repo already documents the
+                                 same PATH/JDK trap for javac in ci/.) -->
+                            <executable>${java.home}/bin/java</executable>
                             <classpathScope>compile</classpathScope>
                             <!-- `exec:exec` and not `exec:java`, deliberately:
                                  exec:java runs in Maven's own JVM, which cannot be
