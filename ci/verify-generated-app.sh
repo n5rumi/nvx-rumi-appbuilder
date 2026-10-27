@@ -250,10 +250,14 @@ PYEOF
     [[ -n "${release}" ]] \
         || fail "[${label}] The scaffold sets no maven.compiler.release; the compile target is implicit"
     (( release >= 9 )) \
-        || fail "[${label}] release=${release}: below 9 the add-opens flags this build needs do not exist"
-    grep -q 'JDK 17' "${app}/README.md" \
-        || fail "[${label}] The generated README does not state which JDK the app is built and run on"
-    info "[${label}] Compile target is release ${release}, matching the runtime"
+        || fail "[${label}] release=${release}: InProcessRun uses ProcessHandle, which is Java 9+"
+    # Derived from the value just extracted, NOT a hardcoded "JDK 17". Grepping
+    # for a literal that also lives in the template this gate reads is a check
+    # that matches its own documentation: it passed with the pom at release 11
+    # and the README still saying 17, while printing "matching the runtime".
+    grep -q "JDK ${release}" "${app}/README.md" \
+        || fail "[${label}] The pom compiles at release ${release} but the README does not say 'JDK ${release}' -- they disagree about what this app targets"
+    info "[${label}] Compile target is release ${release}, and the README agrees"
     # A literal `--` inside an XML comment is illegal and Maven rejects the POM.
     # This repo has been bitten by it before (see the header), and it recurred
     # three times writing the runner, so it is a check rather than a habit.
