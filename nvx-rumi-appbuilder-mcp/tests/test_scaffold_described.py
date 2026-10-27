@@ -54,8 +54,12 @@ def test_create_app_does_not_call_the_runner_local():
     The agent reached for the word "local" unprompted in three separate builds,
     so the description has to spend a sentence taking it back.
     """
+    # Whitespace-collapsed before matching. The previous form allowed a line
+    # break at exactly one position, so re-wrapping the docstring -- same
+    # sentence, same guarantee -- failed a test whose subject is the meaning.
     d = _description("create_app")
-    assert re.search(r'never call the in-process runner\s*\n?\s*"local"', d, re.I), (
+    flat = " ".join(_description("create_app").split())
+    assert re.search(r'never call the in-process runner "local"', flat, re.I), (
         "the description must say the runner is not called 'local'"
     )
     assert "rumi cloud local" in d, (
@@ -64,7 +68,15 @@ def test_create_app_does_not_call_the_runner_local():
 
 
 def test_the_generated_readme_and_the_description_agree():
-    """Both claim three run mechanisms; they must name the same three."""
+    """The README names all three run mechanisms; the description names three too.
+
+    Checked asymmetrically on purpose, and said out loud because the earlier
+    docstring claimed all three were cross-checked on both sides while only two
+    were. The README is the reference and spells out "cloud deployment"; the
+    description is read on every turn and earns its brevity by saying "`cloud` is
+    the real deployment" instead. So the third is matched on the word that
+    actually distinguishes it.
+    """
     tmpl = (pathlib.Path(__file__).resolve().parents[2]
             / "nvx-rumi-appbuilder-sdk/src/main/resources/templates/maven/app"
             / "{{ParentArtifactId}}" / "README.md")
@@ -74,3 +86,8 @@ def test_the_generated_readme_and_the_description_agree():
         assert mechanism in readme, f"README does not name {mechanism!r}"
     for mechanism in ("in-process", "rumi cloud local"):
         assert mechanism in d, f"create_app's description does not name {mechanism!r}"
+    # The third, on its distinguishing word rather than the README's phrasing.
+    assert "cloud" in d and "real deployment" in d, (
+        "create_app's description does not name the third mechanism (cloud); a "
+        "reader told about two of three will reach for the wrong one"
+    )
