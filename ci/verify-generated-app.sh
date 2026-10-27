@@ -230,23 +230,30 @@ verify_mode() {
         || fail "[${label}] The runner calls itself 'local', which already means the Docker deployment"
     grep -q 'in-process' "${app}/README.md" \
         || fail "[${label}] The generated README does not explain the in-process runner"
-    # A scaffolded app compiles at release 8 while it runs on 17, so anything the
-    # JDK gained after 8 compiles nowhere. The compile above catches it, but name
-    # the usual offenders so the failure says WHY rather than 'cannot find symbol'.
-    # Comment lines stripped first: the runner's javadoc deliberately NAMES the
-    # APIs it must not use, and grepping the raw file flagged that prose. A check
-    # that fires on its own documentation trains people to delete the check.
+    # The compile target must match the JDK the app RUNS on (RUMI-429). It was 8
+    # while the runtime was 17, so everything the JDK gained after 8 compiled
+    # nowhere while being present at runtime, and the error named your file
+    # rather than the mismatch.
     #
-    # Materialised into a variable rather than piped into `grep -q`, because under
-    # `pipefail` a `grep -q` that matches exits early, the upstream filter dies of
-    # SIGPIPE (141), the pipeline status goes non-zero, `!` inverts THAT, and the
-    # check silently passes. Latent while the file is small; a no-op once it grows
-    # past the pipe buffer.
-    local runner_code
-    runner_code="$(sed -E 's://.*::' "${runner}" | grep -vE '^[[:space:]]*(\*|/\*)' || true)"
-    if printf '%s' "${runner_code}" | grep -qE 'ProcessHandle|List\.of\(|Map\.of\(|Set\.of\('; then
-        fail "[${label}] The runner uses a post-Java-8 API; scaffolded modules compile at release 8"
-    fi
+    # This is now the invariant rather than a blacklist of post-8 APIs. The
+    # blacklist had to be relaxed the moment the release moved, and it fired on
+    # the javadoc that NAMED the APIs it was hunting -- a check that cries wolf
+    # on its own documentation gets deleted.
+    local release
+    release="$(python3 - "${app}/pom.xml" <<'PYEOF'
+import re, sys
+m = re.search(r"<maven\.compiler\.release>(\d+)</maven\.compiler\.release>",
+              open(sys.argv[1]).read())
+print(m.group(1) if m else "")
+PYEOF
+)"
+    [[ -n "${release}" ]] \
+        || fail "[${label}] The scaffold sets no maven.compiler.release; the compile target is implicit"
+    (( release >= 9 )) \
+        || fail "[${label}] release=${release}: below 9 the add-opens flags this build needs do not exist"
+    grep -q 'JDK 17' "${app}/README.md" \
+        || fail "[${label}] The generated README does not state which JDK the app is built and run on"
+    info "[${label}] Compile target is release ${release}, matching the runtime"
     # A literal `--` inside an XML comment is illegal and Maven rejects the POM.
     # This repo has been bitten by it before (see the header), and it recurred
     # three times writing the runner, so it is a check rather than a habit.

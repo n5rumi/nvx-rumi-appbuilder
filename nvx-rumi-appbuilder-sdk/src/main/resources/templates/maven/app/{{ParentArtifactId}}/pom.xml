@@ -16,6 +16,8 @@
              JVM, and the runner is a separate process, so a port override set
              that way is silently ignored and the service still collides. -->
         <rumi.inprocess.args></rumi.inprocess.args>
+        <!-- Overridable, but not downwards past 9: see the add-opens flags below. -->
+        <maven.compiler.release>17</maven.compiler.release>
         <rumi.jvm.args>-Xmx2g -Djava.net.preferIPv4Stack=true --add-opens=java.base/jdk.internal.ref=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-opens=java.management/sun.management=ALL-UNNAMED</rumi.jvm.args>
         <nvx.rumi.version>{{RumiVersion}}</nvx.rumi.version>
         <nvx.rumi.bindings.version>{{RumiBindingsVersion}}</nvx.rumi.bindings.version>
@@ -108,7 +110,17 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
-                    <release>8</release>
+                    <!-- Compile for the JDK this app RUNS on, which is 17.
+                         It was 8, so everything the JDK gained after 8 compiled
+                         nowhere while being present at runtime: the error always
+                         landed late and always named your file rather than the
+                         mismatch. Rumi's own jars ARE Java 8 (class major 52),
+                         which is why 8 looked right — but a consumer may target
+                         higher than its library, and this one must, because the
+                         same build already requires 17: the add-opens flags in
+                         rumi.jvm.args above do not exist before 9, and
+                         ci/verify-generated-app.sh states "Java 17+". -->
+                    <release>${maven.compiler.release}</release>
                 </configuration>
             </plugin>
 

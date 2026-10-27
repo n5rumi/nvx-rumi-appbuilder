@@ -383,22 +383,20 @@ public final class InProcessRun {
     }
 
     /**
-     * This JVM's pid, the Java 8 way.
+     * This JVM's pid.
      *
-     * <p>NOT {@code ProcessHandle.current().pid()}: a scaffolded app compiles at
-     * {@code <release>8</release>} while it RUNS on a 17 JVM, so anything added
-     * to the JDK after 8 compiles nowhere and the error names this file rather
-     * than the mismatch. (That mismatch is itself a filed defect; until it is
-     * fixed, template code has to stay Java 8.)
+     * <p>Printed so whoever started this can stop it BY PID rather than
+     * pattern-killing every process that looks similar -- a pattern-kill matches
+     * the shell running it and kills itself.
      *
-     * <p>The pid is printed so whoever started this can stop it by pid rather
-     * than pattern-killing every process that looks similar, which matches the
-     * shell running the pattern and kills itself.
+     * <p>Uses {@code ProcessHandle}, which is Java 9+. That is only safe because
+     * the scaffold now compiles for the JDK it runs on; while it compiled for 8
+     * this had to go the long way round through {@code ManagementFactory}, and
+     * the error when it did not was a {@code cannot find symbol} naming this
+     * file rather than the release mismatch.
      */
     private static String currentPid() {
-        String vmName = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
-        int at = vmName.indexOf('@');
-        return at > 0 ? vmName.substring(0, at) : vmName;
+        return String.valueOf(ProcessHandle.current().pid());
     }
 
     private static File baseDirectory() {

@@ -67,6 +67,16 @@ the above when you just want to look at the app.
         └── test/java/…/AbstractTest.java   base class for in-process tests
 ```
 
+## Java version
+
+Built and run on **JDK 17**. `maven.compiler.release` is 17 in the parent pom, so
+the API you compile against is the API you run on.
+
+Rumi's own jars are compiled for Java 8, which is fine — an app may target a
+higher release than the library it uses. Do not lower this below 9: the
+`add-opens` flags this build needs to start a service (`rumi.jvm.args`) do not
+exist before it.
+
 ## Tests
 
 ```bash
