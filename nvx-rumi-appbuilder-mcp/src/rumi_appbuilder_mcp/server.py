@@ -83,6 +83,25 @@ def build_server(base_url: str | None = None) -> FastMCP:
         messages and handlers first. The choice is recorded in the app and
         inherited by every service you add later. Pass include_samples=True only
         if you want the illustrative Echo/alarm/message-sending examples.
+
+        The scaffold also includes a SUPPORTED WAY TO RUN the app:
+        `./run-in-process.sh` at the app root starts every service in ONE process
+        under the `test` runtime profile, in seconds, with no broker, no Docker
+        and no `mvn install`. Use it to put a running app in front of someone.
+        Do not build a launcher of your own -- a plain `java -cp` needs a
+        classpath that cannot be assembled without `mvn install`, which is why
+        hand-rolled launchers here end up as a JUnit class pretending to be an
+        application.
+
+        Pass extra JVM flags straight through, e.g. to move a port something
+        else already holds: `./run-in-process.sh -Dmyapp.local.web.http.port=8188`.
+
+        That is ONE of three ways to run, and the names are not interchangeable:
+        `in-process` is the above; `local` means `rumi cloud local`, a Docker
+        deployment that PROVES the `cloud` profile before promotion and is a
+        verification step rather than a preview; `cloud` is the real deployment.
+        The generated README states all three. Never call the in-process runner
+        "local".
         """
         return rest.post(
             "/v1/apps",
