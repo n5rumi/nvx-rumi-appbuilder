@@ -20,8 +20,10 @@ import com.example.demo.gateway.Main;
  * -> Rumi state mutation -> reply -> HTTP response. Asserts the echo and that
  * the state-backed count increments across calls.
  *
- * Uses java.net.HttpURLConnection (Java 8 API) since generated apps compile at
- * Java 8 level; the test JVM itself runs on Java 17.
+ * Uses java.net.HttpURLConnection because it is adequate for a one-line round
+ * trip and has nothing to close, not because of the compile level: generated
+ * apps compile at release 17 (RUMI-429), so java.net.http.HttpClient is
+ * available too.
  */
 public class WebserviceTest extends AbstractTest {
 

@@ -89,3 +89,21 @@ def test_the_reserved_rule_matches_the_sdk():
     claimed = set(re.findall(r'`([a-z][a-zA-Z0-9]*)`', para))
     bogus = {c for c in claimed if c not in actual and c not in {"payloadMessage", "requestMetadata"}}
     assert not bogus, f"the description calls these reserved and the SDK does not: {sorted(bogus)}"
+
+
+def test_create_app_names_the_class_finder_it_scaffolds():
+    """I-06: the scaffold carries find-class.sh, so the description must say so.
+
+    An affordance the agent does not know about is one it does not use -- it goes
+    back to scanning every jar, which is the thing the script exists to stop.
+    Same reasoning as the run-in-process.sh sentence next to it.
+    """
+    flat = " ".join(_description("create_app").split())
+    assert "find-class.sh" in flat, (
+        "create_app's description does not mention find-class.sh, so an agent "
+        "hitting an unresolved Rumi type will scan the jars by hand instead"
+    )
+    assert "do not scan the jars yourself" in flat.lower(), (
+        "naming the script is not enough -- the description has to take back the "
+        "jar scan, which is what the reporting session actually did"
+    )

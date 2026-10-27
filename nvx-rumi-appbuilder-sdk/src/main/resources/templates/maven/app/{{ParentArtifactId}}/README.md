@@ -83,6 +83,20 @@ sure exists does not turn up.
         └── test/java/…/AbstractTest.java   base class for in-process tests
 ```
 
+## Java version
+
+Built and run on **JDK 17**. `maven.compiler.release` is 17 in the parent pom, so
+the API you compile against is the API you run on.
+
+Rumi's own jars are compiled for Java 8, which is fine — an app may target a
+higher release than the library it uses.
+
+**Do not lower this below 9.** `InProcessRun` reports its own pid with
+`ProcessHandle`, which arrived in Java 9, so a lower release fails to compile
+with `cannot find symbol: class ProcessHandle`. The `--add-opens` flags in
+`rumi.jvm.args` are *not* the reason: those are runtime JVM flags and work
+regardless of what release the bytecode was compiled for.
+
 ## Tests
 
 ```bash

@@ -91,6 +91,31 @@ def build_server(base_url: str | None = None) -> FastMCP:
         artifact_prefix="paywhere" derives `paywhere-paywhereprospectportal`, and
         the only way back is to delete the app and start again. The derived value
         is in this call's result either way -- READ IT before building on the app.
+
+        The scaffold also includes a SUPPORTED WAY TO RUN the app:
+        `./run-in-process.sh` at the app root starts every service in ONE process
+        under the `test` runtime profile, in seconds, with no broker, no Docker
+        and no `mvn install`. Use it to put a running app in front of someone.
+        Do not build a launcher of your own -- a plain `java -cp` needs a
+        classpath that cannot be assembled without `mvn install`, which is why
+        hand-rolled launchers here end up as a JUnit class pretending to be an
+        application.
+
+        Pass extra JVM flags straight through, e.g. to move a port something
+        else already holds: `./run-in-process.sh -Dmyapp.local.web.http.port=8188`.
+
+        That is ONE of three ways to run, and the names are not interchangeable:
+        `in-process` is the above; `local` means `rumi cloud local`, a Docker
+        deployment that PROVES the `cloud` profile before promotion and is a
+        verification step rather than a preview; `cloud` is the real deployment.
+        The generated README states all three. Never call the in-process runner
+        "local".
+
+        The scaffold also carries `./find-class.sh`: Rumi is ~40 jars and the
+        package name does not name the artifact, so when a Rumi type will not
+        resolve, `./find-class.sh RogXStringMap` prints the artifact and the
+        <dependency> block to paste. It reads the local Maven repo and starts no
+        build. Do not scan the jars yourself.
         """
         return rest.post(
             "/v1/apps",
