@@ -196,6 +196,15 @@ verify_mode() {
     app="$("${JAVA_HOME}/bin/java" -cp "${CP}:${WORK_DIR}" Build \
         "${out_dir}" "${RUMI_VERSION}" "${include_samples}" | tail -1)"
     [[ -d "${app}" ]] || fail "[${label}] Scaffolding did not produce an app at '${app}'"
+    # ---- RUMI-431 / I-01 ----------------------------------------------------
+    # A scaffolder about to create dozens of directories must create the first
+    # one. It used to return 400, costing a `mkdir -p` and a second call on every
+    # single app. Proven by scaffolding into a path that does not exist yet.
+    local fresh="${out_dir}/made-by-create-app/nested"
+    "${JAVA_HOME}/bin/java" -cp "${CP}:${WORK_DIR}" Build "${fresh}" \
+        "${RUMI_VERSION}" "${include_samples}" >/dev/null 2>&1 \
+        || fail "[${label}] create_app could not scaffold into a directory that did not exist (I-01)"
+    [[ -d "${fresh}" ]] || fail "[${label}] create_app did not create its target directory (I-01)"
     info "[${label}] Scaffolded ${app}"
 
     local test_dir="${app}/test-demo-system/src/test/java/com/example/demo"
@@ -206,7 +215,11 @@ verify_mode() {
     done
 
     info "[${label}] Building and running the generated system"
-    if ! (cd "${app}" && "${MVN}" test -DfailIfNoTests=false); then
+    # Tee'd rather than left on the terminal: the Jersey check below has to read
+    # this phase's output, and the warning it looks for is emitted HERE and not
+    # by the runner. `set -o pipefail` is on, so `if !` still tests mvn's status.
+    local build_log="${out_dir}/build.log"
+    if ! (cd "${app}" && "${MVN}" test -DfailIfNoTests=false 2>&1 | tee "${build_log}"); then
         echo >&2
         echo "!! [${label}] The generated app failed to build or run." >&2
         echo "!! This is a builder defect, not a test defect — the generated app is" >&2
@@ -230,6 +243,29 @@ verify_mode() {
         || fail "[${label}] The runner calls itself 'local', which already means the Docker deployment"
     grep -q 'in-process' "${app}/README.md" \
         || fail "[${label}] The generated README does not explain the in-process runner"
+
+    # ---- RUMI-431 / I-06 ----------------------------------------------------
+    # Rumi's package names do not name its artifacts, so `cannot find symbol`
+    # costs a scan of every jar on the machine. find-class.sh answers it from the
+    # local repo. Asserted by RUNNING it on the ticket's own example -- that it
+    # exists and is executable says nothing about whether it works, and this is a
+    # template, so no unit test in this repo ever executes it.
+    local finder="${app}/find-class.sh"
+    [[ -x "${finder}" ]] \
+        || fail "[${label}] find-class.sh is missing or not executable (I-06)"
+    local found
+    found="$("${finder}" RogXStringMap 2>/dev/null | head -1 || true)"
+    [[ "${found}" == "nvx-rumi-ods" ]] \
+        || fail "[${label}] find-class.sh RogXStringMap said '${found}', expected nvx-rumi-ods (I-06)"
+    # And it must FAIL on a name that is not there, rather than exit 0 with
+    # nothing -- a finder that is silently empty reads as "no such class" when it
+    # is really "the search is broken".
+    if "${finder}" NoSuchRumiClassXyzzy >/dev/null 2>&1; then
+        fail "[${label}] find-class.sh exited 0 for a class that does not exist (I-06)"
+    fi
+    grep -q 'find-class.sh' "${app}/README.md" \
+        || fail "[${label}] The generated README does not mention find-class.sh (I-06)"
+    info "[${label}] find-class.sh resolves a Rumi class to its artifact"
     # The compile target must match the JDK the app RUNS on (RUMI-429). It was 8
     # while the runtime was 17, so everything the JDK gained after 8 compiled
     # nowhere while being present at runtime, and the error named your file
@@ -337,6 +373,32 @@ PYEOF
         fail "[${label}] The runner did not exit on SIGTERM -- the bounded shutdown is broken"
     fi
     info "[${label}] In-process runner started, served, and exited on SIGTERM"
+
+    # ---- RUMI-431 / I-16 ----------------------------------------------------
+    # A WARNING on a CORRECT boot trains whoever reads these logs to ignore
+    # warnings, so a clean boot has to actually be clean.
+    #
+    # WARNING: BOTH logs, and that is the whole point of this check. Neither warning is
+    # visible from the source, and they do not appear in the same place: removing
+    # the jakarta.activation-api dependency reproduces the DataSource warning
+    # during `mvn test` and NOT in the runner, whose classpath picks the provider
+    # up transitively. A version of this check that read only the run log passed
+    # a mutation run with the fix torn out -- a check that looks in one stream for
+    # a warning emitted in the other is a check that can never fail.
+    local jersey_noise='jakarta.activation.DataSource for a default provider|JAXBContext implementation could not be found'
+    local l
+    for l in "${build_log}" "${run_log}"; do
+        [[ -f "${l}" ]] || continue
+        if grep -qE "${jersey_noise}" "${l}"; then
+            echo >&2
+            echo "!! [${label}] The webservice logs a spurious Jersey warning in ${l##*/}:" >&2
+            grep -E "${jersey_noise}" "${l}" | head -3 >&2
+            echo "!! A warning on a correct boot teaches people to ignore warnings." >&2
+            echo "!! Supply the missing provider; do not raise the logger level." >&2
+            exit 1
+        fi
+    done
+    info "[${label}] Webservice boots with no spurious Jersey warnings (build + run logs)"
 }
 
 for mode in ${MODES:-samples bare}; do

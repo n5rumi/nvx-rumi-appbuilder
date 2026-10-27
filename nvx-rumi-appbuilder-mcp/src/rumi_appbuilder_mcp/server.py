@@ -75,6 +75,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
         messaging_provider: str = "ACTIVEMQ",
         build_tool: str = "MAVEN",
         include_samples: bool = False,
+        artifact_id: str | None = None,
     ) -> dict[str, Any]:
         """Scaffold a new Rumi app. Returns the resolved AppParams so the caller knows where the app landed on disk.
 
@@ -83,6 +84,13 @@ def build_server(base_url: str | None = None) -> FastMCP:
         messages and handlers first. The choice is recorded in the app and
         inherited by every service you add later. Pass include_samples=True only
         if you want the illustrative Echo/alarm/message-sending examples.
+
+        artifact_id names the Maven artifacts explicitly. Left unset it is derived
+        from app_name, which strips punctuation and spaces and so stutters against
+        its own prefix: app_name="Paywhere Prospect Portal" with
+        artifact_prefix="paywhere" derives `paywhere-paywhereprospectportal`, and
+        the only way back is to delete the app and start again. The derived value
+        is in this call's result either way -- READ IT before building on the app.
 
         The scaffold also includes a SUPPORTED WAY TO RUN the app:
         `./run-in-process.sh` at the app root starts every service in ONE process
@@ -102,6 +110,12 @@ def build_server(base_url: str | None = None) -> FastMCP:
         verification step rather than a preview; `cloud` is the real deployment.
         The generated README states all three. Never call the in-process runner
         "local".
+
+        The scaffold also carries `./find-class.sh`: Rumi is ~40 jars and the
+        package name does not name the artifact, so when a Rumi type will not
+        resolve, `./find-class.sh RogXStringMap` prints the artifact and the
+        <dependency> block to paste. It reads the local Maven repo and starts no
+        build. Do not scan the jars yourself.
         """
         return rest.post(
             "/v1/apps",
@@ -118,6 +132,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
                 "messagingProvider": messaging_provider,
                 "buildTool": build_tool,
                 "includeSamples": include_samples,
+                "artifactId": artifact_id,
             },
         )
 
@@ -358,7 +373,17 @@ def build_server(base_url: str | None = None) -> FastMCP:
         edits: list[dict[str, Any]],
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Apply a whole model in ONE call. edits is an ordered list of {"kind","service","name","scope","fields","is","contains","attributes"} where kind is message|message_entity|state_entity|collection|fields. scope is messages|state|roe. It is REQUIRED for kind:"fields", because a message and a state entity can share a name and guessing would silently edit the wrong one. It is optional for message and message_entity, defaulting to the service message model. A state_entity or collection always writes the service state model, so a scope there is refused unless it is "state". Reach for this FIRST when building or extending a model - one call instead of one per message, entity, collection and field. Use attributes for entity-level ADM attributes on a state_entity or message_entity, notably {"asEmbedded":"true"} to declare an embedded entity; field-level attributes go on the field itself. Order is preserved, so an edit can add a message and a later edit can add fields to it. All-or-nothing: a rejected edit rolls the whole batch back and the app is left exactly as it was. The result reports each item, including which were no-ops because they already existed, so re-applying a model is safe."""
+        """Apply a whole model in ONE call. edits is an ordered list of {"kind","service","name","scope","fields","is","contains","attributes"} where kind is message|message_entity|state_entity|collection|fields. scope is messages|state|roe. It is REQUIRED for kind:"fields", because a message and a state entity can share a name and guessing would silently edit the wrong one. It is optional for message and message_entity, defaulting to the service message model. A state_entity or collection always writes the service state model, so a scope there is refused unless it is "state". Reach for this FIRST when building or extending a model - one call instead of one per message, entity, collection and field. Use attributes for entity-level ADM attributes on a state_entity or message_entity, notably {"asEmbedded":"true"} to declare an embedded entity; field-level attributes go on the field itself. Order is preserved, so an edit can add a message and a later edit can add fields to it. All-or-nothing: a rejected edit rolls the whole batch back and the app is left exactly as it was. The result reports each item, including which were no-ops because they already existed, so re-applying a model is safe.
+
+        RESERVED FIELD NAMES. A field whose generated getter would collide with a
+        final method on com.neeve.rog.impl.RogNode / com.neeve.sma.MessageViewImpl
+        is rejected, because the generated source would not compile. There are ~70;
+        the ones anyone naming a business field actually reaches for are
+        `message`, `metadata`, `attachment`, `binding`, `parent`, `nodeType`,
+        `objectType`, `oid` and `ofid`. Prefix or rename instead -- `payloadMessage`,
+        `requestMetadata`. The rejection names the exact field, but it rejects the
+        WHOLE call, so one reserved name costs every edit in the batch.
+        """
         return rest.post(
             "/v1/model/batch",
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},
@@ -377,7 +402,17 @@ def build_server(base_url: str | None = None) -> FastMCP:
         fields: list[dict[str, Any]] | None = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Add one field, or several at once. scope is messages|state|roe; type is the message/entity name. PREFER the fields[] form - [{"name","type","attributes"}] - when adding more than one: it is one call and one write instead of a round trip per field, and a rejected field means none are added. Send either name or fields, not both. Each field gets a stable, never-reused id."""
+        """Add one field, or several at once. scope is messages|state|roe; type is the message/entity name. PREFER the fields[] form - [{"name","type","attributes"}] - when adding more than one: it is one call and one write instead of a round trip per field, and a rejected field means none are added. Send either name or fields, not both. Each field gets a stable, never-reused id.
+
+        RESERVED FIELD NAMES. A field whose generated getter would collide with a
+        final method on com.neeve.rog.impl.RogNode / com.neeve.sma.MessageViewImpl
+        is rejected, because the generated source would not compile. There are ~70;
+        the ones anyone naming a business field actually reaches for are
+        `message`, `metadata`, `attachment`, `binding`, `parent`, `nodeType`,
+        `objectType`, `oid` and `ofid`. Prefix or rename instead -- `payloadMessage`,
+        `requestMetadata`. The rejection names the exact field, but it rejects the
+        WHOLE call, so one reserved name costs every edit in the batch.
+        """
         return rest.post(
             f"/v1/services/{service}/fields",
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},

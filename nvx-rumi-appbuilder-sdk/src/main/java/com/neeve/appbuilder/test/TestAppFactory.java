@@ -170,7 +170,11 @@ public final class TestAppFactory {
          * (which is {@code parentDir/<artifactPrefix>-<appTokenName>}).
          */
         public Path scaffoldAt(Path parentDir) throws IOException {
-            Files.createDirectories(parentDir);
+            // Deliberately NOT createDirectories(parentDir): AppParams creates
+            // its own target now (RUMI-431 / I-01), and a fixture that pre-made
+            // the directory masked that from every test that uses it -- including
+            // the release gate, where a check for exactly this passed with the fix
+            // torn out. Letting the real path run means every caller covers it.
             ApplicationBuilder.AppParams params = new ApplicationBuilder.AppParams(
                 appName, parentDir.toString(), packageName, groupId, artifactPrefix,
                 rumiVersion, rumiBindingsVersion, rumiMgmtVersion,
