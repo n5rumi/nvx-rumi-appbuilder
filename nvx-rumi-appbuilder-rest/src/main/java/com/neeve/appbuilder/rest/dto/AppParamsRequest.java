@@ -43,6 +43,15 @@ public final class AppParamsRequest {
     private final String messagingProvider;
     private final String buildTool;
     private final Boolean includeSamples;
+    /**
+     * An explicit artifact id, or null to derive one from the app name.
+     *
+     * <p>Derivation strips punctuation and spaces, so a natural app name
+     * stutters against its own prefix: "Paywhere Prospect Portal" with prefix
+     * "paywhere" derived `paywhere-paywhereprospectportal`, recoverable only by
+     * deleting the app and starting again (RUMI-431 / I-02).
+     */
+    private final String artifactId;
 
     @JsonCreator
     public AppParamsRequest(@JsonProperty("appName") String appName,
@@ -56,7 +65,8 @@ public final class AppParamsRequest {
                             @JsonProperty("encodingType") String encodingType,
                             @JsonProperty("messagingProvider") String messagingProvider,
                             @JsonProperty("buildTool") String buildTool,
-                            @JsonProperty("includeSamples") Boolean includeSamples) {
+                            @JsonProperty("includeSamples") Boolean includeSamples,
+                            @JsonProperty("artifactId") String artifactId) {
         this.appName = appName;
         this.appDir = appDir;
         this.packageName = packageName;
@@ -69,6 +79,7 @@ public final class AppParamsRequest {
         this.messagingProvider = messagingProvider;
         this.buildTool = buildTool;
         this.includeSamples = includeSamples;
+        this.artifactId = artifactId;
     }
 
     public ApplicationBuilder.AppParams toSdk() {
@@ -84,7 +95,8 @@ public final class AppParamsRequest {
             encodingType != null ? ApplicationBuilder.EncodingType.valueOf(encodingType.toUpperCase()) : ApplicationBuilder.EncodingType.QUARK,
             messagingProvider != null ? ApplicationBuilder.MessagingProvider.valueOf(messagingProvider.toUpperCase()) : ApplicationBuilder.MessagingProvider.ACTIVEMQ,
             buildTool != null ? ApplicationBuilder.BuildTool.valueOf(buildTool.toUpperCase()) : ApplicationBuilder.BuildTool.MAVEN,
-            includeSamples == null || includeSamples
+            includeSamples == null || includeSamples,
+            artifactId
         );
     }
 

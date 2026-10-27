@@ -16,6 +16,7 @@
              parent POM) so only webservice modules pull in Jetty/Jersey. -->
         <jetty.version>12.0.36</jetty.version>
         <jersey.version>3.1.5</jersey.version>
+        <jakarta.activation.version>2.1.3</jakarta.activation.version>
     </properties>
 
     <dependencies>
@@ -52,6 +53,18 @@
             <groupId>org.glassfish.jersey.media</groupId>
             <artifactId>jersey-media-json-jackson</artifactId>
             <version>${jersey.version}</version>
+        </dependency>
+        <!-- Supplied, not suppressed. Without it Jersey logs a WARNING on every
+             clean boot: "A class jakarta.activation.DataSource for a default
+             provider MessageBodyWriter<jakarta.activation.DataSource> was not
+             found." It is Jersey reporting a MISSING OPTIONAL PROVIDER, so the
+             direct answer is to provide it; raising the logger level would hide
+             a true message instead. A warning on a correct boot trains whoever
+             reads these logs to ignore warnings (RUMI-431 / I-16). -->
+        <dependency>
+            <groupId>jakarta.activation</groupId>
+            <artifactId>jakarta.activation-api</artifactId>
+            <version>${jakarta.activation.version}</version>
         </dependency>
     </dependencies>
 

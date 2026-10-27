@@ -111,6 +111,14 @@ public class ApplicationBuilder {
         private final String packageName;
         private final String groupId;
         private final String artifactPrefix;
+        /**
+         * An explicit artifact id, or null to derive one from the app name.
+         *
+         * <p>Nullable for the same reason {@code includeSamples} is: this class
+         * is deserialized from the app's {@code .rumi} descriptor by Gson, and a
+         * descriptor written before this option existed carries no such field.
+         */
+        private final String artifactId;
         private final String rumiVersion;
         private final String rumiBindingsVersion;
         private final String rumiMgmtVersion;
@@ -163,14 +171,63 @@ public class ApplicationBuilder {
                          MessagingProvider messagingProvider,
                          BuildTool buildTool,
                          boolean includeSamples) {
+            this(appName, appDir, packageName, groupId, artifactPrefix, rumiVersion,
+                 rumiBindingsVersion, rumiMgmtVersion, encodingType, messagingProvider,
+                 buildTool, includeSamples, null);
+        }
+
+        public AppParams(String appName,
+                         String appDir,
+                         String packageName,
+                         String groupId,
+                         String artifactPrefix,
+                         String rumiVersion,
+                         String rumiBindingsVersion,
+                         String rumiMgmtVersion,
+                         EncodingType encodingType,
+                         MessagingProvider messagingProvider,
+                         BuildTool buildTool,
+                         boolean includeSamples,
+                         String artifactId) {
             if (appName == null) {
                 throw new IllegalArgumentException("app name cannot be null");
             }
             if (appDir == null) {
                 throw new IllegalArgumentException("app dir cannot be null");
             }
-            if (Files.notExists(Paths.get(appDir).toAbsolutePath())) {
-                throw new IllegalArgumentException("app dir '" + appDir + "' does not exist");
+            // Validated BEFORE the directory below, which has a side effect:
+            // a rejected call must not leave a directory behind.
+            // Reject an unusable id HERE rather than writing it into the POM.
+            // Maven's own artifactId grammar is [A-Za-z0-9_.-]+; a value with a
+            // space or a slash produces a POM Maven refuses to read, and the
+            // caller would meet that as an opaque build failure several calls
+            // later with nothing pointing back at this argument. Accept-and-break
+            // is the trap this repo keeps paying for (RUMI-424), so: refuse, and
+            // say what is wrong.
+            if (artifactId != null && !artifactId.trim().isEmpty()
+                && !artifactId.trim().matches("[A-Za-z0-9_.-]+")) {
+                throw new IllegalArgumentException(
+                    "artifact id '" + artifactId.trim() + "' is not a valid Maven artifactId;"
+                    + " use letters, digits, '-', '_' and '.' only (no spaces or slashes)");
+            }
+
+            // CREATE it rather than refuse. A scaffolder that is about to make
+            // dozens of directories declining to make the first is a surprising
+            // asymmetry, and it cost a round trip on every single app: the caller
+            // gets a 400, runs one `mkdir -p`, and calls again (RUMI-431 / I-01).
+            Path appDirPath = Paths.get(appDir).toAbsolutePath();
+            if (Files.notExists(appDirPath)) {
+                try {
+                    Files.createDirectories(appDirPath);
+                }
+                catch (IOException e) {
+                    throw new IllegalArgumentException(
+                        "app dir '" + appDir + "' does not exist and could not be created: "
+                        + e.getMessage(), e);
+                }
+            }
+            else if (!Files.isDirectory(appDirPath)) {
+                throw new IllegalArgumentException("app dir '" + appDir + "' is not a directory");
             }
             if (packageName == null) {
                 throw new IllegalArgumentException("package name cannot be null");
@@ -202,6 +259,7 @@ public class ApplicationBuilder {
             this.messagingProvider = messagingProvider != null ? messagingProvider : MessagingProvider.ACTIVEMQ;
             this.buildTool = buildTool != null ? buildTool : BuildTool.MAVEN;
             this.includeSamples = includeSamples;
+            this.artifactId = artifactId;
             this.appTokenName = appName.toLowerCase().replaceAll("\\s+", "");
             this.tokenMap = toTokenMap();
         }
@@ -250,9 +308,18 @@ public class ApplicationBuilder {
             map.put(TokenUtils.toToken("AppPackagePath"), packageName.replace('.', '/'));
             map.put(TokenUtils.toToken("GroupId"), groupId);
             map.put(TokenUtils.toToken("ArtifactPrefix"), artifactPrefix);
-            map.put(TokenUtils.toToken("ParentArtifactId"), artifactPrefix + "-" + appTokenName);
-            map.put(TokenUtils.toToken("RoeArtifactId"), artifactPrefix + "-" + appTokenName + "-roe");
-            map.put(TokenUtils.toToken("SystemArtifactId"), artifactPrefix + "-" + appTokenName + "-system");
+            // The artifact id is DERIVED from the app name unless the caller names
+            // it. Derivation strips punctuation and spaces, so a natural app name
+            // stutters: "Paywhere Prospect Portal" with prefix "paywhere" became
+            // `paywhere-paywhereprospectportal`, recoverable only by deleting the
+            // app and starting again. The derived value is returned either way, so
+            // a caller can see what it got before building on it (RUMI-431 / I-02).
+            String baseArtifactId = artifactId != null && !artifactId.trim().isEmpty()
+                ? artifactId.trim()
+                : artifactPrefix + "-" + appTokenName;
+            map.put(TokenUtils.toToken("ParentArtifactId"), baseArtifactId);
+            map.put(TokenUtils.toToken("RoeArtifactId"), baseArtifactId + "-roe");
+            map.put(TokenUtils.toToken("SystemArtifactId"), baseArtifactId + "-system");
             map.put(TokenUtils.toToken("BusName"), appTokenName);
             map.put(TokenUtils.toToken("RumiVersion"), rumiVersion);
             map.put(TokenUtils.toToken("RumiBindingsVersion"), rumiBindingsVersion);
@@ -340,6 +407,11 @@ public class ApplicationBuilder {
          */
         public boolean isIncludeSamples() {
             return includeSamples == null || includeSamples;
+        }
+
+        /** The explicit artifact id, or null if it was derived from the app name. */
+        public String getArtifactId() {
+            return artifactId;
         }
 
         public Map<String, String> getTokenMap() {

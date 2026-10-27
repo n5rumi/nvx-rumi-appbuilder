@@ -54,11 +54,27 @@ at the log rather than claiming a health check it has not made. Read the log for
 See the Rumi CLI docs. Both run the `cloud` profile; neither is a substitute for
 the above when you just want to look at the app.
 
+## Which Rumi jar has this class?
+
+Rumi is about forty artifacts, and the package name does not name the artifact:
+`RogXStringMap` is in `com.neeve.rog` and ships in **nvx-rumi-ods**. So when you
+hit a `cannot find symbol`, ask:
+
+```bash
+./find-class.sh RogXStringMap
+```
+
+It prints the artifact and the `<dependency>` block to paste. It reads your local
+Maven repository and starts no build, so it is instant and works offline -- but a
+jar Maven has not fetched cannot be searched, so build once if something you are
+sure exists does not turn up.
+
 ## Layout
 
 ```
 {{ParentArtifactId}}/
 ├── run-in-process.sh
+├── find-class.sh
 ├── {{RoeArtifactId}}/          shared message model (the ROE)
 └── {{SystemArtifactId}}/       the system: config, assembly, and the runner
     ├── conf/config.xml         services, XVMs, and the runtime profiles

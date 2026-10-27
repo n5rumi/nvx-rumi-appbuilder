@@ -6,6 +6,7 @@ import org.eclipse.jetty.server.Server;
 import org.glassfish.hk2.utilities.binding.AbstractBinder;
 import org.glassfish.jersey.jackson.JacksonFeature;
 import org.glassfish.jersey.server.ResourceConfig;
+import org.glassfish.jersey.server.ServerProperties;
 import org.glassfish.jersey.servlet.ServletContainer;
 
 import com.neeve.trace.Tracer;
@@ -37,6 +38,14 @@ public final class HttpServer {
         final ResourceConfig config = new ResourceConfig();
         config.packages(resourcePackage);
         config.register(JacksonFeature.class);
+        // Two WARNINGs fire on a correct, clean boot without these, and both are
+        // for features this app does not use: a missing MessageBodyWriter for
+        // jakarta.activation.DataSource, and a missing JAXBContext for WADL.
+        // Harmless, but they appear at WARNING on every start, which trains
+        // whoever reads these logs to ignore warnings (RUMI-431 / I-16). JSON is
+        // Jackson's job here; WADL and activation are not wanted at all.
+        config.property(ServerProperties.WADL_FEATURE_DISABLE, true);
+        config.property(ServerProperties.PROVIDER_SCANNING_RECURSIVE, false);
         config.register(new AbstractBinder() {
             @Override
             protected void configure() {
