@@ -425,7 +425,27 @@ index.
 
 ## Runtime test harness (generated apps) — and what "builds ≠ runs" taught us
 
-Generated apps now ship an in-process test harness so a scaffolded system can be
+Generated apps also ship a **supported way to run themselves** (RUMI-426):
+`./run-in-process.sh` at the app root, which is
+`mvn -am -pl <system> -Pin-process process-classes`. It starts one XVM per app
+from `conf/config.xml` in a single JVM under the `test` profile.
+
+Three things about it are load-bearing, and each was got wrong first:
+
+- **`exec:exec`, never `exec:java`.** exec:java runs in Maven's own JVM, which
+  cannot be given the `add-opens` flags EmbeddedXVM needs. Forking also makes
+  `%classpath` the *reactor's* classpath — which is the whole reason this works
+  without `mvn install`, the wall that drove three separate sessions to
+  hand-roll a launcher shaped like a JUnit test.
+- **A phase-bound execution inside a profile, not a CLI goal.** A command-line
+  goal runs on every project in the reactor, and `-am` puts the parent POM there,
+  which has no exec configuration.
+- **It reports "started", not "ready".** A service can fault *after* start — a web
+  tier losing its port bind logs `(sev)` while its XVM stays `Started` — so the
+  runner points at the log rather than claiming a health check it has not made.
+  The missing app-level health signal is a known gap.
+
+Generated apps also ship an in-process test harness so a scaffolded system can be
 **run**, not just compiled: an `AbstractTest` (in the system module's
 `src/test`, using Rumi's `EmbeddedXVM` to boot services), a `test` config
 profile (loopback bus + `loopback://.&initWaitTime=0` discovery), and a
