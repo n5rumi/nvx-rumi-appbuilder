@@ -160,8 +160,10 @@ points the tests rely on:
 - override the webservice port: `System.setProperty("demo.gateway.http.port","18080")` (pick a
   free port; 8080 is frequently taken).
 - the webservice endpoint path is `/<serviceTokenName>/v1/echo` (e.g. `/gateway/v1/echo`).
-- tests must compile at **Java 8** (generated apps target Java 8), so use
-  `java.net.HttpURLConnection`, not `java.net.http.HttpClient`.
+- generated apps compile at **release 17** (RUMI-429), so the whole JDK 17 API
+  is available. `java.net.HttpURLConnection` is still what these examples use --
+  it is adequate for a one-line round trip and has no client to close -- but
+  `java.net.http.HttpClient` would now compile too.
 
 ## Step 5 — build and run
 
