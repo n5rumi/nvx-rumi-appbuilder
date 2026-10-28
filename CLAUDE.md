@@ -19,14 +19,42 @@ layer on the one beneath it:
 
 **In scope — strictly app-building "do" operations.** Scaffold apps, add
 and remove services, handlers, message types, state entities, config
-fragments. Inspect what's there.
+fragments. Inspect what's there. **Compile what's there and return a verdict**
+(RUMI-416) — see the process rule below.
 
 **Out of scope — explicitly.**
 - Learning about Rumi (docs, API reference, schema lookup). Served by
   docs-on-disk + the GitBook-hosted Rumi Docs MCP server.
 - Environment lifecycle, cloud provisioning, analytics tooling — all of
   which stay in the `rumi` CLI.
-- Package / build orchestration — consumers run `mvn` directly.
+- **Owning a long-lived process.** Running an app, holding a port, tailing
+  logs, writing keep-warm markers, restarting a preview: all of it belongs to
+  the consumer's own harness, never here.
+
+### ⚠️ The process rule, and why it moved (RUMI-416)
+
+This list used to read "**Package / build orchestration — consumers run `mvn`
+directly**", which ruled out a build call outright. That line was replaced
+deliberately on 2026-10-28, because it drew the boundary in the wrong place: it
+separated *build* from *not-build*, when the distinction that actually matters
+is **transient versus long-lived**.
+
+- A **transient** process — one this service starts, waits for, and reaps within
+  the call — is in scope. A compile is the example.
+- A **long-lived** one is not, and that is the hard line. The moment something
+  here owns a port, a log file or a liveness marker, two components believe they
+  own the same running app. That is not hypothetical: it is the split DAT-221 had
+  to untangle on the Datafye side, and the warm-signal ownership SUT-74 had to
+  repair on Sutra's.
+
+The argument for moving it is **attribution**, not convenience. `javac` reports
+`OrderProcessor.java:84`; only this service knows that line came from a field
+added to the `Order` state entity, because it wrote the file. That mapping exists
+nowhere else in the stack, so without it every caller reverse-engineers it from a
+log, every time. "Wrap `mvn` and hand back its output" was never worth the
+boundary change and still is not — scaffolding a `run-in-process.sh` into the
+generated app (RUMI-426) is the right answer whenever the caller just needs to
+run something, and it keeps execution on the caller's side of the line.
 
 ## Consumer story
 
