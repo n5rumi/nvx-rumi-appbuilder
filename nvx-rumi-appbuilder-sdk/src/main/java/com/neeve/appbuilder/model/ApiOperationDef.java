@@ -59,7 +59,7 @@ public final class ApiOperationDef {
         return outMessage;
     }
 
-    /** Any other attributes on the element (e.g. {@code RESTPath}, {@code RESTMethod}). */
+    /** Any other attributes on the element (e.g. {@code doc}). */
     public Map<String, String> getAttributes() {
         return attributes;
     }

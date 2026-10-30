@@ -67,7 +67,7 @@ public class ApiOperationEditorTest {
 
     @Test
     public void addOperation_thenIntrospect() throws Exception {
-        ApiOperationEditor.addOperation(appRoot, SVC, "ping", "PingRequest", "PingResponse", null, null, false);
+        ApiOperationEditor.addOperation(appRoot, SVC, "ping", "PingRequest", "PingResponse", false);
         ApiOperationDef op = ApiIntrospector.getOperation(appRoot, SVC, "ping");
         assertNotNull(op);
         assertEquals("PingRequest", op.getInMessage());
@@ -77,7 +77,7 @@ public class ApiOperationEditorTest {
     @Test
     public void addOperation_rejectsUnknownMessage() throws Exception {
         try {
-            ApiOperationEditor.addOperation(appRoot, SVC, "ping", "NopeRequest", "PingResponse", null, null, false);
+            ApiOperationEditor.addOperation(appRoot, SVC, "ping", "NopeRequest", "PingResponse", false);
             fail("expected validation failure for unknown inMessage");
         } catch (IllegalArgumentException expected) {
             // ok
@@ -86,13 +86,13 @@ public class ApiOperationEditorTest {
 
     @Test
     public void addOperation_isIdempotent() throws Exception {
-        ApiOperationEditor.addOperation(appRoot, SVC, "ping", "PingRequest", "PingResponse", null, null, false);
-        assertTrue(ApiOperationEditor.addOperation(appRoot, SVC, "ping", "PingRequest", "PingResponse", null, null, false).isNoop());
+        ApiOperationEditor.addOperation(appRoot, SVC, "ping", "PingRequest", "PingResponse", false);
+        assertTrue(ApiOperationEditor.addOperation(appRoot, SVC, "ping", "PingRequest", "PingResponse", false).isNoop());
     }
 
     @Test
     public void removeOperation_reverts() throws Exception {
-        ApiOperationEditor.addOperation(appRoot, SVC, "ping", "PingRequest", "PingResponse", null, null, false);
+        ApiOperationEditor.addOperation(appRoot, SVC, "ping", "PingRequest", "PingResponse", false);
         assertTrue(ApiOperationEditor.removeOperation(appRoot, SVC, "ping", false).isApplied());
         assertNull(ApiIntrospector.getOperation(appRoot, SVC, "ping"));
         assertTrue("remove of absent is noop",
@@ -108,7 +108,7 @@ public class ApiOperationEditorTest {
             "PrivateRequest", List.of(), false);
         try {
             ApiOperationEditor.addOperation(appRoot, SVC, "priv", "PrivateRequest", "PingResponse",
-                null, null, false);
+                false);
             fail("expected rejection: the message is not in the model api.xml names");
         } catch (IllegalArgumentException expected) {
             assertTrue("message should name the model that was searched",
@@ -148,14 +148,14 @@ public class ApiOperationEditorTest {
 
         // Now the service-scoped message is the one that resolves...
         ApiOperationEditor.addOperation(appRoot, SVC, "priv", "PrivateRequest", "PrivateResponse",
-            null, null, false);
+            false);
         assertNotNull(ApiIntrospector.getOperation(appRoot, SVC, "priv"));
 
         // ...and a ROE message, reachable only through an <import>, is not:
         // the generator does not follow imports, so neither do we.
         try {
             ApiOperationEditor.addOperation(appRoot, SVC, "ping", "PingRequest", "PingResponse",
-                null, null, false);
+                false);
             fail("expected rejection: imports are not followed");
         } catch (IllegalArgumentException expected) {
             // ok
@@ -164,7 +164,7 @@ public class ApiOperationEditorTest {
 
     @Test
     public void renameOperation_keepsMessages() throws Exception {
-        ApiOperationEditor.addOperation(appRoot, SVC, "ping", "PingRequest", "PingResponse", null, null, false);
+        ApiOperationEditor.addOperation(appRoot, SVC, "ping", "PingRequest", "PingResponse", false);
         ApiOperationEditor.renameOperation(appRoot, SVC, "ping", "healthcheck", false);
         assertNull(ApiIntrospector.getOperation(appRoot, SVC, "ping"));
         ApiOperationDef op = ApiIntrospector.getOperation(appRoot, SVC, "healthcheck");

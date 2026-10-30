@@ -469,16 +469,13 @@ def build_server(base_url: str | None = None) -> FastMCP:
         name: str,
         in_message: str,
         out_message: str,
-        rest_path: str | None = None,
-        rest_method: str | None = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
         """Add a request-reply API operation. in_message/out_message must be known messages (service or ROE). Idempotent on name."""
         return rest.post(
             f"/v1/services/{service}/operations",
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},
-            json={"name": name, "inMessage": in_message, "outMessage": out_message,
-                  "restPath": rest_path, "restMethod": rest_method},
+            json={"name": name, "inMessage": in_message, "outMessage": out_message},
         )
 
     @tool()

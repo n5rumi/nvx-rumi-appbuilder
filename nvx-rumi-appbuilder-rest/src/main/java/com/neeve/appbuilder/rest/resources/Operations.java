@@ -88,7 +88,7 @@ public class Operations extends AbstractResource {
             throw new IllegalArgumentException("operation name is required");
         }
         return ApiOperationEditor.addOperation(requireAbsoluteAppRoot(appRoot), service,
-            req.getName(), req.getInMessage(), req.getOutMessage(), req.getRestPath(), req.getRestMethod(), dryRun);
+            req.getName(), req.getInMessage(), req.getOutMessage(), dryRun);
     }
 
     @DELETE

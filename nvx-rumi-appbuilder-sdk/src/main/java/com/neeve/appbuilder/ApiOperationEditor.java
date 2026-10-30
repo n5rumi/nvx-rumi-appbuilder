@@ -57,7 +57,6 @@ public final class ApiOperationEditor {
     /** Add an {@code <operation>}. Idempotent on operation name. */
     public static ChangeSet addOperation(Path appRoot, String serviceName, String name,
                                          String inMessage, String outMessage,
-                                         String restPath, String restMethod,
                                          boolean dryRun) throws IOException {
         Path apiXml = AppIntrospector.resolveApiXmlFile(appRoot, serviceName);
         if (!Files.exists(apiXml)) throw new IOException("api.xml not found at " + apiXml);
@@ -81,8 +80,6 @@ public final class ApiOperationEditor {
         op.setAttribute("name", name);
         if (inMessage != null) op.setAttribute("inMessage", inMessage);
         if (outMessage != null) op.setAttribute("outMessage", outMessage);
-        if (restPath != null && !restPath.isBlank()) op.setAttribute("RESTPath", restPath);
-        if (restMethod != null && !restMethod.isBlank()) op.setAttribute("RESTMethod", restMethod);
         operations.appendChild(op);
 
         return writeBack(doc, apiXml, dryRun);
