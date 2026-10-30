@@ -301,7 +301,7 @@ public class MutatingOperationValidityTest {
             "OrderAck", List.of(new FieldDef("ok", "Boolean", Map.of())), false);
 
         valid(ApiOperationEditor.addOperation(appRoot, "order-processor", "placeOrder",
-            "PlaceOrder", "OrderAck", null, null, false));
+            "PlaceOrder", "OrderAck", false));
         valid(ApiOperationEditor.renameOperation(appRoot, "order-processor", "placeOrder",
             "submitOrder", false));
         valid(ApiOperationEditor.removeOperation(appRoot, "order-processor", "submitOrder", false));

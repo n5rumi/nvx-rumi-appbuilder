@@ -26,32 +26,24 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * Request body for {@code POST /v1/services/{svc}/operations}. Pairs a request
- * message with a response message; {@code restPath}/{@code restMethod} are
- * optional documentation hints.
+ * message with a response message. An operation describes the service's API
+ * only; exposing it over HTTP is a REST endpoint on a web service (RUMI-457).
  */
 public final class AddOperationRequest {
     private final String name;
     private final String inMessage;
     private final String outMessage;
-    private final String restPath;
-    private final String restMethod;
 
     @JsonCreator
     public AddOperationRequest(@JsonProperty("name") String name,
                                @JsonProperty("inMessage") String inMessage,
-                               @JsonProperty("outMessage") String outMessage,
-                               @JsonProperty("restPath") String restPath,
-                               @JsonProperty("restMethod") String restMethod) {
+                               @JsonProperty("outMessage") String outMessage) {
         this.name = name;
         this.inMessage = inMessage;
         this.outMessage = outMessage;
-        this.restPath = restPath;
-        this.restMethod = restMethod;
     }
 
     public String getName() { return name; }
     public String getInMessage() { return inMessage; }
     public String getOutMessage() { return outMessage; }
-    public String getRestPath() { return restPath; }
-    public String getRestMethod() { return restMethod; }
 }
