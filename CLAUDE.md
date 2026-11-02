@@ -263,19 +263,19 @@ is in the request: webservice, method, path, service, operation. Rules that fail
 - ⚠️ **The client is keyed with the target's ENGINE name, `<service>-<partition>` (`demo-orders-1`),
   read from the `<app template="...-template">` instance in config.xml** (`RestEndpointEditor.engineName`).
   The client sends on the `requests` channel keyed with the name it is given; the engine subscribes
-  with its own. The bare service name times out with **nothing logged on either side**. This was the
-  customer's ContractIQ failure, reproduced on a generated app (RUMI-458). The client bus is
+  with its own. The bare service name times out with **nothing logged on either side**. This was a
+  customer's failure, reproduced on a generated app (RUMI-458). The client bus is
   `<engine>_client_bus` for the same reason.
 - **A partitioned target is refused**, not called on partition 1: one client calls one engine.
-- **A client bus the developer already declared is used AS DECLARED** (verified on the hand-wired
-  ContractIQ app pulled from u11): the client connects with that bus's own descriptor expression and,
-  if the bus pins a `requests` `<key>` (ContractIQ pins the bare service name), gets a
+- **A client bus the developer already declared is used AS DECLARED** (verified on a hand-wired
+  customer app): the client connects with that bus's own descriptor expression and,
+  if the bus pins a `requests` `<key>` (a hand-wired app may pin the bare service name), gets a
   `requestsChannelKey` of that key. Pointing it at the generated `${CLIENT_BUS_DESCRIPTOR}` or keying
   it with the engine name would recreate the silent timeout. Such a bus is never removed.
 - **Generated support and client classes live in `<web>.rest`**, and a file there without the
   `// @rest-endpoint-client` marker is refused rather than overwritten: a hand-written
   `clients/TenancyClient` is exactly what an app that wired this by hand already has.
-- ⚠️ **Snippets must compile at Java 8.** Older scaffolds pin `<release>8</release>` (ContractIQ does);
+- ⚠️ **Snippets must compile at Java 8.** Older scaffolds pin `<release>8</release>`;
   `String.isBlank()` in a snippet broke its build. Unit tests never compile the snippets, so only a
   build of a generated or real app catches this.
 - **The client bus gets its own descriptor.** On loopback an engine may bind a namespace once, so the
