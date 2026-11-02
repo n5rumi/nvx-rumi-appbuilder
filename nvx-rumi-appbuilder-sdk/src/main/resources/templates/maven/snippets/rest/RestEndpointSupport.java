@@ -66,7 +66,8 @@ public final class RestEndpointSupport {
             reply = call.send(request);
         }
         catch (EClientException e) {
-            if ("timed out".equals(e.getMessage())) {
+            // the client reports a timeout only through this message (kept stable by RUMI-458)
+            if (e.getMessage() != null && e.getMessage().toLowerCase().contains("timed out")) {
                 TRACER.log("no reply to " + request.getClass().getSimpleName() + " within the client's response timeout", Tracer.Level.WARNING);
                 return error(Response.Status.GATEWAY_TIMEOUT, "the downstream service did not reply in time");
             }

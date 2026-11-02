@@ -278,6 +278,11 @@ verify_mode() {
         echo "!! Inspect the app at: ${app}" >&2
         exit 1
     fi
+    # -Dsurefire.failIfNoSpecifiedTests=false keeps the other modules quiet, so it
+    # would also let this gate pass with the test never run: require its result.
+    grep -q "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0.*in com.example.demo.RestEndpointTest" \
+        "${out_dir}/rest-endpoints.log" \
+        || fail "[${label}] RestEndpointTest did not run and pass; see ${out_dir}/rest-endpoints.log"
     info "[${label}] Generated REST endpoints reached the processor through its client"
 
     # ---- the in-process runner (RUMI-426) ----------------------------------

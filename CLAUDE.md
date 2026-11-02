@@ -270,7 +270,7 @@ is in the request: webservice, method, path, service, operation. Rules that fail
 - **A client bus the developer already declared is used AS DECLARED** (verified on a hand-wired
   customer app): the client connects with that bus's own descriptor expression and,
   if the bus pins a `requests` `<key>` (a hand-wired app may pin the bare service name), gets a
-  `requestsChannelKey` of that key. Pointing it at the generated `${CLIENT_BUS_DESCRIPTOR}` or keying
+  `requestsChannelKey` of that key. Pointing it at the generated `${REST_CLIENT_BUS_DESCRIPTOR}` or keying
   it with the engine name would recreate the silent timeout. Such a bus is never removed.
 - **Generated support and client classes live in `<web>.rest`**, and a file there without the
   `// @rest-endpoint-client` marker is refused rather than overwritten: a hand-written

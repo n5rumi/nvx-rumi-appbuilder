@@ -134,6 +134,15 @@ public final class RestEndpointIntrospector {
             return TokenUtils.toPascalCase(targetKebab) + "Client";
         }
 
+        /**
+         * The client name the generated clients use, distinct from the web
+         * service's own name so its configuration never lands on, or is removed
+         * from, a client the developer configured for themselves.
+         */
+        String clientName() {
+            return webFullName + "-rest";
+        }
+
         Path clientFile(String targetKebab) {
             return clientsDir.resolve(clientClassName(targetKebab) + ".java");
         }
