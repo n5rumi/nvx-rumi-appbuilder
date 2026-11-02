@@ -547,6 +547,31 @@ public class EndpointIntegrationTest {
         assertTrue(r.body().contains("/openapi"));
     }
 
+    // --- RUMI-456: operations no longer carry a REST path ---------------
+
+    @Test
+    public void anOlderMcpSendingNullRestFieldsIsStillAccepted() throws Exception {
+        post("/v1/services?app_root=" + enc(appRoot),
+            "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}");
+        post("/v1/services/proc/messages?app_root=" + enc(appRoot) + "&scope=roe",
+            "{\"name\":\"Ping\",\"fields\":[]}");
+        post("/v1/services/proc/messages?app_root=" + enc(appRoot) + "&scope=roe",
+            "{\"name\":\"Pong\",\"fields\":[]}");
+        HttpResponse<String> resp = post("/v1/services/proc/operations?app_root=" + enc(appRoot),
+            "{\"name\":\"ping\",\"inMessage\":\"Ping\",\"outMessage\":\"Pong\",\"restPath\":null,\"restMethod\":null}");
+        assertEquals(resp.body(), 200, resp.statusCode());
+    }
+
+    @Test
+    public void aRestPathOnAnOperationIsRefusedNamingWhatReplacedIt() throws Exception {
+        post("/v1/services?app_root=" + enc(appRoot),
+            "{\"name\":\"proc\",\"type\":\"processor\",\"clustered\":false,\"partitions\":1}");
+        HttpResponse<String> resp = post("/v1/services/proc/operations?app_root=" + enc(appRoot),
+            "{\"name\":\"ping\",\"inMessage\":\"Ping\",\"outMessage\":\"Pong\",\"restPath\":\"/ping\"}");
+        assertEquals(resp.body(), 400, resp.statusCode());
+        assertTrue(resp.body(), resp.body().contains("restPath") && resp.body().contains("add_rest_endpoint"));
+    }
+
     // --- helpers ------------------------------------------------------
 
     private HttpResponse<String> get(String path) throws Exception {

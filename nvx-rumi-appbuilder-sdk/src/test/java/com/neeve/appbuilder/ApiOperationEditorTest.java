@@ -21,6 +21,8 @@
  */
 package com.neeve.appbuilder;
 
+import com.neeve.appbuilder.model.ChangeSet;
+
 import com.neeve.appbuilder.model.ApiOperationDef;
 import com.neeve.appbuilder.model.FieldDef;
 import com.neeve.appbuilder.test.TestAppFactory;
@@ -160,6 +162,22 @@ public class ApiOperationEditorTest {
         } catch (IllegalArgumentException expected) {
             // ok
         }
+    }
+
+    @Test
+    public void anyEditStripsTheRemovedRestAttributes() throws Exception {
+        // an api.xml written by an App Builder that still accepted rest_path (RUMI-456)
+        ApiOperationEditor.addOperation(appRoot, SVC, "ping", "PingRequest", "PingResponse", false);
+        Path apiXml = AppIntrospector.resolveApiXmlFile(appRoot, SVC);
+        Files.writeString(apiXml, Files.readString(apiXml).replace("name=\"ping\"", "RESTMethod=\"GET\" RESTPath=\"/ping\" name=\"ping\""));
+        assertTrue(Files.readString(apiXml).contains("RESTPath"));
+
+        // even an edit that is otherwise a no-op brings the file back to valid
+        ChangeSet cs = ApiOperationEditor.addOperation(appRoot, SVC, "ping", "PingRequest", "PingResponse", false);
+        assertFalse(cs.isNoop());
+        assertFalse(Files.readString(apiXml).contains("RESTPath"));
+        assertFalse(Files.readString(apiXml).contains("RESTMethod"));
+        assertNotNull(ApiIntrospector.getOperation(appRoot, SVC, "ping"));
     }
 
     @Test
