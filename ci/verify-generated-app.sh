@@ -27,7 +27,8 @@
 #   2. for EACH scaffold mode (with samples, and sample-free):
 #      a. scaffolds a `demo` app with EVERY service type (processor, driver,
 #         connector, webservice) plus a custom connector snapped into the
-#         processor
+#         processor, and REST endpoints on the webservice that call an API
+#         operation of the processor through its generated client (RUMI-457)
 #      b. drops in the in-process JUnit/EmbeddedXVM tests
 #      c. builds and RUNS the generated system
 #
@@ -124,10 +125,18 @@ CP="${REPO_DIR}/nvx-rumi-appbuilder-sdk/target/classes:$(cat "${WORK_DIR}/sdk-cp
 
 info "Preparing the scaffolding driver"
 cat > "${WORK_DIR}/Build.java" <<'EOF'
+import com.neeve.appbuilder.ApiOperationEditor;
 import com.neeve.appbuilder.ConnectorEditor;
+import com.neeve.appbuilder.FieldEditor;
+import com.neeve.appbuilder.JavaSourceEditor;
+import com.neeve.appbuilder.MessageEditor;
+import com.neeve.appbuilder.RestEndpointEditor;
+import com.neeve.appbuilder.model.FieldDef;
 import com.neeve.appbuilder.test.TestAppFactory;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Scaffolds the system the release is verified against. Uses only builder
@@ -159,6 +168,27 @@ public class Build {
         // code path from the `connector` service type above.
         ConnectorEditor.addConnector(app, "order-processor", "audit", false);
 
+        // RUMI-457: the gateway fronts an API operation of the processor through
+        // generated REST endpoints, so one request crosses two services over the
+        // processor's client bus. RestEndpointTest calls them over HTTP.
+        MessageEditor.addMessage(app, "order-processor", FieldEditor.ModelScope.ROE_MESSAGES,
+            "LookupOrderRequest", List.of(new FieldDef("orderId", "String", Map.of()),
+                                          new FieldDef("verbose", "Boolean", Map.of())), false);
+        MessageEditor.addMessage(app, "order-processor", FieldEditor.ModelScope.ROE_MESSAGES,
+            "LookupOrderReply", List.of(new FieldDef("orderId", "String", Map.of()),
+                                        new FieldDef("status", "String", Map.of())), false);
+        ApiOperationEditor.addOperation(app, "order-processor", "lookupOrder",
+            "LookupOrderRequest", "LookupOrderReply", false);
+        JavaSourceEditor.addHandler(app, "order-processor", "onLookupOrderRequest", "LookupOrderRequest",
+            "final com.example.demo.roe.LookupOrderReply reply = com.example.demo.roe.LookupOrderReply.create();\n"
+          + "reply.setOrderId(message.getOrderId());\n"
+          + "reply.setStatus(message.getVerbose() ? \"FOUND (verbose)\" : \"FOUND\");\n"
+          + "_messageSender.sendReply(message, reply);", false);
+        RestEndpointEditor.addEndpoint(app, "gateway", "GET", "/orders/{orderId}",
+            "order-processor", "lookupOrder", false);
+        RestEndpointEditor.addEndpoint(app, "gateway", "POST", "/orders/lookup",
+            "order-processor", "lookupOrder", false);
+
         System.out.println(app);
     }
 }
@@ -183,6 +213,9 @@ EXAMPLES="${REPO_DIR}/.claude/skills/test-the-builder/examples"
 # mode-agnostic, so both modes run it. The webservice HTTP round trip is not:
 # with samples it is the /echo -> engine -> state -> reply path, and sample-free
 # it is the /health probe, which is all a bare resource still exposes.
+# RestEndpointTest is mode-agnostic too: the endpoints and the processor's
+# handler are added by builder operations, not by the templates' sample code.
+# It runs in a JVM of its own, after the others (see below).
 # FlowTest is deliberately excluded from both: it needs hand edits the builder
 # still has no operation for, so it cannot run unattended.
 verify_mode() {
@@ -227,6 +260,25 @@ verify_mode() {
         exit 1
     fi
     info "[${label}] Generated app built and ran cleanly against Rumi ${RUMI_VERSION}"
+
+    # ---- RUMI-457: a request that crosses two services ----------------------
+    # The gateway's generated REST endpoints call the processor through its
+    # generated client over the processor's client bus. This runs in a JVM of its
+    # own: on the loopback bus, a processor that was already started and stopped
+    # earlier in the same JVM (SystemBootTest does) never receives client
+    # requests when started again, and the call times out (RUMI-460). That is a
+    # test-harness shape, since a deployed engine restarts in a new process, but
+    # sharing the JVM would make this check depend on test order.
+    info "[${label}] Calling the generated REST endpoints across two services"
+    cp "${EXAMPLES}/RestEndpointTest.java" "${test_dir}/" || fail "[${label}] Could not stage RestEndpointTest"
+    if ! (cd "${app}" && "${MVN}" test -Dtest=RestEndpointTest -Dsurefire.failIfNoSpecifiedTests=false \
+            2>&1 | tee "${out_dir}/rest-endpoints.log"); then
+        echo >&2
+        echo "!! [${label}] A generated REST endpoint did not get its reply from the processor." >&2
+        echo "!! Inspect the app at: ${app}" >&2
+        exit 1
+    fi
+    info "[${label}] Generated REST endpoints reached the processor through its client"
 
     # ---- the in-process runner (RUMI-426) ----------------------------------
     # Asserted here rather than in a unit test because none of it exists until an

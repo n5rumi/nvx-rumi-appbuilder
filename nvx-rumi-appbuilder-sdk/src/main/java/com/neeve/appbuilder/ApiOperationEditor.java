@@ -203,7 +203,7 @@ public final class ApiOperationEditor {
      *
      * @return the model file, or null if no module has it.
      */
-    private static Path resolveModelFile(Path appRoot, String modelFile) {
+    static Path resolveModelFile(Path appRoot, String modelFile) {
         List<Path> roots = new ArrayList<>();
         try (Stream<Path> modules = Files.list(appRoot)) {
             modules.filter(Files::isDirectory)
@@ -231,7 +231,7 @@ public final class ApiOperationEditor {
             + "messages that never leave the service.";
     }
 
-    private static Element firstChild(Element parent, String localName) {
+    static Element firstChild(Element parent, String localName) {
         if (parent == null) {
             return null;
         }

@@ -147,12 +147,21 @@ only remaining method is the liveness probe.
 **SystemBootTest** — broad: boot all four service types + the snapped connector together and
 assert each engine started. Mode-agnostic; run it either way.
 
+**RestEndpointTest** — two services in one request (RUMI-457): boot the order processor and the
+gateway, then call the gateway's generated REST endpoints (`GET /orders/{orderId}`,
+`POST /orders/lookup`), which reach the processor's `lookupOrder` operation through its generated
+client over the client bus. Asserts that the path parameter, a query parameter and a JSON body each
+reach the processor, and that a body that is not a JSON object is a 400. Mode-agnostic, but it needs
+the endpoints, the operation and the processor's handler, which `ci/verify-generated-app.sh` adds
+with builder operations (see its `Build.java`).
+
 **FlowTest** — functional message flow: the driver sends N `Tick` messages, the processor's
 `onTick` handler counts them, assert the count matches. Requires the Step 2b edits.
 
 If you scaffolded sample-free (`includeSamples=false`), pair `SystemBootTest` with
 `BareWebserviceTest`; otherwise pair it with `WebserviceTest`. `ci/verify-generated-app.sh`
-runs both modes on every release and picks the pairs the same way.
+runs both modes on every release and picks the pairs the same way, adding `RestEndpointTest` to
+both.
 
 Substitute the app package / service xvm+app names if you scaffolded different ones. Key
 points the tests rely on:

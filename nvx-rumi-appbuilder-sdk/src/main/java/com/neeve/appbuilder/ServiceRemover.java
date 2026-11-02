@@ -22,6 +22,7 @@
 package com.neeve.appbuilder;
 
 import com.neeve.appbuilder.model.ChangeSet;
+import com.neeve.appbuilder.model.RestEndpointDef;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -103,6 +104,27 @@ public final class ServiceRemover {
             return ChangeSet.noop("service '" + serviceName + "' is not present in " + appRoot);
         }
 
+        // (0) REST endpoints. A service that another web service's endpoints
+        // call cannot go while they do, or they would compile against a client
+        // whose service no longer exists. A web service's own endpoints are
+        // removed first, so the client configuration they put in config.xml
+        // goes with them rather than being left for a service that is gone.
+        List<RestEndpointDef> callers = new ArrayList<>(RestEndpointIntrospector.listCallers(appRoot, serviceName));
+        callers.removeIf(e -> e.getWebService().equals(kebab));
+        if (!callers.isEmpty()) {
+            throw new IllegalStateException("cannot remove service '" + kebab + "': still called by REST endpoints "
+                + callers.stream().map(e -> e.getWebService() + " " + e.getMethod() + " " + e.getPath())
+                    .collect(java.util.stream.Collectors.joining(", "))
+                + " (remove them with remove_rest_endpoint first)");
+        }
+        boolean endpointConfigTouched = false;
+        if (moduleDirExists && AppIntrospector.resolveServiceType(appRoot, serviceName) == ServiceBuilder.ServiceType.WEBSERVICE) {
+            for (RestEndpointDef e : RestEndpointIntrospector.listEndpoints(appRoot, serviceName)) {
+                ChangeSet removed = RestEndpointEditor.removeEndpoint(appRoot, serviceName, e.getMethod(), e.getPath(), dryRun);
+                endpointConfigTouched |= removed.getFilesModified().stream().anyMatch(f -> f.endsWith("config.xml"));
+            }
+        }
+
         // Snapshot factory IDs owned by the service before deleting its files.
         List<Integer> releasedIds = factoryIdsOwnedBy(appRoot, moduleDir);
 
@@ -148,7 +170,7 @@ public final class ServiceRemover {
         Path configPath = appRoot.resolve(systemArtifactId).resolve("conf/config.xml");
         if (Files.exists(configPath)) {
             boolean configTouched = removeConfigFragmentsForService(configPath, tokens, serviceName, kebab, dryRun);
-            if (configTouched) cs.addModified(configPath);
+            if (configTouched || endpointConfigTouched) cs.addModified(configPath);
         }
 
         // (5) Remove script snippets for this service.

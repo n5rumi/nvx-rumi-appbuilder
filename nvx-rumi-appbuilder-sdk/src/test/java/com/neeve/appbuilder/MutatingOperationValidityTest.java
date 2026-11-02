@@ -195,6 +195,26 @@ public class MutatingOperationValidityTest {
         ProjectValidity.assertProjectValid(appRoot);
     }
 
+    // --- REST endpoints ------------------------------------------------
+
+    @Test
+    public void addingAndRemovingARestEndpointLeavesTheProjectValid() throws Exception {
+        TestAppFactory.addProcessor(appRoot, "order-processor");
+        TestAppFactory.addWebservice(appRoot, "gateway");
+        MessageEditor.addMessage(appRoot, "order-processor", FieldEditor.ModelScope.ROE_MESSAGES,
+            "LookupOrder", List.of(new FieldDef("orderId", "String", Map.of())), false);
+        MessageEditor.addMessage(appRoot, "order-processor", FieldEditor.ModelScope.ROE_MESSAGES,
+            "OrderFound", List.of(new FieldDef("status", "String", Map.of())), false);
+        ApiOperationEditor.addOperation(appRoot, "order-processor", "lookupOrder", "LookupOrder", "OrderFound", false);
+
+        valid(RestEndpointEditor.addEndpoint(appRoot, "gateway", "GET", "/orders/{orderId}",
+            "order-processor", "lookupOrder", false));
+        ProjectValidity.assertProjectValid(appRoot);
+
+        valid(RestEndpointEditor.removeEndpoint(appRoot, "gateway", "GET", "/orders/{orderId}", false));
+        ProjectValidity.assertProjectValid(appRoot);
+    }
+
     // --- messages ------------------------------------------------------
 
     @Test

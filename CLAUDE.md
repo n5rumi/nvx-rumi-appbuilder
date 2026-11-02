@@ -254,6 +254,32 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
   escapes, and validates the shape — keep all three if you touch it, and test
   with a TTY (`script -q /dev/null …`), not just a pipe.
 
+## REST endpoints (RUMI-457)
+
+`add_rest_endpoint` / `remove_rest_endpoint` (`RestEndpointEditor`) put an HTTP endpoint on a
+webservice that calls another service's `api.xml` operation through its generated client. Every aspect
+is in the request: webservice, method, path, service, operation. Rules that fail silently if broken:
+
+- ⚠️ **The client is keyed with the target's ENGINE name, `<service>-<partition>` (`demo-orders-1`),
+  read from the `<app template="...-template">` instance in config.xml** (`RestEndpointEditor.engineName`).
+  The client sends on the `requests` channel keyed with the name it is given; the engine subscribes
+  with its own. The bare service name times out with **nothing logged on either side**. This was the
+  customer's ContractIQ failure, reproduced on a generated app (RUMI-458). The client bus is
+  `<engine>_client_bus` for the same reason.
+- **A partitioned target is refused**, not called on partition 1: one client calls one engine.
+- **The client bus gets its own descriptor.** On loopback an engine may bind a namespace once, so the
+  test profile uses `loopback://<app>-client` (else `<engine> already connected` at startup). Declared
+  in `<buses>` only: the engine joins it by itself, so it is NOT added to `<messaging>`.
+- **One resource class per path**, with the path at class level. JAX-RS picks a root resource by its
+  longest literal prefix and does not backtrack, so a shared `@Path("/")` class would be shadowed by
+  `WebMain`'s `/<svc>/v1`.
+- Endpoints are found by the `// @rest-endpoint` marker comments, so hand-written resources are never
+  listed or removed. Removing the last caller of a service removes its client, dependency, client
+  config and (app-wide) client bus; `ServiceRemover` refuses to remove a service endpoints still call.
+- ⚠️ **In tests, a service restarted in the same JVM on loopback stops receiving client requests**
+  (RUMI-460, cause unproven). The release gate runs `RestEndpointTest` in a JVM of its own for that
+  reason; do not fold it back into the shared `mvn test`.
+
 ## ⚠️ Two release gates, neither with a skip flag
 
 `ci/release.sh` runs both before publishing anything.
