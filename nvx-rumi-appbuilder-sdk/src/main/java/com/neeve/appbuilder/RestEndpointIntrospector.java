@@ -114,9 +114,12 @@ public final class RestEndpointIntrospector {
             this.webPackage = tokens.get(TokenUtils.toToken("AppPackageName")) + "." + TokenUtils.toPackagePath(webKebab);
             this.webModuleDir = webModuleDir;
             this.webSourceDir = webSourceDir;
-            this.supportFile = webSourceDir.resolve("RestEndpointSupport.java");
+            // the generated support and client classes get a package of their own,
+            // so they cannot collide with classes the developer wrote, such as a
+            // hand-written clients.TenancyClient
+            this.supportFile = webSourceDir.resolve("rest").resolve("RestEndpointSupport.java");
             this.resourcesDir = webSourceDir.resolve("resources");
-            this.clientsDir = webSourceDir.resolve("clients");
+            this.clientsDir = webSourceDir.resolve("rest");
         }
 
         static Layout of(Path appRoot, String webService) throws IOException {

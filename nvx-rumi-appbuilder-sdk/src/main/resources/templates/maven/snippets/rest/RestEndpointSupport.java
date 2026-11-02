@@ -1,4 +1,4 @@
-package {{WebPackageName}};
+package {{WebPackageName}}.rest;
 
 import java.util.List;
 import java.util.Map;
@@ -86,7 +86,7 @@ public final class RestEndpointSupport {
     private static ObjectNode requestJson(final UriInfo uri, final String body) {
         final ObjectNode json = MAPPER.createObjectNode();
         putAll(json, uri.getQueryParameters());
-        if (body != null && !body.isBlank()) {
+        if (body != null && !body.trim().isEmpty()) {
             final JsonNode parsed;
             try {
                 parsed = MAPPER.readTree(body);
