@@ -394,3 +394,34 @@ async def test_get_config_returns_raw_xml(mcp) -> None:
         return_value=httpx.Response(200, text="<config><buses/></config>")
     )
     await _call(mcp, "get_config", app_root="/ws/t")
+
+
+@respx.mock
+async def test_add_rest_endpoint_posts_every_aspect_of_the_endpoint(mcp) -> None:
+    route = respx.post(f"{BASE}/v1/services/gateway/rest-endpoints").mock(
+        return_value=httpx.Response(200, json={"applied": True})
+    )
+    await _call(mcp, "add_rest_endpoint", app_root="/ws/t", webservice="gateway",
+                method="GET", path="/orders/{orderId}", service="order-processor",
+                operation="lookupOrder")
+    assert json.loads(route.calls.last.request.content) == {
+        "method": "GET", "path": "/orders/{orderId}",
+        "service": "order-processor", "operation": "lookupOrder",
+    }
+
+
+@respx.mock
+async def test_rest_endpoint_is_addressed_by_method_with_the_path_as_a_query(mcp) -> None:
+    # the path carries slashes, so it cannot be a path segment of the REST URL
+    get = respx.get(f"{BASE}/v1/services/gateway/rest-endpoints/GET").mock(
+        return_value=httpx.Response(200, json={"method": "GET"})
+    )
+    delete = respx.delete(f"{BASE}/v1/services/gateway/rest-endpoints/DELETE").mock(
+        return_value=httpx.Response(200, json={"applied": True})
+    )
+    await _call(mcp, "get_rest_endpoint", app_root="/ws/t", webservice="gateway",
+                method="get", path="/orders/{orderId}")
+    await _call(mcp, "remove_rest_endpoint", app_root="/ws/t", webservice="gateway",
+                method="delete", path="/orders/{orderId}")
+    assert "path=/orders/{orderId}" in _query(get.calls.last.request)
+    assert "path=/orders/{orderId}" in _query(delete.calls.last.request)

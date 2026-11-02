@@ -33,6 +33,10 @@ EXPECTED_TOOLS: set[str] = {
     "list_connectors",
     "get_connector",
     "add_connector",
+    "list_rest_endpoints",
+    "get_rest_endpoint",
+    "add_rest_endpoint",
+    "remove_rest_endpoint",
     "remove_connector",
     # Messages
     "list_messages",

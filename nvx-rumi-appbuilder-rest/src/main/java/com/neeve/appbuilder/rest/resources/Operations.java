@@ -87,8 +87,12 @@ public class Operations extends AbstractResource {
         if (req == null || req.getName() == null || req.getName().isBlank()) {
             throw new IllegalArgumentException("operation name is required");
         }
+        if (req.removedFieldInUse() != null) {
+            throw new IllegalArgumentException(req.removedFieldInUse() + " is no longer supported on an operation: "
+                + "it never generated an endpoint. Expose the operation with add_rest_endpoint on a webservice instead.");
+        }
         return ApiOperationEditor.addOperation(requireAbsoluteAppRoot(appRoot), service,
-            req.getName(), req.getInMessage(), req.getOutMessage(), req.getRestPath(), req.getRestMethod(), dryRun);
+            req.getName(), req.getInMessage(), req.getOutMessage(), dryRun);
     }
 
     @DELETE

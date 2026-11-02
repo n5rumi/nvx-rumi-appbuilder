@@ -279,6 +279,48 @@ def build_server(base_url: str | None = None) -> FastMCP:
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},
         )
 
+    # ---- REST endpoints ----------------------------------------------
+
+    @tool()
+    def list_rest_endpoints(app_root: str, webservice: str) -> list[dict[str, Any]]:
+        """List the REST endpoints on a webservice: each one's method, path, and the downstream service and operation it calls."""
+        return rest.get(f"/v1/services/{webservice}/rest-endpoints", {"app_root": app_root})
+
+    @tool()
+    def get_rest_endpoint(app_root: str, webservice: str, method: str, path: str) -> dict[str, Any]:
+        """Return the REST endpoint on a webservice with this method and path."""
+        return rest.get(
+            f"/v1/services/{webservice}/rest-endpoints/{method.upper()}",
+            {"app_root": app_root, "path": path},
+        )
+
+    @tool()
+    def add_rest_endpoint(
+        app_root: str,
+        webservice: str,
+        method: str,
+        path: str,
+        service: str,
+        operation: str,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Add a REST endpoint to a webservice that serves method (GET|POST|PUT|PATCH|DELETE) + path by calling an api.xml operation of another service through its generated client. path is a JAX-RS template such as /orders/{orderId}; each {parameter} must be a field of the operation's request message, and query parameters and a JSON body fill the other fields. Writes the resource method, the client, the Maven dependency, the client bus and the client config. This is how a webservice calls another service: do not hand-write the client or its config. Idempotent on an identical endpoint."""
+        return rest.post(
+            f"/v1/services/{webservice}/rest-endpoints",
+            params={"app_root": app_root, "dry_run": str(dry_run).lower()},
+            json={"method": method, "path": path, "service": service, "operation": operation},
+        )
+
+    @tool()
+    def remove_rest_endpoint(
+        app_root: str, webservice: str, method: str, path: str, dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Remove a REST endpoint from a webservice, and once nothing else calls its downstream service, the client, dependency and client config it needed."""
+        return rest.delete(
+            f"/v1/services/{webservice}/rest-endpoints/{method.upper()}",
+            params={"app_root": app_root, "path": path, "dry_run": str(dry_run).lower()},
+        )
+
     # ---- Messages ----------------------------------------------------
 
     @tool()
@@ -469,16 +511,13 @@ def build_server(base_url: str | None = None) -> FastMCP:
         name: str,
         in_message: str,
         out_message: str,
-        rest_path: str | None = None,
-        rest_method: str | None = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
         """Add a request-reply API operation. in_message/out_message must be known messages (service or ROE). Idempotent on name."""
         return rest.post(
             f"/v1/services/{service}/operations",
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},
-            json={"name": name, "inMessage": in_message, "outMessage": out_message,
-                  "restPath": rest_path, "restMethod": rest_method},
+            json={"name": name, "inMessage": in_message, "outMessage": out_message},
         )
 
     @tool()

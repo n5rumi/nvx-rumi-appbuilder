@@ -26,8 +26,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * Request body for {@code POST /v1/services/{svc}/operations}. Pairs a request
- * message with a response message; {@code restPath}/{@code restMethod} are
- * optional documentation hints.
+ * message with a response message. An operation describes the service's API
+ * only; exposing it over HTTP is a REST endpoint on a web service (RUMI-457).
  */
 public final class AddOperationRequest {
     private final String name;
@@ -42,16 +42,24 @@ public final class AddOperationRequest {
                                @JsonProperty("outMessage") String outMessage,
                                @JsonProperty("restPath") String restPath,
                                @JsonProperty("restMethod") String restMethod) {
+        // RUMI-456 removed these. They are still bound so that an MCP server older
+        // than this REST service, which sends both as explicit nulls on every call,
+        // is not refused for an unknown property; Operations refuses a real value.
+        this.restPath = restPath;
+        this.restMethod = restMethod;
         this.name = name;
         this.inMessage = inMessage;
         this.outMessage = outMessage;
-        this.restPath = restPath;
-        this.restMethod = restMethod;
     }
 
     public String getName() { return name; }
     public String getInMessage() { return inMessage; }
     public String getOutMessage() { return outMessage; }
-    public String getRestPath() { return restPath; }
-    public String getRestMethod() { return restMethod; }
+
+    /** The removed RUMI-456 field that carries a value, or null if neither does. */
+    public String removedFieldInUse() {
+        if (restPath != null && !restPath.isBlank()) return "restPath";
+        if (restMethod != null && !restMethod.isBlank()) return "restMethod";
+        return null;
+    }
 }
