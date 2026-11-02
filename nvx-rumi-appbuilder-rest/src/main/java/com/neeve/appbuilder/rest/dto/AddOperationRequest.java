@@ -33,11 +33,20 @@ public final class AddOperationRequest {
     private final String name;
     private final String inMessage;
     private final String outMessage;
+    private final String restPath;
+    private final String restMethod;
 
     @JsonCreator
     public AddOperationRequest(@JsonProperty("name") String name,
                                @JsonProperty("inMessage") String inMessage,
-                               @JsonProperty("outMessage") String outMessage) {
+                               @JsonProperty("outMessage") String outMessage,
+                               @JsonProperty("restPath") String restPath,
+                               @JsonProperty("restMethod") String restMethod) {
+        // RUMI-456 removed these. They are still bound so that an MCP server older
+        // than this REST service, which sends both as explicit nulls on every call,
+        // is not refused for an unknown property; Operations refuses a real value.
+        this.restPath = restPath;
+        this.restMethod = restMethod;
         this.name = name;
         this.inMessage = inMessage;
         this.outMessage = outMessage;
@@ -46,4 +55,11 @@ public final class AddOperationRequest {
     public String getName() { return name; }
     public String getInMessage() { return inMessage; }
     public String getOutMessage() { return outMessage; }
+
+    /** The removed RUMI-456 field that carries a value, or null if neither does. */
+    public String removedFieldInUse() {
+        if (restPath != null && !restPath.isBlank()) return "restPath";
+        if (restMethod != null && !restMethod.isBlank()) return "restMethod";
+        return null;
+    }
 }

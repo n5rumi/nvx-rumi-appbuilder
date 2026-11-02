@@ -61,9 +61,10 @@ public final class ApiOperationEditor {
         Path apiXml = AppIntrospector.resolveApiXmlFile(appRoot, serviceName);
         if (!Files.exists(apiXml)) throw new IOException("api.xml not found at " + apiXml);
         Document doc = load(apiXml);
+        boolean migrated = stripRestAttributes(doc);
 
         if (findOperation(doc, name) != null) {
-            return ChangeSet.noop("operation '" + name + "' already exists on service " + serviceName);
+            return migrated ? writeBack(doc, apiXml, dryRun) : ChangeSet.noop("operation '" + name + "' already exists on service " + serviceName);
         }
         ResolutionScope scope = resolutionScope(doc, appRoot);
         if (scope != null) {
@@ -90,10 +91,11 @@ public final class ApiOperationEditor {
         Path apiXml = AppIntrospector.resolveApiXmlFile(appRoot, serviceName);
         if (!Files.exists(apiXml)) throw new IOException("api.xml not found at " + apiXml);
         Document doc = load(apiXml);
+        boolean migrated = stripRestAttributes(doc);
 
         Element op = findOperation(doc, name);
         if (op == null) {
-            return ChangeSet.noop("no operation named '" + name + "' on service " + serviceName);
+            return migrated ? writeBack(doc, apiXml, dryRun) : ChangeSet.noop("no operation named '" + name + "' on service " + serviceName);
         }
         XmlDomUtils.removeElement(op);
         return writeBack(doc, apiXml, dryRun);
@@ -104,9 +106,10 @@ public final class ApiOperationEditor {
         Path apiXml = AppIntrospector.resolveApiXmlFile(appRoot, serviceName);
         if (!Files.exists(apiXml)) throw new IOException("api.xml not found at " + apiXml);
         Document doc = load(apiXml);
+        boolean migrated = stripRestAttributes(doc);
 
         Element op = findOperation(doc, oldName);
-        if (op == null) return ChangeSet.noop("no operation named '" + oldName + "' on service " + serviceName);
+        if (op == null) return migrated ? writeBack(doc, apiXml, dryRun) : ChangeSet.noop("no operation named '" + oldName + "' on service " + serviceName);
         if (findOperation(doc, newName) != null) {
             throw new IllegalArgumentException("operation '" + newName + "' already exists on service " + serviceName);
         }
@@ -122,6 +125,30 @@ public final class ApiOperationEditor {
         } catch (Exception e) {
             throw new IOException("failed to parse " + apiXml, e);
         }
+    }
+
+    /**
+     * Drop the {@code RESTPath}/{@code RESTMethod} attributes an older App
+     * Builder wrote (RUMI-456). Rumi's schema no longer accepts them, so an
+     * api.xml carrying them fails validation on any write; removing them on
+     * every edit, even one that is otherwise a no-op, is how such a file is
+     * brought back to valid. They never had any effect, so nothing is lost.
+     *
+     * @return true if anything was removed.
+     */
+    static boolean stripRestAttributes(Document doc) {
+        boolean stripped = false;
+        NodeList ops = doc.getElementsByTagNameNS(ASML_NAMESPACE, "operation");
+        for (int i = 0; i < ops.getLength(); i++) {
+            Element e = (Element) ops.item(i);
+            for (String attribute : new String[] {"RESTPath", "RESTMethod"}) {
+                if (e.hasAttribute(attribute)) {
+                    e.removeAttribute(attribute);
+                    stripped = true;
+                }
+            }
+        }
+        return stripped;
     }
 
     private static Element findOperation(Document doc, String name) {
