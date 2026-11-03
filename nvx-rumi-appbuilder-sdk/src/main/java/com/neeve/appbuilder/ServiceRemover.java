@@ -114,7 +114,7 @@ public final class ServiceRemover {
         if (!holders.isEmpty()) {
             throw new IllegalStateException("cannot remove service '" + kebab + "': "
                 + holders.stream().map(ServiceClientDef::getWebService).collect(java.util.stream.Collectors.joining(", "))
-                + " still hold a client for it (remove it with remove_service_client first)");
+                + " still hold a client for it (remove it with remove_service_client first; CLI: rumi dev service-client remove)");
         }
         boolean clientConfigTouched = false;
         if (moduleDirExists && AppIntrospector.resolveServiceType(appRoot, serviceName) == ServiceBuilder.ServiceType.WEBSERVICE) {

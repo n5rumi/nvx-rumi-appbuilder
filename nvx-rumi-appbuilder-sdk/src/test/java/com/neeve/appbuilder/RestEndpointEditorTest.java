@@ -262,6 +262,9 @@ public class RestEndpointEditorTest {
     public void aBodyThatCallsAServiceWithoutItsClientIsRefusedNamingTheStep() throws Exception {
         assertRefused(() -> addEndpoint("GET", "/orders/{orderId}", CALL_BODY),
             "add_service_client(gateway, order-processor)");
+        // and the CLI user is told the command they actually have (RUMI-461)
+        assertRefused(() -> addEndpoint("GET", "/orders/{orderId}", CALL_BODY),
+            "CLI: rumi dev service-client add gateway order-processor");
         assertFalse(Files.exists(webSource.resolve("resources/OrdersByOrderIdResource.java")));
     }
 

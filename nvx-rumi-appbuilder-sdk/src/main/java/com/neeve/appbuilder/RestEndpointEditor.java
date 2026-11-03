@@ -111,7 +111,7 @@ public final class RestEndpointEditor {
         if (existing != null) {
             if (!existing.getBody().strip().equals(code.strip())) {
                 throw new IllegalArgumentException(httpMethod + " " + path + " already exists on service "
-                    + layout.webKebab + "; change it with update_rest_endpoint");
+                    + layout.webKebab + "; change it with update_rest_endpoint (CLI: rumi dev rest-endpoint update)");
             }
             // the same body again may still bring imports a failed compile asked for
             String text = Files.readString(existing.getJavaFile());
@@ -166,7 +166,7 @@ public final class RestEndpointEditor {
         RestEndpointDef existing = RestEndpointIntrospector.getEndpoint(appRoot, webService, httpMethod, path);
         if (existing == null) {
             throw new IllegalArgumentException("no " + httpMethod + " " + path + " endpoint on service "
-                + layout.webKebab + "; add it with add_rest_endpoint");
+                + layout.webKebab + "; add it with add_rest_endpoint (CLI: rumi dev rest-endpoint add)");
         }
         requireClientsFor(appRoot, layout, code);
         List<String> lines = new ArrayList<>(Arrays.asList(Files.readString(existing.getJavaFile()).split("\n", -1)));
@@ -311,8 +311,8 @@ public final class RestEndpointEditor {
             if (Pattern.compile("\\b" + Pattern.quote(cls) + "\\b").matcher(codeOnly).find()
                     && !(Files.exists(clientFile) && Files.readString(clientFile).contains(ServiceClientEditor.CLIENT_MARKER))) {
                 throw new IllegalStateException("the body uses " + cls + ", but " + layout.webKebab
-                    + " has no client for " + kebab + "; call add_service_client(" + layout.webKebab + ", "
-                    + kebab + ") first");
+                    + " has no client for " + kebab + "; add that client first with add_service_client(" + layout.webKebab + ", " + kebab
+                    + ") (CLI: rumi dev service-client add " + layout.webKebab + " " + kebab + ")");
             }
         }
     }
