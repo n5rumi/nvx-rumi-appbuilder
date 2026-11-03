@@ -83,7 +83,10 @@ def build_server(base_url: str | None = None) -> FastMCP:
         writing the real application immediately rather than deleting demo
         messages and handlers first. The choice is recorded in the app and
         inherited by every service you add later. Pass include_samples=True only
-        if you want the illustrative Echo/alarm/message-sending examples.
+        if you want the illustrative examples: an echo request answered from
+        state, a processor `echo` operation another service can call, a driver's
+        sending thread and a connector's alarm loop. Either way a webservice
+        starts with /health only; its endpoints come from add_rest_endpoint.
 
         artifact_id names the Maven artifacts explicitly. Left unset it is derived
         from app_name, which strips punctuation and spaces and so stutters against
@@ -163,7 +166,12 @@ def build_server(base_url: str | None = None) -> FastMCP:
         As with create_app, the scaffold carries no worked example code by
         default -- just the wiring (injection points, state factory, HTTP server
         lifecycle) and the javadoc explaining each contract. Pass
-        include_samples=True for the illustrative version.
+        include_samples=True for the illustrative version. A sample processor
+        also gets an `echo` operation in its api.xml, with <Service>EchoRequest
+        and <Service>EchoResponse in the shared ROE model (refused if those names
+        are taken), so a webservice can call it through add_service_client. A
+        webservice has no REST endpoints beyond /health: add them with
+        add_rest_endpoint.
         """
         return rest.post(
             "/v1/services",
@@ -180,7 +188,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     @tool()
     def remove_service(app_root: str, name: str, dry_run: bool = False) -> dict[str, Any]:
-        """Orchestrated service removal: module dir, parent POM, system POM dep, config fragments, factory IDs."""
+        """Orchestrated service removal: module dir, parent POM, system POM dep, config fragments, factory IDs. Refused while a webservice holds a client for the service (remove_service_client first). Removing a webservice removes its own service clients. Removing a sample processor removes its echo messages from the ROE model, unless code elsewhere still uses them; the reason then says where."""
         return rest.delete(
             f"/v1/services/{name}",
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},
@@ -283,7 +291,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     @tool()
     def list_rest_endpoints(app_root: str, webservice: str) -> list[dict[str, Any]]:
-        """List the REST endpoints on a webservice (method and path). Bodies are omitted; use get_rest_endpoint for one body."""
+        """List the REST endpoints on a webservice (method and path). Bodies are omitted; use get_rest_endpoint for one body. Refused if the name is not a webservice."""
         return rest.get(f"/v1/services/{webservice}/rest-endpoints", {"app_root": app_root})
 
     @tool()
@@ -340,7 +348,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
 
     @tool()
     def list_service_clients(app_root: str, webservice: str) -> list[dict[str, Any]]:
-        """List the service clients a webservice holds: the service each calls, its class, and its methods."""
+        """List the service clients a webservice holds: the service each calls, its class, and its methods. Refused if the name is not a webservice."""
         return rest.get(f"/v1/services/{webservice}/service-clients", {"app_root": app_root})
 
     @tool()

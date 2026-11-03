@@ -268,6 +268,12 @@ Two separate operations, deliberately:
   only the shared model. A body naming `<Service>Client` before its client exists is refused, naming the
   step: client names are predictable, so it is a text check, and RUMI-416's compile catches the rest.
 
+The quickstart (RUMI-459) uses both: a webservice starts with `/health` only, and a **sample**
+processor carries an `echo` api.xml operation whose `<Service>EchoRequest/Response` live in the
+**shared ROE model**. Because that model is shared, `ServiceBuilder` refuses a sample processor whose
+echo names are already taken (adding a message is a noop on an existing name), and `ServiceRemover`
+removes the two messages only while no file outside the processor's module uses them.
+
 Rules that fail silently if broken:
 
 - ⚠️ **The client is keyed with the target's ENGINE name, `<service>-<partition>` (`demo-orders-1`),

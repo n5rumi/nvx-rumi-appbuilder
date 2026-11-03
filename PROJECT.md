@@ -136,6 +136,36 @@ the message operations (kept composable — connector add mints no factory IDs).
 | `ConnectorEditor.addConnector` | `POST /v1/services/{s}/connectors` | `add_connector` |
 | `ConnectorEditor.removeConnector` | `DELETE /v1/services/{s}/connectors/{name}` | `remove_connector` |
 
+### REST endpoint operations *(RUMI-457 — webservice only)*
+
+An endpoint's body is the caller's Java code, the way a handler's is; the editor
+writes the JAX-RS method around it. A body that calls ANOTHER service needs that
+service's client first (below), and naming a missing client is refused.
+
+| SDK | REST | MCP tool |
+|---|---|---|
+| `RestEndpointIntrospector.listEndpoints` | `GET /v1/services/{s}/rest-endpoints` | `list_rest_endpoints` |
+| `RestEndpointIntrospector.getEndpoint` | `GET /v1/services/{s}/rest-endpoints/{method}?path=` | `get_rest_endpoint` |
+| `RestEndpointEditor.addEndpoint` | `POST /v1/services/{s}/rest-endpoints` | `add_rest_endpoint` |
+| `RestEndpointEditor.updateEndpoint` | `PUT /v1/services/{s}/rest-endpoints/{method}?path=` | `update_rest_endpoint` |
+| `RestEndpointEditor.removeEndpoint` | `DELETE /v1/services/{s}/rest-endpoints/{method}?path=` | `remove_rest_endpoint` |
+
+### Service client operations *(RUMI-457 — webservice only)*
+
+Prepares a webservice for request-reply with another service: client class,
+Maven dependency, client bus and client config. Not needed to call the
+webservice's own engine, or to send a one-way message.
+
+| SDK | REST | MCP tool |
+|---|---|---|
+| `ServiceClientIntrospector.listClients` | `GET /v1/services/{s}/service-clients` | `list_service_clients` |
+| `ServiceClientIntrospector.getClient` | `GET /v1/services/{s}/service-clients/{target}` | `get_service_client` |
+| `ServiceClientEditor.addServiceClient` | `POST /v1/services/{s}/service-clients` | `add_service_client` |
+| `ServiceClientEditor.removeServiceClient` | `DELETE /v1/services/{s}/service-clients/{target}` | `remove_service_client` |
+
+All nine refuse a name that is not a webservice (RUMI-461): a mistyped name is
+an error, never an empty list or a successful noop.
+
 ### Message type operations *(new — not in CLI today)*
 
 | SDK | REST | MCP tool |
