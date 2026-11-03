@@ -56,10 +56,15 @@ public class ServiceClients extends AbstractResource {
 
     @GET
     @Operation(summary = "List a web service's service clients",
-               description = "Returns every client: the service it calls, its engine, its class, and the methods it offers.")
+               description = "Returns every client: the service it calls, its engine, its class, and the methods it offers. "
+                           + "With service, only the client for that service, if any.")
     public List<ServiceClientDef> list(@QueryParam("app_root") String appRoot,
-                                       @PathParam("svc") String service) throws IOException {
-        return ServiceClientIntrospector.listClients(requireAbsoluteAppRoot(appRoot), service);
+                                       @PathParam("svc") String service,
+                                       @QueryParam("service") String target) throws IOException {
+        java.nio.file.Path root = requireAbsoluteAppRoot(appRoot);
+        if (target == null || target.isBlank()) return ServiceClientIntrospector.listClients(root, service);
+        ServiceClientDef c = ServiceClientIntrospector.getClient(root, service, target);
+        return c == null ? List.of() : List.of(c);
     }
 
     @GET

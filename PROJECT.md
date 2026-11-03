@@ -158,13 +158,17 @@ webservice's own engine, or to send a one-way message.
 
 | SDK | REST | MCP tool |
 |---|---|---|
-| `ServiceClientIntrospector.listClients` | `GET /v1/services/{s}/service-clients` | `list_service_clients` |
+| `ServiceClientIntrospector.listClients` | `GET /v1/services/{s}/service-clients[?service=]` | `list_service_clients` (webservice) |
+| `ServiceClientIntrospector.listClientsOf` | `GET /v1/service-clients?service=` | `list_service_clients` (service) |
 | `ServiceClientIntrospector.getClient` | `GET /v1/services/{s}/service-clients/{target}` | `get_service_client` |
 | `ServiceClientEditor.addServiceClient` | `POST /v1/services/{s}/service-clients` | `add_service_client` |
 | `ServiceClientEditor.removeServiceClient` | `DELETE /v1/services/{s}/service-clients/{target}` | `remove_service_client` |
 
-All nine refuse a name that is not a webservice (RUMI-461): a mistyped name is
-an error, never an empty list or a successful noop.
+A name that is not a webservice is refused (RUMI-461): a mistyped name is an
+error, never an empty list or a successful noop. Given a `service` alone,
+`list_service_clients` answers the reverse question, who calls it, which is
+whose generated client a change to its api.xml breaks; an unknown service is
+refused there too.
 
 ### Message type operations *(new — not in CLI today)*
 

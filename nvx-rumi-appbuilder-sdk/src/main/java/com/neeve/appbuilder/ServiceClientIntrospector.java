@@ -80,14 +80,20 @@ public final class ServiceClientIntrospector {
     }
 
     /**
-     * Every client, in any web service of the app, for {@code service}. Reads
-     * only each client's target constant, not the target's api.xml, so the
-     * records carry no methods.
+     * Every client, in any web service of the app, for {@code service}: who
+     * calls it, and so whose generated client a change to its api.xml breaks.
+     * Reads only each client's target constant, not the target's api.xml, so
+     * the records carry no methods. An unknown service is refused rather than
+     * reported as having no callers.
      */
     public static List<ServiceClientDef> listClientsOf(Path appRoot, String service) throws IOException {
         String kebab = TokenUtils.toKebabCase(service);
+        List<String> services = ServiceIntrospector.listServiceNames(appRoot);
+        if (!services.contains(kebab) && !Files.isDirectory(AppIntrospector.resolveServiceModuleDir(appRoot, service))) {
+            throw new IllegalArgumentException("service '" + service + "' not found under " + appRoot);
+        }
         List<ServiceClientDef> out = new ArrayList<>();
-        for (String name : ServiceIntrospector.listServiceNames(appRoot)) {
+        for (String name : services) {
             if (!Files.isDirectory(AppIntrospector.resolveServiceModuleDir(appRoot, name))) continue;
             if (AppIntrospector.resolveServiceType(appRoot, name) != ServiceBuilder.ServiceType.WEBSERVICE) continue;
             Layout layout = Layout.of(appRoot, name);

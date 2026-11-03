@@ -347,9 +347,17 @@ def build_server(base_url: str | None = None) -> FastMCP:
         )
 
     @tool()
-    def list_service_clients(app_root: str, webservice: str) -> list[dict[str, Any]]:
-        """List the service clients a webservice holds: the service each calls, its class, and its methods. Refused if the name is not a webservice."""
-        return rest.get(f"/v1/services/{webservice}/service-clients", {"app_root": app_root})
+    def list_service_clients(
+        app_root: str, webservice: str | None = None, service: str | None = None
+    ) -> list[dict[str, Any]]:
+        """List service clients. With webservice: the clients it holds (the service each calls, its class, and its methods); refused if the name is not a webservice. With service: who calls that service, i.e. every webservice holding a client for it, whose generated client a change to its api.xml (renaming or removing an operation) breaks; methods are omitted there. Give both to check one pair. At least one is required."""
+        if webservice:
+            params = {"app_root": app_root}
+            if service:
+                params["service"] = service
+            return rest.get(f"/v1/services/{webservice}/service-clients", params)
+        # with neither, the REST service refuses it, so the rule lives in one place
+        return rest.get("/v1/service-clients", {"app_root": app_root, "service": service})
 
     @tool()
     def get_service_client(app_root: str, webservice: str, service: str) -> dict[str, Any]:

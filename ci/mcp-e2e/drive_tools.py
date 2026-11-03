@@ -130,6 +130,55 @@ async def main():
         check("and rolls back over the wire",
               [m.get("name") for m in before] == [m.get("name") for m in after],
               f"{[m.get('name') for m in before]} != {[m.get('name') for m in after]}")
+
+        # --- RUMI-457/459: REST endpoints and service clients over the wire ---
+        await call(mcp, "add_service", app_root=root, name="web", type="webservice",
+                   clustered=False, partitions=1)
+        for name, field in (("Ping", "text"), ("Pong", "echo")):
+            await call(mcp, "add_message", app_root=root, service="proc", name=name, scope="roe",
+                       fields=[{"name": field, "type": "String"}])
+        await call(mcp, "add_operation", app_root=root, service="proc", name="ping",
+                   in_message="Ping", out_message="Pong")
+        await call(mcp, "add_service_client", app_root=root, webservice="web", service="proc")
+        held = await call(mcp, "list_service_clients", app_root=root, webservice="web")
+        check("list_service_clients by webservice",
+              [c.get("service") for c in held] == ["proc"]
+              and any("ping" in m for m in held[0].get("methods", [])), str(held)[:200])
+        callers = await call(mcp, "list_service_clients", app_root=root, service="proc")
+        check("list_service_clients by service finds its callers",
+              [c.get("webService") for c in callers] == ["web"], str(callers)[:200])
+        pair = await call(mcp, "list_service_clients", app_root=root, webservice="web", service="nope")
+        check("list_service_clients for a pair with no client is empty", pair == [], str(pair)[:200])
+        try:
+            await call(mcp, "list_service_clients", app_root=root, service="porc")
+            refused = False
+        except Exception:
+            refused = True
+        check("a mistyped service is refused, not reported as uncalled", refused)
+        try:
+            await call(mcp, "list_service_clients", app_root=root)
+            refused = False
+        except Exception:
+            refused = True
+        check("list_service_clients with neither webservice nor service is refused", refused)
+        body = "return RestJson.reply(ProcClient.get().ping(com.e2e.roe.Ping.create()));"
+        await call(mcp, "add_rest_endpoint", app_root=root, webservice="web", method="GET",
+                   path="/ping", body=body)
+        eps = await call(mcp, "list_rest_endpoints", app_root=root, webservice="web")
+        check("add_rest_endpoint landed", [(e.get("method"), e.get("path")) for e in eps] == [("GET", "/ping")],
+              str(eps)[:200])
+        ep = await call(mcp, "get_rest_endpoint", app_root=root, webservice="web", method="GET", path="/ping")
+        check("get_rest_endpoint returns the body verbatim", ep.get("body") == body, str(ep)[:200])
+        await call(mcp, "update_rest_endpoint", app_root=root, webservice="web", method="GET",
+                   path="/ping", body="return Response.noContent().build();")
+        ep = await call(mcp, "get_rest_endpoint", app_root=root, webservice="web", method="GET", path="/ping")
+        check("update_rest_endpoint replaced the body",
+              ep.get("body") == "return Response.noContent().build();", str(ep)[:200])
+        await call(mcp, "remove_rest_endpoint", app_root=root, webservice="web", method="GET", path="/ping")
+        await call(mcp, "remove_service_client", app_root=root, webservice="web", service="proc")
+        callers = await call(mcp, "list_service_clients", app_root=root, service="proc")
+        check("remove_rest_endpoint + remove_service_client leave no callers", callers == [], str(callers)[:200])
+
         print(f"\n{ok} passed, {fail} failed")
         return 1 if fail else 0
     finally:

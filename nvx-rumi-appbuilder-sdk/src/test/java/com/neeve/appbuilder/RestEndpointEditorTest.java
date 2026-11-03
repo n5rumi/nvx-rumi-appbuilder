@@ -136,6 +136,17 @@ public class RestEndpointEditorTest {
     }
 
     @Test
+    public void listClientsOfFindsEveryCallerAndRefusesAnUnknownService() throws Exception {
+        assertTrue(ServiceClientIntrospector.listClientsOf(appRoot, SVC).isEmpty());
+        addClient();
+        final List<ServiceClientDef> callers = ServiceClientIntrospector.listClientsOf(appRoot, SVC);
+        assertEquals(1, callers.size());
+        assertEquals(WEB, callers.get(0).getWebService());
+        // a typo is not "nobody calls it"
+        assertRefused(() -> ServiceClientIntrospector.listClientsOf(appRoot, "order-procesor"), "not found");
+    }
+
+    @Test
     public void aMistypedWebserviceIsRefusedRatherThanReadAsEmpty() throws Exception {
         // reads and removals too: an empty list or a noop would read as success
         assertRefused(() -> ServiceClientIntrospector.listClients(appRoot, "gatway"), "not found");

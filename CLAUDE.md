@@ -274,6 +274,11 @@ processor carries an `echo` api.xml operation whose `<Service>EchoRequest/Respon
 echo names are already taken (adding a message is a noop on an existing name), and `ServiceRemover`
 removes the two messages only while no file outside the processor's module uses them.
 
+`list_service_clients` takes `webservice`, `service`, or both. `service` alone is the reverse lookup
+(`listClientsOf`, `GET /v1/service-clients?service=`): who calls it. Its own root resource,
+`ServiceCallers`, because the webservices are what it finds, not what it is given. With neither, the
+REST service refuses it, not the MCP layer: `test_tool_coverage` requires every tool to reach REST.
+
 Rules that fail silently if broken:
 
 - ⚠️ **The client is keyed with the target's ENGINE name, `<service>-<partition>` (`demo-orders-1`),
