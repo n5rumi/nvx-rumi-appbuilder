@@ -136,6 +136,40 @@ the message operations (kept composable — connector add mints no factory IDs).
 | `ConnectorEditor.addConnector` | `POST /v1/services/{s}/connectors` | `add_connector` |
 | `ConnectorEditor.removeConnector` | `DELETE /v1/services/{s}/connectors/{name}` | `remove_connector` |
 
+### REST endpoint operations *(RUMI-457 — webservice only)*
+
+An endpoint's body is the caller's Java code, the way a handler's is; the editor
+writes the JAX-RS method around it. A body that calls ANOTHER service needs that
+service's client first (below), and naming a missing client is refused.
+
+| SDK | REST | MCP tool |
+|---|---|---|
+| `RestEndpointIntrospector.listEndpoints` | `GET /v1/services/{s}/rest-endpoints` | `list_rest_endpoints` |
+| `RestEndpointIntrospector.getEndpoint` | `GET /v1/services/{s}/rest-endpoints/{method}?path=` | `get_rest_endpoint` |
+| `RestEndpointEditor.addEndpoint` | `POST /v1/services/{s}/rest-endpoints` | `add_rest_endpoint` |
+| `RestEndpointEditor.updateEndpoint` | `PUT /v1/services/{s}/rest-endpoints/{method}?path=` | `update_rest_endpoint` |
+| `RestEndpointEditor.removeEndpoint` | `DELETE /v1/services/{s}/rest-endpoints/{method}?path=` | `remove_rest_endpoint` |
+
+### Service client operations *(RUMI-457 — webservice only)*
+
+Prepares a webservice for request-reply with another service: client class,
+Maven dependency, client bus and client config. Not needed to call the
+webservice's own engine, or to send a one-way message.
+
+| SDK | REST | MCP tool |
+|---|---|---|
+| `ServiceClientIntrospector.listClients` | `GET /v1/services/{s}/service-clients[?service=]` | `list_service_clients` (webservice) |
+| `ServiceClientIntrospector.listClientsOf` | `GET /v1/service-clients?service=` | `list_service_clients` (service) |
+| `ServiceClientIntrospector.getClient` | `GET /v1/services/{s}/service-clients/{target}` | `get_service_client` |
+| `ServiceClientEditor.addServiceClient` | `POST /v1/services/{s}/service-clients` | `add_service_client` |
+| `ServiceClientEditor.removeServiceClient` | `DELETE /v1/services/{s}/service-clients/{target}` | `remove_service_client` |
+
+A name that is not a webservice is refused (RUMI-461): a mistyped name is an
+error, never an empty list or a successful noop. Given a `service` alone,
+`list_service_clients` answers the reverse question, who calls it, which is
+whose generated client a change to its api.xml breaks; an unknown service is
+refused there too.
+
 ### Message type operations *(new — not in CLI today)*
 
 | SDK | REST | MCP tool |
@@ -686,9 +720,11 @@ through the exact defect it exists to catch.
 
 A scaffold is a first impression, and for most of this project's life there was
 only one audience to make it on: a human opening a generated app, who wants a
-worked example to imitate. So the templates ship one — an `/echo` endpoint wired
+worked example to imitate. So the templates ship one — an echo request wired
 through a real message to real replicated state, a driver with a rate-governed
-sending thread, a connector with a scheduled alarm loop.
+sending thread, a connector with a scheduled alarm loop. (The webservice used to
+ship a ready-made `/echo` REST endpoint too; since RUMI-459 endpoints are added
+by command, and the app README shows the two that reach the samples.)
 
 Then the audience changed. Sutra and the Rumi Support Agent build Rumi apps
 through the Dev MCP, and the first thing they do after scaffolding is *delete all

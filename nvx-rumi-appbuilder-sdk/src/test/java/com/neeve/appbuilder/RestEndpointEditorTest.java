@@ -116,7 +116,9 @@ public class RestEndpointEditorTest {
         assertEquals(1, clients.size());
         assertEquals("order-processor", clients.get(0).getService());
         assertEquals("demo-order-processor-1", clients.get(0).getEngine());
-        assertEquals(List.of("lookupOrder(LookupOrder) -> OrderFound"), clients.get(0).getMethods());
+        // a sample processor also offers its echo operation (RUMI-459)
+        assertTrue(clients.get(0).getMethods().toString(),
+            clients.get(0).getMethods().contains("lookupOrder(LookupOrder) -> OrderFound"));
 
         assertTrue(addClient().isNoop());
     }
@@ -131,6 +133,27 @@ public class RestEndpointEditorTest {
         assertRefused(() -> ServiceClientEditor.addServiceClient(appRoot, WEB, "ledger", false), "partitions");
         assertEquals(before, Files.readString(config));
         assertFalse(Files.exists(webSource.resolve("rest")));
+    }
+
+    @Test
+    public void listClientsOfFindsEveryCallerAndRefusesAnUnknownService() throws Exception {
+        assertTrue(ServiceClientIntrospector.listClientsOf(appRoot, SVC).isEmpty());
+        addClient();
+        final List<ServiceClientDef> callers = ServiceClientIntrospector.listClientsOf(appRoot, SVC);
+        assertEquals(1, callers.size());
+        assertEquals(WEB, callers.get(0).getWebService());
+        // a typo is not "nobody calls it"
+        assertRefused(() -> ServiceClientIntrospector.listClientsOf(appRoot, "order-procesor"), "not found");
+    }
+
+    @Test
+    public void aMistypedWebserviceIsRefusedRatherThanReadAsEmpty() throws Exception {
+        // reads and removals too: an empty list or a noop would read as success
+        assertRefused(() -> ServiceClientIntrospector.listClients(appRoot, "gatway"), "not found");
+        assertRefused(() -> RestEndpointIntrospector.listEndpoints(appRoot, "gatway"), "not found");
+        assertRefused(() -> ServiceClientEditor.removeServiceClient(appRoot, "gatway", SVC, false, false), "not found");
+        assertRefused(() -> ServiceClientIntrospector.listClients(appRoot, SVC), "is not a webservice");
+        assertRefused(() -> RestEndpointIntrospector.listEndpoints(appRoot, SVC), "is not a webservice");
     }
 
     @Test
@@ -262,6 +285,9 @@ public class RestEndpointEditorTest {
     public void aBodyThatCallsAServiceWithoutItsClientIsRefusedNamingTheStep() throws Exception {
         assertRefused(() -> addEndpoint("GET", "/orders/{orderId}", CALL_BODY),
             "add_service_client(gateway, order-processor)");
+        // and the CLI user is told the command they actually have (RUMI-461)
+        assertRefused(() -> addEndpoint("GET", "/orders/{orderId}", CALL_BODY),
+            "CLI: rumi dev service-client add gateway order-processor");
         assertFalse(Files.exists(webSource.resolve("resources/OrdersByOrderIdResource.java")));
     }
 

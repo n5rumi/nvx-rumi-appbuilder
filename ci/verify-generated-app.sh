@@ -202,6 +202,28 @@ public class Build {
         RestEndpointEditor.addEndpoint(app, "gateway", "POST", "/orders/lookup",
             String.format(call, "body"), List.of(), false);
 
+        // RUMI-459: with samples, the two request-reply kinds the README shows,
+        // added exactly as it says: the gateway's own echo by injection, and the
+        // processor's echo operation through its client.
+        if (includeSamples) {
+            RestEndpointEditor.addEndpoint(app, "gateway", "GET", "/gateway/echo",
+                "final com.example.demo.gateway.messages.EchoRequest request =\n"
+              + "    RestJson.read(uri, null, com.example.demo.gateway.messages.EchoRequest.create());\n"
+              + "final com.example.demo.gateway.messages.EchoResponse response =\n"
+              + "    _engineProvider.getEngine().injectRequestAndWaitForReply(request, 30000);\n"
+              + "return response != null ? RestJson.reply(response)\n"
+              + "                        : RestJson.error(Response.Status.GATEWAY_TIMEOUT, \"no reply in time\");",
+                List.of(), false);
+            RestEndpointEditor.addEndpoint(app, "gateway", "GET", "/order-processor/echo",
+                "final com.example.demo.roe.OrderProcessorEchoRequest request =\n"
+              + "    RestJson.read(uri, null, com.example.demo.roe.OrderProcessorEchoRequest.create());\n"
+              + "try {\n"
+              + "    return RestJson.reply(OrderProcessorClient.get().echo(request));\n"
+              + "} catch (com.neeve.client.EClientException e) {\n"
+              + "    return RestJson.clientFailure(e);\n"
+              + "}", List.of(), false);
+        }
+
         System.out.println(app);
     }
 }
@@ -283,19 +305,26 @@ verify_mode() {
     # test-harness shape, since a deployed engine restarts in a new process, but
     # sharing the JVM would make this check depend on test order.
     info "[${label}] Calling the generated REST endpoints across two services"
-    cp "${EXAMPLES}/RestEndpointTest.java" "${test_dir}/" || fail "[${label}] Could not stage RestEndpointTest"
-    if ! (cd "${app}" && "${MVN}" test -Dtest=RestEndpointTest -Dsurefire.failIfNoSpecifiedTests=false \
-            2>&1 | tee "${out_dir}/rest-endpoints.log"); then
-        echo >&2
-        echo "!! [${label}] A generated REST endpoint did not get its reply from the processor." >&2
-        echo "!! Inspect the app at: ${app}" >&2
-        exit 1
-    fi
-    # -Dsurefire.failIfNoSpecifiedTests=false keeps the other modules quiet, so it
-    # would also let this gate pass with the test never run: require its result.
-    grep -q "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0.*in com.example.demo.RestEndpointTest" \
-        "${out_dir}/rest-endpoints.log" \
-        || fail "[${label}] RestEndpointTest did not run and pass; see ${out_dir}/rest-endpoints.log"
+    # With samples, SampleEchoTest also calls the processor's sample echo
+    # through its client (RUMI-459); it needs a JVM of its own for the same reason.
+    local own_jvm=(RestEndpointTest)
+    [[ "${include_samples}" == "true" ]] && own_jvm+=(SampleEchoTest)
+    local t2
+    for t2 in "${own_jvm[@]}"; do
+        cp "${EXAMPLES}/${t2}.java" "${test_dir}/" || fail "[${label}] Could not stage ${t2}"
+        if ! (cd "${app}" && "${MVN}" test -Dtest="${t2}" -Dsurefire.failIfNoSpecifiedTests=false \
+                2>&1 | tee "${out_dir}/${t2}.log"); then
+            echo >&2
+            echo "!! [${label}] ${t2}: a REST endpoint did not get its reply from the processor." >&2
+            echo "!! Inspect the app at: ${app}" >&2
+            exit 1
+        fi
+        # -Dsurefire.failIfNoSpecifiedTests=false keeps the other modules quiet, so it
+        # would also let this gate pass with the test never run: require its result.
+        grep -q "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0.*in com.example.demo.${t2}" \
+            "${out_dir}/${t2}.log" \
+            || fail "[${label}] ${t2} did not run and pass; see ${out_dir}/${t2}.log"
+    done
     info "[${label}] Generated REST endpoints reached the processor through its client"
 
     # ---- the in-process runner (RUMI-426) ----------------------------------

@@ -95,7 +95,7 @@ public final class ServiceClientEditor {
      */
     public static ChangeSet addServiceClient(Path appRoot, String webService, String service, boolean dryRun)
             throws IOException {
-        Layout layout = Layout.of(appRoot, webService);
+        Layout layout = Layout.ofWebService(appRoot, webService);
         String targetKebab = requireTarget(appRoot, webService, service);
         Path configPath = ConnectorSupport.configPath(appRoot, layout.tokens);
         Document doc = loadConfig(configPath);
@@ -154,7 +154,7 @@ public final class ServiceClientEditor {
      */
     public static ChangeSet removeServiceClient(Path appRoot, String webService, String service, boolean force,
                                                 boolean dryRun) throws IOException {
-        Layout layout = Layout.of(appRoot, webService);
+        Layout layout = Layout.ofWebService(appRoot, webService);
         String targetKebab = TokenUtils.toKebabCase(service);
         Path clientFile = layout.clientFile(targetKebab);
         if (!Files.exists(clientFile) || !Files.readString(clientFile).contains(CLIENT_MARKER)) {
@@ -165,7 +165,7 @@ public final class ServiceClientEditor {
             if (!users.isEmpty()) {
                 throw new IllegalStateException("cannot remove " + layout.webKebab + "'s client for " + targetKebab
                     + ": still used by " + String.join(", ", users)
-                    + " (change those first, or force the removal)");
+                    + " (change those first, or force the removal: force=true, CLI --force)");
             }
         }
         String engine = generatedEngineName(clientFile);
@@ -227,7 +227,7 @@ public final class ServiceClientEditor {
         List<String> methods = ServiceClientIntrospector.methods(appRoot, targetKebab);
         String cls = layout.clientClassName(targetKebab);
         return "Call it from an endpoint body as " + cls + ".get().<operation>(request)"
-            + (methods.isEmpty() ? "; " + targetKebab + " has no api.xml operations yet (add_operation)"
+            + (methods.isEmpty() ? "; " + targetKebab + " has no api.xml operations yet (add_operation; CLI: rumi dev operation add)"
                                  : ": " + String.join(", ", methods));
     }
 

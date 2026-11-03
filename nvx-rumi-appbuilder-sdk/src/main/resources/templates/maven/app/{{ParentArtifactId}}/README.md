@@ -54,6 +54,75 @@ at the log rather than claiming a health check it has not made. Read the log for
 See the Rumi CLI docs. Both run the `cloud` profile; neither is a substitute for
 the above when you just want to look at the app.
 
+## REST endpoints: request-reply with this service, and with another
+
+A webservice's REST endpoints are added by command, and each endpoint's body is
+your code, the way a message handler's is.
+
+<!-- @sample-begin -->
+Scaffolded with samples, a webservice and a processor carry everything needed
+for one endpoint of each request-reply kind. Below, `<webservice>` and `<processor>` are the service names you chose,
+`<ws-package>` is the webservice's package suffix (`order-gateway` becomes
+`order.gateway`), and `<Processor>` is the processor's name in PascalCase
+(`order-processor` becomes `OrderProcessor`).
+
+**1. Request-reply with the webservice's own engine.** The webservice already
+has an `EchoRequest` message and a handler that answers it, so the endpoint only
+injects the request:
+
+```bash
+rumi dev rest-endpoint add <webservice> GET /<webservice>/echo -a . --body-file - <<'EOF'
+final {{AppPackageName}}.<ws-package>.messages.EchoRequest request =
+    RestJson.read(uri, null, {{AppPackageName}}.<ws-package>.messages.EchoRequest.create());
+final {{AppPackageName}}.<ws-package>.messages.EchoResponse response =
+    _engineProvider.getEngine().injectRequestAndWaitForReply(request, 30000);
+return response != null ? RestJson.reply(response)
+                        : RestJson.error(Response.Status.GATEWAY_TIMEOUT, "no reply in time");
+EOF
+```
+
+**2. Request-reply with another service.** The processor has an `echo` operation
+in its `api.xml`. Calling it from the webservice needs the processor's client
+first, which this adds along with its dependency and configuration:
+
+```bash
+rumi dev service-client add <webservice> <processor> -a .
+rumi dev rest-endpoint add <webservice> GET /<processor>/echo -a . --body-file - <<'EOF'
+final {{AppPackageName}}.roe.<Processor>EchoRequest request =
+    RestJson.read(uri, null, {{AppPackageName}}.roe.<Processor>EchoRequest.create());
+try {
+    return RestJson.reply(<Processor>Client.get().echo(request));
+} catch (com.neeve.client.EClientException e) {
+    return RestJson.clientFailure(e);
+}
+EOF
+```
+
+Then `GET /<webservice>/echo?text=hi` and `GET /<processor>/echo?text=hi` each
+echo the text with a count kept in that service's replicated state. A body can
+also do neither, or both, or send a one-way message to a downstream service.
+`rumi dev rest-endpoint get` prints a body back, and `update` replaces it.
+<!-- @sample-end -->
+<!-- @bare-begin -->
+A body does request-reply with the webservice's own engine by injecting a
+request its handler answers (`_engineProvider.getEngine().injectRequestAndWaitForReply(...)`).
+To call an operation another service declares in its `api.xml`, first give the
+webservice that service's client, then call it from the body:
+
+```bash
+rumi dev service-client add <webservice> <service> -a .
+rumi dev rest-endpoint add <webservice> GET /<path> -a . --body-file my-body.java
+```
+
+`rumi dev service-client get <webservice> <service>` lists the methods the
+client offers. `rumi dev rest-endpoint get` prints a body back, and `update`
+replaces it.
+<!-- @bare-end -->
+
+Request-reply between two services' handlers is not available: a handler
+cannot block on another service. It is for REST endpoints, on the webservice's
+own threads.
+
 ## Which Rumi jar has this class?
 
 Rumi is about forty artifacts, and the package name does not name the artifact:

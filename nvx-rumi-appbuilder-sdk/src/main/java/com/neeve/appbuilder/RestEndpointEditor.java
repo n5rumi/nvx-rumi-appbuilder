@@ -103,7 +103,7 @@ public final class RestEndpointEditor {
                                         String body, List<String> imports, boolean dryRun) throws IOException {
         String httpMethod = normalizeMethod(method);
         List<String> pathParams = parsePath(path);
-        Layout layout = requireWebService(appRoot, webService);
+        Layout layout = Layout.ofWebService(appRoot, webService);
         String code = requireBody(body);
         List<String> importList = checkImports(imports);
 
@@ -111,7 +111,7 @@ public final class RestEndpointEditor {
         if (existing != null) {
             if (!existing.getBody().strip().equals(code.strip())) {
                 throw new IllegalArgumentException(httpMethod + " " + path + " already exists on service "
-                    + layout.webKebab + "; change it with update_rest_endpoint");
+                    + layout.webKebab + "; change it with update_rest_endpoint (CLI: rumi dev rest-endpoint update)");
             }
             // the same body again may still bring imports a failed compile asked for
             String text = Files.readString(existing.getJavaFile());
@@ -160,13 +160,13 @@ public final class RestEndpointEditor {
     public static ChangeSet updateEndpoint(Path appRoot, String webService, String method, String path,
                                            String body, List<String> imports, boolean dryRun) throws IOException {
         String httpMethod = normalizeMethod(method);
-        Layout layout = requireWebService(appRoot, webService);
+        Layout layout = Layout.ofWebService(appRoot, webService);
         String code = requireBody(body);
         List<String> importList = checkImports(imports);
         RestEndpointDef existing = RestEndpointIntrospector.getEndpoint(appRoot, webService, httpMethod, path);
         if (existing == null) {
             throw new IllegalArgumentException("no " + httpMethod + " " + path + " endpoint on service "
-                + layout.webKebab + "; add it with add_rest_endpoint");
+                + layout.webKebab + "; add it with add_rest_endpoint (CLI: rumi dev rest-endpoint add)");
         }
         requireClientsFor(appRoot, layout, code);
         List<String> lines = new ArrayList<>(Arrays.asList(Files.readString(existing.getJavaFile()).split("\n", -1)));
@@ -191,7 +191,7 @@ public final class RestEndpointEditor {
                                            boolean dryRun) throws IOException {
         String httpMethod = normalizeMethod(method);
         if (path == null || path.isBlank()) throw new IllegalArgumentException("path is required");
-        Layout layout = requireWebService(appRoot, webService);
+        Layout layout = Layout.ofWebService(appRoot, webService);
         RestEndpointDef endpoint = RestEndpointIntrospector.getEndpoint(appRoot, webService, httpMethod, path);
         if (endpoint == null) {
             return ChangeSet.noop("no " + httpMethod + " " + path + " endpoint on service " + layout.webKebab);
@@ -270,13 +270,6 @@ public final class RestEndpointEditor {
         return params;
     }
 
-    private static Layout requireWebService(Path appRoot, String webService) throws IOException {
-        if (AppIntrospector.resolveServiceType(appRoot, webService) != ServiceBuilder.ServiceType.WEBSERVICE) {
-            throw new IllegalArgumentException("service '" + webService + "' is not a webservice; REST endpoints are served by a webservice");
-        }
-        return Layout.of(appRoot, webService);
-    }
-
     private static String requireBody(String body) {
         if (body == null || body.isBlank()) {
             throw new IllegalArgumentException("body is required: the Java code of the endpoint method, without its braces");
@@ -311,8 +304,8 @@ public final class RestEndpointEditor {
             if (Pattern.compile("\\b" + Pattern.quote(cls) + "\\b").matcher(codeOnly).find()
                     && !(Files.exists(clientFile) && Files.readString(clientFile).contains(ServiceClientEditor.CLIENT_MARKER))) {
                 throw new IllegalStateException("the body uses " + cls + ", but " + layout.webKebab
-                    + " has no client for " + kebab + "; call add_service_client(" + layout.webKebab + ", "
-                    + kebab + ") first");
+                    + " has no client for " + kebab + "; add that client first with add_service_client(" + layout.webKebab + ", " + kebab
+                    + ") (CLI: rumi dev service-client add " + layout.webKebab + " " + kebab + ")");
             }
         }
     }

@@ -173,6 +173,7 @@ public class ServiceBuilder {
             String serviceArtifactId = parentArtifactId + "-" + kebabCase;
             map.put(TokenUtils.toToken("ServiceDisplayName"), TokenUtils.forDisplay(serviceName));
             map.put(TokenUtils.toToken("ServiceTokenName"), kebabCase);     // e.g., "order-processor"
+            map.put(TokenUtils.toToken("ServiceClassPrefix"), classPrefix(kebabCase)); // e.g., "OrderProcessor"
             map.put(TokenUtils.toToken("ServiceName"), map.get(TokenUtils.toToken("AppTokenName")) + "-" + kebabCase); // e.g., "tradingsystem-order-processor"
             map.put(TokenUtils.toToken("ServicePackageName"), dottedCase);  // e.g., "order.processor"
             map.put(TokenUtils.toToken("ServicePackagePath"), slashCase);      // e.g., "order/processor"
@@ -297,6 +298,62 @@ public class ServiceBuilder {
         Files.write(pomPath, lines);
     }
 
+    /**
+     * The service's name as a class-name prefix, e.g. {@code OrderProcessor}. The
+     * {@code ServiceClassPrefix} token and the sample echo message names both use
+     * it, so the template's handler always names the messages the builder made.
+     */
+    static String classPrefix(String serviceName) {
+        return TokenUtils.toPascalCase(TokenUtils.toKebabCase(serviceName));
+    }
+
+    /** The request message of a sample processor's echo operation (RUMI-459). */
+    static String sampleEchoRequest(String serviceName) {
+        return classPrefix(serviceName) + "EchoRequest";
+    }
+
+    /** The reply message of a sample processor's echo operation (RUMI-459). */
+    static String sampleEchoResponse(String serviceName) {
+        return classPrefix(serviceName) + "EchoResponse";
+    }
+
+    /**
+     * Refuse a sample processor whose echo message names the ROE model already
+     * holds. Adding a message is a noop when the name exists, so the operation
+     * would pair messages of some other shape, the handler would not compile,
+     * and removing the processor later would take them with it.
+     */
+    private static void requireSampleEchoNamesFree(Path appRoot, String serviceName) throws IOException {
+        for (String m : new String[] {sampleEchoRequest(serviceName), sampleEchoResponse(serviceName)}) {
+            if (MessageIntrospector.getMessage(appRoot, serviceName, m, FieldEditor.ModelScope.ROE_MESSAGES) != null) {
+                throw new IllegalArgumentException("the ROE model already has a message " + m
+                    + ", which the sample echo operation of '" + serviceName + "' would use; rename that message,"
+                    + " choose another service name, or scaffold this service without samples");
+            }
+        }
+    }
+
+    /**
+     * Give a sample processor its {@code echo} operation (RUMI-459). The two
+     * messages go in the shared ROE model, because a webservice in another
+     * module calls the operation through the processor's generated client, and
+     * the api.xml resolves its operations against the ROE model. A template
+     * cannot write there, so this is done by builder operations, which also
+     * allocate the message ids. They are named after the service so two sample
+     * processors cannot collide, and the processor template's handler answers
+     * the request.
+     */
+    private static void addSampleEchoOperation(Path appRoot, String serviceName) throws IOException {
+        String request = sampleEchoRequest(serviceName);
+        String response = sampleEchoResponse(serviceName);
+        MessageEditor.addMessage(appRoot, serviceName, FieldEditor.ModelScope.ROE_MESSAGES, request,
+            java.util.List.of(new com.neeve.appbuilder.model.FieldDef("text", "String", java.util.Map.of())), false);
+        MessageEditor.addMessage(appRoot, serviceName, FieldEditor.ModelScope.ROE_MESSAGES, response,
+            java.util.List.of(new com.neeve.appbuilder.model.FieldDef("echo", "String", java.util.Map.of()),
+                              new com.neeve.appbuilder.model.FieldDef("count", "Long", java.util.Map.of())), false);
+        ApiOperationEditor.addOperation(appRoot, serviceName, "echo", request, response, false);
+    }
+
     public ServiceBuilder createService(ServiceParams params) throws Exception {
         // validate
         if (params == null) {
@@ -308,6 +365,10 @@ public class ServiceBuilder {
         Path appRoot = Paths.get(appParams.getAppRoot()).toAbsolutePath();
         String serviceTypeName = params.getServiceType().getName();
         String buildToolName = appParams.getBuildTool().getName();
+
+        // checked before anything is written
+        boolean sampleEcho = params.getServiceType() == ServiceType.PROCESSOR && params.isIncludeSamples();
+        if (sampleEcho) requireSampleEchoNamesFree(appRoot, params.getServiceName());
 
         // extract template to a temp directory
         Path templateDir;
@@ -344,7 +405,14 @@ public class ServiceBuilder {
 
         // record the factory ids this service now owns into the app-global ledger
         // so they are never reused even after the service is later removed.
+        // First, so a failure below cannot leave them unrecorded.
         FactoryIdCollector.recordAllocatedIds(appRoot);
+
+        // a processor scaffolded with samples gets a working request-reply
+        // operation, so a webservice can show calling it through a client
+        if (sampleEcho) {
+            addSampleEchoOperation(appRoot, params.getServiceName());
+        }
 
         // done
         return this;

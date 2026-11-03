@@ -114,7 +114,7 @@ public final class ServiceRemover {
         if (!holders.isEmpty()) {
             throw new IllegalStateException("cannot remove service '" + kebab + "': "
                 + holders.stream().map(ServiceClientDef::getWebService).collect(java.util.stream.Collectors.joining(", "))
-                + " still hold a client for it (remove it with remove_service_client first)");
+                + " still hold a client for it (remove it with remove_service_client first; CLI: rumi dev service-client remove)");
         }
         boolean clientConfigTouched = false;
         if (moduleDirExists && AppIntrospector.resolveServiceType(appRoot, serviceName) == ServiceBuilder.ServiceType.WEBSERVICE) {
@@ -124,10 +124,37 @@ public final class ServiceRemover {
             }
         }
 
+        // The sample echo operation's messages (RUMI-459) live in the shared ROE
+        // model, outside the module, so they would outlive the processor they
+        // belong to. They go with it, but only while its api.xml still pairs them
+        // in the sample `echo` operation, so messages that merely share the names
+        // are left alone. The ROE model is shared, so they also stay while code in
+        // any other module still uses them: removing them would break a build the
+        // caller never touched.
+        List<Path> roeTouched = new ArrayList<>();
+        String roeKept = null;
+        if (moduleDirExists && isSampleEchoProcessor(appRoot, serviceName)) {
+            String[] sampleMessages = {ServiceBuilder.sampleEchoRequest(serviceName),
+                                       ServiceBuilder.sampleEchoResponse(serviceName)};
+            List<Path> users = filesUsing(appRoot, moduleDir, sampleMessages);
+            if (users.isEmpty()) {
+                for (String m : sampleMessages) {
+                    ChangeSet removed = MessageEditor.removeMessage(appRoot, serviceName,
+                        FieldEditor.ModelScope.ROE_MESSAGES, m, dryRun, true);
+                    roeTouched.addAll(removed.getFilesModified());
+                }
+            } else {
+                roeKept = "kept the sample messages " + String.join(" and ", sampleMessages)
+                    + " in the ROE model, because " + appRoot.relativize(users.get(0)) + " still uses them";
+            }
+        }
+
         // Snapshot factory IDs owned by the service before deleting its files.
         List<Integer> releasedIds = factoryIdsOwnedBy(appRoot, moduleDir);
 
         ChangeSet.Builder cs = ChangeSet.builder();
+        roeTouched.stream().distinct().forEach(cs::addModified);
+        if (roeKept != null) cs.reason(roeKept);
 
         // (1) Delete module directory.
         if (moduleDirExists) {
@@ -189,6 +216,46 @@ public final class ServiceRemover {
     }
 
     // --- internal -----------------------------------------------------
+
+    /**
+     * Whether the service's api.xml still has the sample echo operation
+     * ServiceBuilder added. A failure to read it propagates: answering false
+     * would silently leave the messages behind.
+     */
+    private static boolean isSampleEchoProcessor(Path appRoot, String serviceName) throws IOException {
+        if (AppIntrospector.resolveServiceType(appRoot, serviceName) != ServiceBuilder.ServiceType.PROCESSOR) return false;
+        var op = ApiIntrospector.getOperation(appRoot, serviceName, "echo");
+        return op != null
+            && ServiceBuilder.sampleEchoRequest(serviceName).equals(op.getInMessage())
+            && ServiceBuilder.sampleEchoResponse(serviceName).equals(op.getOutMessage());
+    }
+
+    /**
+     * Source and model files outside {@code moduleDir} that name any of
+     * {@code names}, other than the ROE model that declares them. Build output
+     * is skipped.
+     */
+    private static List<Path> filesUsing(Path appRoot, Path moduleDir, String[] names) throws IOException {
+        Pattern use = Pattern.compile("\\b(" + String.join("|", names) + ")\\b");
+        Path roeModel = AppIntrospector.resolveRoeMessagesXmlFile(appRoot).toAbsolutePath().normalize();
+        Path module = moduleDir.toAbsolutePath().normalize();
+        try (Stream<Path> files = Files.walk(appRoot)) {
+            return files.map(f -> f.toAbsolutePath().normalize())
+                .filter(f -> !f.startsWith(module) && !f.equals(roeModel))
+                .filter(f -> { for (Path part : appRoot.toAbsolutePath().normalize().relativize(f)) {
+                                   String n = part.toString();
+                                   if (n.equals("target") || n.startsWith(".")) return false;
+                               }
+                               return true; })
+                .filter(f -> f.toString().endsWith(".java") || f.toString().endsWith(".xml"))
+                .filter(f -> { try { return use.matcher(Files.readString(f)).find(); }
+                               catch (IOException e) { throw new java.io.UncheckedIOException(e); } })
+                .sorted()
+                .collect(java.util.stream.Collectors.toList());
+        } catch (java.io.UncheckedIOException e) {
+            throw e.getCause();
+        }
+    }
 
     /** Scan factory IDs referenced under the service's module directory. */
     private static List<Integer> factoryIdsOwnedBy(Path appRoot, Path moduleDir) throws IOException {

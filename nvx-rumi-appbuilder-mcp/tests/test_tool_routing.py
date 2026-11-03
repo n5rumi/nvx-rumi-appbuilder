@@ -445,3 +445,20 @@ async def test_service_client_tools_route_to_the_service_clients_resource(mcp) -
                 service="order-processor", force=True)
     assert json.loads(add.calls.last.request.content) == {"service": "order-processor"}
     assert "force=true" in _query(remove.calls.last.request)
+
+
+@respx.mock
+async def test_list_service_clients_routes_by_webservice_by_service_or_both(mcp) -> None:
+    held = respx.get(f"{BASE}/v1/services/gateway/service-clients").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    callers = respx.get(f"{BASE}/v1/service-clients").mock(return_value=httpx.Response(200, json=[]))
+    await _call(mcp, "list_service_clients", app_root="/ws/t", webservice="gateway")
+    assert "service=" not in _query(held.calls.last.request)
+    await _call(mcp, "list_service_clients", app_root="/ws/t", webservice="gateway", service="order-processor")
+    assert "service=order-processor" in _query(held.calls.last.request)
+    await _call(mcp, "list_service_clients", app_root="/ws/t", service="order-processor")
+    assert "service=order-processor" in _query(callers.calls.last.request)
+    # with neither, the REST service is the one that refuses it
+    await _call(mcp, "list_service_clients", app_root="/ws/t")
+    assert "service=" not in _query(callers.calls.last.request)

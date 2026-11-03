@@ -22,9 +22,9 @@ import {{AppPackageName}}.{{ServicePackageName}}.messages.EchoResponse;
 /**
  * A stateful Rumi microservice fronted by an embedded HTTP server.
  *
- * <p>The web layer ({@link {{AppPackageName}}.{{ServicePackageName}}.resources.WebMain})
- * turns HTTP requests into Rumi messages and injects them into this engine via
- * {@code injectRequestAndWaitForReply}. The {@code @EventHandler} methods below
+ * <p>Its REST endpoints (added with {@code rumi dev rest-endpoint add}) turn
+ * HTTP requests into Rumi messages. One that injects into this engine via
+ * {@code injectRequestAndWaitForReply} is answered here: the {@code @EventHandler} methods below
  * run on the engine thread with exclusive access to the replicated
  * {@link Repository} state, and reply via {@code sendReply}. This is the same
  * shape as the nvx-accounts service.
@@ -88,7 +88,8 @@ public class Main implements AepEngineProvider {
     /**
      * Sample request handler: runs on the engine thread, mutates replicated
      * state, and replies. The reply is correlated back to the blocked
-     * {@code injectRequestAndWaitForReply} call in the web layer.
+     * {@code injectRequestAndWaitForReply} call in a REST endpoint; the app's
+     * README shows the command that adds one.
      */
     @EventHandler
     final public void onEchoRequest(final EchoRequest request) {
@@ -106,8 +107,9 @@ public class Main implements AepEngineProvider {
 
     // Request handlers go here. Each one takes a message declared in this
     // service's messages.xml, reads and mutates the replicated Repository via
-    // _engine.getApplicationState(request), and answers the blocked web-layer
-    // call with _messageSender.sendReply(request, response):
+    // _engine.getApplicationState(request), and answers a REST endpoint body
+    // waiting in injectRequestAndWaitForReply with
+    // _messageSender.sendReply(request, response):
     //
     //     @EventHandler
     //     final public void onMyRequest(final MyRequest request) { ... }

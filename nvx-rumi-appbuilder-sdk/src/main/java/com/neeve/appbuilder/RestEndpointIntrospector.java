@@ -53,7 +53,7 @@ public final class RestEndpointIntrospector {
 
     /** Every endpoint on the web service, ordered by path and then method, without bodies. */
     public static List<RestEndpointDef> listEndpoints(Path appRoot, String webService) throws IOException {
-        Layout layout = Layout.of(appRoot, webService);
+        Layout layout = Layout.ofWebService(appRoot, webService);
         if (!Files.isDirectory(layout.resourcesDir)) return Collections.emptyList();
         List<Path> files;
         try (Stream<Path> s = Files.list(layout.resourcesDir)) {
@@ -147,6 +147,19 @@ public final class RestEndpointIntrospector {
             this.supportFile = webSourceDir.resolve("rest").resolve("RestJson.java");
             this.resourcesDir = webSourceDir.resolve("resources");
             this.clientsDir = webSourceDir.resolve("rest");
+        }
+
+        /**
+         * The layout of a service that must be a webservice: a mistyped or
+         * non-webservice name is refused rather than read as one with no
+         * endpoints or clients.
+         */
+        static Layout ofWebService(Path appRoot, String webService) throws IOException {
+            if (AppIntrospector.resolveServiceType(appRoot, webService) != ServiceBuilder.ServiceType.WEBSERVICE) {
+                throw new IllegalArgumentException("service '" + webService
+                    + "' is not a webservice; REST endpoints and service clients live on a webservice");
+            }
+            return of(appRoot, webService);
         }
 
         static Layout of(Path appRoot, String webService) throws IOException {
