@@ -124,10 +124,26 @@ public final class ServiceRemover {
             }
         }
 
+        // The sample echo operation's messages (RUMI-459) live in the shared ROE
+        // model, outside the module, so they would outlive the processor they
+        // belong to. They go with it, but only while its api.xml still pairs them
+        // in the sample `echo` operation, so messages that merely share the names
+        // are left alone.
+        List<Path> roeTouched = new ArrayList<>();
+        if (moduleDirExists && isSampleEchoProcessor(appRoot, serviceName)) {
+            for (String m : new String[] {ServiceBuilder.sampleEchoRequest(serviceName),
+                                          ServiceBuilder.sampleEchoResponse(serviceName)}) {
+                ChangeSet removed = MessageEditor.removeMessage(appRoot, serviceName,
+                    FieldEditor.ModelScope.ROE_MESSAGES, m, dryRun, true);
+                roeTouched.addAll(removed.getFilesModified());
+            }
+        }
+
         // Snapshot factory IDs owned by the service before deleting its files.
         List<Integer> releasedIds = factoryIdsOwnedBy(appRoot, moduleDir);
 
         ChangeSet.Builder cs = ChangeSet.builder();
+        roeTouched.stream().distinct().forEach(cs::addModified);
 
         // (1) Delete module directory.
         if (moduleDirExists) {
@@ -189,6 +205,19 @@ public final class ServiceRemover {
     }
 
     // --- internal -----------------------------------------------------
+
+    /** Whether the service's api.xml still has the sample echo operation ServiceBuilder added. */
+    private static boolean isSampleEchoProcessor(Path appRoot, String serviceName) {
+        try {
+            if (AppIntrospector.resolveServiceType(appRoot, serviceName) != ServiceBuilder.ServiceType.PROCESSOR) return false;
+            var op = ApiIntrospector.getOperation(appRoot, serviceName, "echo");
+            return op != null
+                && ServiceBuilder.sampleEchoRequest(serviceName).equals(op.getInMessage())
+                && ServiceBuilder.sampleEchoResponse(serviceName).equals(op.getOutMessage());
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     /** Scan factory IDs referenced under the service's module directory. */
     private static List<Integer> factoryIdsOwnedBy(Path appRoot, Path moduleDir) throws IOException {

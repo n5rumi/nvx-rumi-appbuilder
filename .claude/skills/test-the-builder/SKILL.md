@@ -134,10 +134,19 @@ The tests go in the **system module** (it has `conf/config.xml` and depends on e
 `$APP/test-demo-system/src/test/java/com/example/demo/`. Copy them from `examples/` next to
 this skill (`$REPO/.claude/skills/test-the-builder/examples/`).
 
-**WebserviceTest** — the deep round-trip: boot the webservice, HTTP GET the echo endpoint
-twice, assert the echo and that the Rumi-state-backed `count` increments. The HTTP port is
-overridden off the 8080 default (commonly occupied) via a system property. **Sample-rich
-scaffolds only** — there is no `/echo` in a sample-free app.
+**WebserviceTest** — the deep round-trip with the webservice's own engine: boot the webservice,
+HTTP GET `/gateway/echo?text=...` twice, assert the echo and that the Rumi-state-backed `count`
+increments. The template no longer generates that endpoint (RUMI-459): add it first with the
+README's first command (`rumi dev rest-endpoint add`), as `ci/verify-generated-app.sh`'s
+`Build.java` does with the builder. The HTTP port is overridden off the 8080 default (commonly
+occupied) via a system property. **Sample-rich scaffolds only** — a sample-free webservice has no
+echo message or handler.
+
+**SampleEchoTest** — the other request-reply kind (RUMI-459): boot the order processor and the
+gateway, then GET `/order-processor/echo?text=...` twice; the gateway calls the processor's
+sample `echo` operation through its generated client. Needs the README's second pair of
+commands first (`service-client add`, then `rest-endpoint add`). **Sample-rich only**, and like
+`RestEndpointTest` it must run in a JVM of its own (RUMI-460).
 
 **BareWebserviceTest** — the sample-free counterpart (RUMI-382): boot the webservice and GET
 `/gateway/v1/health`. Thinner than the echo round trip by necessity, but it covers the thing
@@ -168,7 +177,8 @@ points the tests rely on:
 - activate the profile: `env.put("nv.ddl.profiles","test")`.
 - override the webservice port: `System.setProperty("demo.gateway.http.port","18080")` (pick a
   free port; 8080 is frequently taken).
-- the webservice endpoint path is `/<serviceTokenName>/v1/echo` (e.g. `/gateway/v1/echo`).
+- the webservice's own liveness probe is `/<serviceTokenName>/v1/health`; REST endpoints added by
+  command sit at whatever path you gave them (`/gateway/echo` in the examples).
 - generated apps compile at **release 17** (RUMI-429), so the whole JDK 17 API
   is available. `java.net.HttpURLConnection` is still what these examples use --
   it is adequate for a one-line round trip and has no client to close -- but

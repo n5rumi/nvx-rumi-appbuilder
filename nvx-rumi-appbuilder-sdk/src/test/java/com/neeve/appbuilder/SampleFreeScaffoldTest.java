@@ -36,6 +36,8 @@ import java.util.stream.Stream;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -105,7 +107,10 @@ public class SampleFreeScaffoldTest {
         final String webMain = read(appRoot, "test-bare-webservice/src/main/java/com/example/bare/webservice/resources/WebMain.java");
         assertTrue("a JAX-RS resource with no methods at all is a shape we do not want to ship",
                    webMain.contains("@Path(\"/health\")"));
-        assertTrue(webMain.contains("AepEngineProvider _engineProvider"));
+        // REST endpoints added by command each inject the engine provider; the
+        // wiring that makes that work is the HTTP server's binding (RUMI-459)
+        final String httpServer = read(appRoot, "test-bare-webservice/src/main/java/com/example/bare/webservice/HttpServer.java");
+        assertTrue(httpServer.contains("bind(engineProvider).to(AepEngineProvider.class)"));
 
         final String connectorMain = read(appRoot, "test-bare-connector/src/main/java/com/example/bare/connector/Main.java");
         assertTrue(connectorMain.contains("setEngine"));
@@ -222,6 +227,40 @@ public class SampleFreeScaffoldTest {
     }
 
     // ---- helpers -----------------------------------------------------
+
+    /**
+     * RUMI-459. A sample processor has a working request-reply operation for a
+     * webservice to call through its client: its messages are in the shared
+     * ROE model, its api.xml pairs them as `echo`, and its handler answers. They
+     * leave with the processor. A webservice no longer generates an /echo
+     * endpoint; endpoints are added by command.
+     */
+    @Test
+    public void aSampleProcessorHasAnEchoOperationThatLeavesWithIt() throws Exception {
+        final Path appRoot = scaffoldAllServiceTypes(true);
+        final var op = ApiIntrospector.getOperation(appRoot, "processor", "echo");
+        assertNotNull("the sample processor's echo operation", op);
+        assertEquals("ProcessorEchoRequest", op.getInMessage());
+        assertEquals("ProcessorEchoResponse", op.getOutMessage());
+        final String roe = read(appRoot, "test-samples-roe/src/main/models/com/example/samples/roe/messages.xml");
+        assertTrue(roe.contains("name=\"ProcessorEchoRequest\"") && roe.contains("name=\"ProcessorEchoResponse\""));
+        final String processorMain = read(appRoot, "test-samples-processor/src/main/java/com/example/samples/processor/Main.java");
+        assertTrue(processorMain.contains("onProcessorEchoRequest(final ProcessorEchoRequest request)"));
+        final String webMain = read(appRoot,
+            "test-samples-webservice/src/main/java/com/example/samples/webservice/resources/WebMain.java");
+        assertFalse("endpoints are added by command now", webMain.contains("/echo"));
+
+        ServiceRemover.removeService(appRoot, "processor", false);
+        final String roeAfter = read(appRoot, "test-samples-roe/src/main/models/com/example/samples/roe/messages.xml");
+        // the ids stay reserved as tombstone comments; the messages themselves are gone
+        assertFalse(roeAfter, roeAfter.contains("name=\"ProcessorEcho"));
+    }
+
+    @Test
+    public void aBareProcessorHasNoSampleOperation() throws Exception {
+        final Path appRoot = scaffoldAllServiceTypes(false);
+        assertNull(ApiIntrospector.getOperation(appRoot, "processor", "echo"));
+    }
 
     private Path scaffoldAllServiceTypes(boolean includeSamples) throws Exception {
         final String name = includeSamples ? "samples" : "bare";

@@ -15,10 +15,12 @@ import org.junit.Test;
 import com.example.demo.gateway.Main;
 
 /**
- * Boots the gateway webservice in-process and exercises the full runtime
- * round-trip: HTTP request -> injectRequestAndWaitForReply -> engine handler
- * -> Rumi state mutation -> reply -> HTTP response. Asserts the echo and that
- * the state-backed count increments across calls.
+ * Boots the gateway webservice in-process and exercises the request-reply
+ * round trip with its own engine: HTTP request -> the GET /gateway/echo REST
+ * endpoint the README's first command adds -> injectRequestAndWaitForReply ->
+ * the engine's onEchoRequest handler -> Rumi state mutation -> reply -> HTTP
+ * response. Asserts the echo and that the state-backed count increments across
+ * calls. (The gate adds that endpoint with the builder before this runs.)
  *
  * Uses java.net.HttpURLConnection because it is adequate for a one-line round
  * trip and has nothing to close, not because of the compile level: generated
@@ -37,8 +39,8 @@ public class WebserviceTest extends AbstractTest {
 
         Thread.sleep(3000); // let the embedded HTTP server bind
 
-        String b1 = get("http://localhost:18080/gateway/v1/echo?message=hi");
-        String b2 = get("http://localhost:18080/gateway/v1/echo?message=there");
+        String b1 = get("http://localhost:18080/gateway/echo?text=hi");
+        String b2 = get("http://localhost:18080/gateway/echo?text=there");
 
         assertTrue("echo of first call: " + b1, b1.contains("\"echo\":\"hi\""));
         assertTrue("echo of second call: " + b2, b2.contains("\"echo\":\"there\""));

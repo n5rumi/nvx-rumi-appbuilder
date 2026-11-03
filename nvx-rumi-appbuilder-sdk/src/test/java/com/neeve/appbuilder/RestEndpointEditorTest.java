@@ -116,7 +116,9 @@ public class RestEndpointEditorTest {
         assertEquals(1, clients.size());
         assertEquals("order-processor", clients.get(0).getService());
         assertEquals("demo-order-processor-1", clients.get(0).getEngine());
-        assertEquals(List.of("lookupOrder(LookupOrder) -> OrderFound"), clients.get(0).getMethods());
+        // a sample processor also offers its echo operation (RUMI-459)
+        assertTrue(clients.get(0).getMethods().toString(),
+            clients.get(0).getMethods().contains("lookupOrder(LookupOrder) -> OrderFound"));
 
         assertTrue(addClient().isNoop());
     }
