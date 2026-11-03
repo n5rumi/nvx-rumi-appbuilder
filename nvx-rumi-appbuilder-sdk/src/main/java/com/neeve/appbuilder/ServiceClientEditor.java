@@ -259,8 +259,23 @@ public final class ServiceClientEditor {
         return tokens.get(TokenUtils.toToken("ParentArtifactId")) + "-" + serviceKebab;
     }
 
+    /**
+     * Whether the project itself depends on {@code artifactId}: a dependency in
+     * its own {@code <dependencies>}, not one in {@code <dependencyManagement>},
+     * a plugin's dependencies, a profile, or an {@code <exclusion>}, none of which
+     * puts the target's generated client on the compile classpath.
+     */
     private static boolean hasDependency(Path pom, String artifactId) throws IOException {
-        return Files.readString(pom).contains("<artifactId>" + artifactId + "</artifactId>");
+        int nested = 0;
+        int exclusions = 0;
+        for (String line : Files.readAllLines(pom)) {
+            if (line.contains("<dependencyManagement>") || line.contains("<build>") || line.contains("<profiles>")) nested++;
+            if (line.contains("</dependencyManagement>") || line.contains("</build>") || line.contains("</profiles>")) nested--;
+            if (line.contains("<exclusions>")) exclusions++;
+            if (line.contains("</exclusions>")) exclusions--;
+            if (nested == 0 && exclusions == 0 && line.contains("<artifactId>" + artifactId + "</artifactId>")) return true;
+        }
+        return false;
     }
 
     private static boolean hasGeneratedDependency(Path pom, String artifactId) throws IOException {

@@ -74,10 +74,22 @@ public final class RestEndpointEditor {
 
     static final List<String> METHODS = Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE");
     private static final Set<String> BODY_METHODS = new HashSet<>(Arrays.asList("POST", "PUT", "PATCH"));
-    private static final Set<String> RESERVED_PARAMS = new HashSet<>(Arrays.asList("uri", "body"));
+    private static final Set<String> RESERVED_PARAMS = new HashSet<>(Arrays.asList("uri", "body", "_engineProvider"));
+    // a path parameter becomes a Java argument name, so it must be a legal, unshadowing one
+    private static final Set<String> JAVA_KEYWORDS = new HashSet<>(Arrays.asList(
+        "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char", "class", "const", "continue",
+        "default", "do", "double", "else", "enum", "extends", "final", "finally", "float", "for", "goto", "if",
+        "implements", "import", "instanceof", "int", "interface", "long", "native", "new", "package", "private",
+        "protected", "public", "return", "short", "static", "strictfp", "super", "switch", "synchronized", "this",
+        "throw", "throws", "transient", "try", "void", "volatile", "while", "true", "false", "null", "var",
+        "record", "yield", "_"));
     private static final Pattern SEGMENT = Pattern.compile("[A-Za-z0-9._~-]+|\\{([A-Za-z_][A-Za-z0-9_]*)\\}");
     private static final Pattern IMPORT = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*(\\.\\*)?");
     private static final String SNIPPETS = "/templates/maven/snippets/rest/";
+    private static final Pattern CLASS_PATH = Pattern.compile("(?m)^@Path\\(\"([^\"]*)\"\\)\\s*$");
+    // comments and string literals, which a client check must not read as code
+    private static final Pattern COMMENTS_AND_STRINGS =
+        Pattern.compile("//[^\\n]*|/\\*.*?\\*/|\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'", Pattern.DOTALL);
 
     /**
      * Add an endpoint serving {@code method path} on {@code webService}, whose
@@ -97,14 +109,22 @@ public final class RestEndpointEditor {
 
         RestEndpointDef existing = RestEndpointIntrospector.getEndpoint(appRoot, webService, httpMethod, path);
         if (existing != null) {
-            if (existing.getBody().strip().equals(code.strip())) {
+            if (!existing.getBody().strip().equals(code.strip())) {
+                throw new IllegalArgumentException(httpMethod + " " + path + " already exists on service "
+                    + layout.webKebab + "; change it with update_rest_endpoint");
+            }
+            // the same body again may still bring imports a failed compile asked for
+            String text = Files.readString(existing.getJavaFile());
+            String withImports = addImports(text, importList);
+            if (withImports.equals(text)) {
                 return ChangeSet.noop(httpMethod + " " + path + " already exists on service " + layout.webKebab
                     + " with this body");
             }
-            throw new IllegalArgumentException(httpMethod + " " + path + " already exists on service "
-                + layout.webKebab + "; change it with update_rest_endpoint");
+            if (!dryRun) Files.writeString(existing.getJavaFile(), withImports);
+            return ChangeSet.builder().addModified(existing.getJavaFile()).applied(!dryRun).build();
         }
-        requireNoEquivalentRoute(layout, appRoot, webService, httpMethod, path);
+        Map<Path, String> resources = readResources(layout);
+        requireNoEquivalentRoute(layout, appRoot, webService, path, resources);
         requireClientsFor(appRoot, layout, code);
 
         Map<String, String> tokens = new HashMap<>();
@@ -116,7 +136,7 @@ public final class RestEndpointEditor {
         tokens.put("Body", indent(code));
 
         ChangeSet.Builder cs = ChangeSet.builder();
-        Path resourceFile = findResourceFile(layout, path);
+        Path resourceFile = findResourceFile(path, resources);
         String methodText = render("EndpointMethod.java", tokens);
         if (resourceFile == null) {
             resourceFile = layout.resourcesDir.resolve(uniqueResourceClassName(layout, path) + ".java");
@@ -236,6 +256,10 @@ public final class RestEndpointEditor {
                 if (params.contains(m.group(1))) {
                     throw new IllegalArgumentException("path parameter {" + m.group(1) + "} appears twice in '" + path + "'");
                 }
+                if (JAVA_KEYWORDS.contains(m.group(1)) || !Character.isLowerCase(m.group(1).charAt(0))) {
+                    throw new IllegalArgumentException("path parameter {" + m.group(1) + "} becomes a Java argument"
+                        + " name, so it must start with a lowercase letter and not be a Java keyword; rename it");
+                }
                 if (RESERVED_PARAMS.contains(m.group(1))) {
                     throw new IllegalArgumentException("path parameter {" + m.group(1) + "} would clash with the"
                         + " method's own '" + m.group(1) + "' argument; rename it");
@@ -278,12 +302,14 @@ public final class RestEndpointEditor {
      * compile catches anything it misses.
      */
     private static void requireClientsFor(Path appRoot, Layout layout, String code) throws IOException {
+        String codeOnly = COMMENTS_AND_STRINGS.matcher(code).replaceAll(" ");
         for (String name : ServiceIntrospector.listServiceNames(appRoot)) {
             String kebab = TokenUtils.toKebabCase(name);
             if (kebab.equals(layout.webKebab)) continue;
             String cls = layout.clientClassName(kebab);
-            if (Pattern.compile("\\b" + Pattern.quote(cls) + "\\b").matcher(code).find()
-                    && !Files.exists(layout.clientFile(kebab))) {
+            Path clientFile = layout.clientFile(kebab);
+            if (Pattern.compile("\\b" + Pattern.quote(cls) + "\\b").matcher(codeOnly).find()
+                    && !(Files.exists(clientFile) && Files.readString(clientFile).contains(ServiceClientEditor.CLIENT_MARKER))) {
                 throw new IllegalStateException("the body uses " + cls + ", but " + layout.webKebab
                     + " has no client for " + kebab + "; call add_service_client(" + layout.webKebab + ", "
                     + kebab + ") first");
@@ -298,35 +324,47 @@ public final class RestEndpointEditor {
 
     /**
      * Refuse a path that JAX-RS would treat as the same route as one already
-     * served, under different parameter names: Jersey rejects the pair as
-     * ambiguous at startup. Covers endpoints added here for the same method, and
+     * served, under different parameter names, whatever the method: each spelling
+     * would get a root resource class of its own, and Jersey routes a request to
+     * one of them without backtracking, so the other's methods answer 405 (or the
+     * pair is rejected as ambiguous at startup). Covers endpoints added here and
      * hand-written resource classes whose class-level path is equivalent.
      */
-    private static void requireNoEquivalentRoute(Layout layout, Path appRoot, String webService,
-                                                 String method, String path) throws IOException {
+    private static void requireNoEquivalentRoute(Layout layout, Path appRoot, String webService, String path,
+                                                 Map<Path, String> resources) throws IOException {
         String key = routeKey(path);
         for (RestEndpointDef e : RestEndpointIntrospector.listEndpoints(appRoot, webService)) {
-            if (e.getMethod().equals(method) && !e.getPath().equals(path) && routeKey(e.getPath()).equals(key)) {
-                throw new IllegalArgumentException(method + " " + path + " is the same route as the existing "
-                    + method + " " + e.getPath() + " on service " + layout.webKebab);
+            if (!e.getPath().equals(path) && routeKey(e.getPath()).equals(key)) {
+                throw new IllegalArgumentException(path + " is the same route as the existing " + e.getPath()
+                    + " on service " + layout.webKebab + "; use that spelling");
             }
         }
-        if (!Files.isDirectory(layout.resourcesDir)) return;
-        Pattern classPath = Pattern.compile("^@Path\\(\"([^\"]*)\"\\)\\s*$");
-        try (var files = Files.list(layout.resourcesDir)) {
-            for (Path file : (Iterable<Path>) files.sorted()::iterator) {
-                if (!file.toString().endsWith(".java")) continue;
-                String text = Files.readString(file);
-                if (countMarkers(text) > 0) continue;
-                for (String line : (Iterable<String>) text.lines()::iterator) {
-                    Matcher m = classPath.matcher(line);
-                    if (m.matches() && routeKey(m.group(1)).equals(key)) {
-                        throw new IllegalArgumentException(path + " is already served by the hand-written "
-                            + file.getFileName() + " (@Path(\"" + m.group(1) + "\"))");
-                    }
-                }
+        for (Map.Entry<Path, String> r : resources.entrySet()) {
+            if (countMarkers(r.getValue()) > 0) continue;
+            String classPath = classPath(r.getValue());
+            if (classPath != null && routeKey(classPath).equals(key)) {
+                throw new IllegalArgumentException(path + " is already served by the hand-written "
+                    + r.getKey().getFileName() + " (@Path(\"" + classPath + "\"))");
             }
         }
+    }
+
+    /** The web service's resource classes and their text, read once per operation. */
+    private static Map<Path, String> readResources(Layout layout) throws IOException {
+        Map<Path, String> out = new java.util.TreeMap<>();
+        if (!Files.isDirectory(layout.resourcesDir)) return out;
+        try (Stream<Path> files = Files.list(layout.resourcesDir)) {
+            for (Path file : (Iterable<Path>) files::iterator) {
+                if (file.toString().endsWith(".java")) out.put(file, Files.readString(file));
+            }
+        }
+        return out;
+    }
+
+    /** A class-level {@code @Path} value, or null. */
+    private static String classPath(String text) {
+        Matcher m = CLASS_PATH.matcher(text);
+        return m.find() ? m.group(1) : null;
     }
 
     // --- generated Java -------------------------------------------------
@@ -373,18 +411,10 @@ public final class RestEndpointEditor {
         return text;
     }
 
-    /** The resource class already serving {@code path}, or null. */
-    private static Path findResourceFile(Layout layout, String path) throws IOException {
-        if (!Files.isDirectory(layout.resourcesDir)) return null;
-        String annotation = "@Path(\"" + path + "\")";
-        try (var files = Files.list(layout.resourcesDir)) {
-            for (Path file : (Iterable<Path>) files.sorted()::iterator) {
-                if (!file.toString().endsWith(".java")) continue;
-                String text = Files.readString(file);
-                if (countMarkers(text) > 0 && text.lines().anyMatch(l -> l.trim().equals(annotation))) {
-                    return file;
-                }
-            }
+    /** The generated resource class already serving {@code path}, or null. */
+    private static Path findResourceFile(String path, Map<Path, String> resources) {
+        for (Map.Entry<Path, String> r : resources.entrySet()) {
+            if (countMarkers(r.getValue()) > 0 && path.equals(classPath(r.getValue()))) return r.getKey();
         }
         return null;
     }

@@ -116,11 +116,11 @@ public final class ServiceRemover {
                 + holders.stream().map(ServiceClientDef::getWebService).collect(java.util.stream.Collectors.joining(", "))
                 + " still hold a client for it (remove it with remove_service_client first)");
         }
-        boolean endpointConfigTouched = false;
+        boolean clientConfigTouched = false;
         if (moduleDirExists && AppIntrospector.resolveServiceType(appRoot, serviceName) == ServiceBuilder.ServiceType.WEBSERVICE) {
             for (ServiceClientDef c : ServiceClientIntrospector.listClients(appRoot, serviceName)) {
                 ChangeSet removed = ServiceClientEditor.removeServiceClient(appRoot, serviceName, c.getService(), true, dryRun);
-                endpointConfigTouched |= removed.getFilesModified().stream().anyMatch(f -> f.endsWith("config.xml"));
+                clientConfigTouched |= removed.getFilesModified().stream().anyMatch(f -> f.endsWith("config.xml"));
             }
         }
 
@@ -169,7 +169,7 @@ public final class ServiceRemover {
         Path configPath = appRoot.resolve(systemArtifactId).resolve("conf/config.xml");
         if (Files.exists(configPath)) {
             boolean configTouched = removeConfigFragmentsForService(configPath, tokens, serviceName, kebab, dryRun);
-            if (configTouched || endpointConfigTouched) cs.addModified(configPath);
+            if (configTouched || clientConfigTouched) cs.addModified(configPath);
         }
 
         // (5) Remove script snippets for this service.

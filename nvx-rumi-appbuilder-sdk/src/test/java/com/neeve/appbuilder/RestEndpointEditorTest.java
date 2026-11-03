@@ -277,6 +277,43 @@ public class RestEndpointEditorTest {
     }
 
     @Test
+    public void addingTheSameBodyAgainStillAddsNewImports() throws Exception {
+        String body = "return RestJson.error(Status.CONFLICT, \"no\");";
+        addEndpoint("GET", "/ping", body);
+        ChangeSet retry = RestEndpointEditor.addEndpoint(appRoot, WEB, "GET", "/ping", body,
+            List.of("jakarta.ws.rs.core.Response.Status"), false);
+        assertFalse(retry.isNoop());
+        assertTrue(Files.readString(webSource.resolve("resources/PingResource.java"))
+            .contains("import jakarta.ws.rs.core.Response.Status;"));
+        assertTrue(RestEndpointEditor.addEndpoint(appRoot, WEB, "GET", "/ping", body,
+            List.of("jakarta.ws.rs.core.Response.Status"), false).isNoop());
+    }
+
+    @Test
+    public void theClientCheckReadsCodeNotCommentsOrStrings() throws Exception {
+        addEndpoint("GET", "/ping", "// switch to OrderProcessorClient later\nreturn Response.ok(\"OrderProcessorClient\").build();");
+        Path mine = webSource.resolve("rest/OrderProcessorClient.java");
+        Files.createDirectories(mine.getParent());
+        Files.writeString(mine, "package com.example.demo.gateway.rest; public class OrderProcessorClient {}");
+        assertRefused(() -> addEndpoint("GET", "/orders/{orderId}", CALL_BODY), "add_service_client");
+    }
+
+    @Test
+    public void aTargetNamedOnlyInDependencyManagementStillGetsAProjectDependency() throws Exception {
+        String pom = Files.readString(webPom);
+        String managed = "    <dependencyManagement>\n        <dependencies>\n            <dependency>\n"
+            + "                <groupId>com.example.demo</groupId>\n"
+            + "                <artifactId>test-demo-order-processor</artifactId>\n"
+            + "                <version>1</version>\n            </dependency>\n        </dependencies>\n"
+            + "    </dependencyManagement>\n";
+        int deps = pom.indexOf("    <dependencies>");
+        Files.writeString(webPom, pom.substring(0, deps) + managed + pom.substring(deps));
+        addClient();
+        String after = Files.readString(webPom);
+        assertEquals("managed and project dependency", 2, after.split("<artifactId>test-demo-order-processor</artifactId>", -1).length - 1);
+    }
+
+    @Test
     public void updatingReplacesOnlyTheBody() throws Exception {
         addEndpoint("GET", "/ping", "return Response.ok(\"one\").build();");
         String newBody = "final String reply = \"two\";\nreturn Response.ok(reply).build();";
@@ -294,6 +331,8 @@ public class RestEndpointEditorTest {
         assertRefused(() -> addEndpoint("GET", "orders", "return null;"), "must start with '/'");
         assertRefused(() -> addEndpoint("GET", "/orders/", "return null;"), "must not end with '/'");
         assertRefused(() -> addEndpoint("GET", "/x/{body}", "return null;"), "clash");
+        assertRefused(() -> addEndpoint("GET", "/items/{class}", "return null;"), "Java keyword");
+        assertRefused(() -> addEndpoint("GET", "/items/{Response}", "return null;"), "lowercase");
         assertRefused(() -> addEndpoint("GET", "/x", "  "), "body is required");
         assertRefused(() -> RestEndpointEditor.addEndpoint(appRoot, SVC, "GET", "/x", "return null;", List.of(), false),
             "is not a webservice");
@@ -305,6 +344,9 @@ public class RestEndpointEditorTest {
     public void anEquivalentRouteIsRefused() throws Exception {
         addEndpoint("GET", "/orders/{orderId}", "return null;");
         assertRefused(() -> addEndpoint("GET", "/orders/{id}", "return null;"), "same route");
+        // a different method on an equivalent spelling would get a second root class and answer 405
+        assertRefused(() -> addEndpoint("POST", "/orders/{id}", "return null;"), "use that spelling");
+        addEndpoint("POST", "/orders/{orderId}", "return null;");
         Files.writeString(webSource.resolve("resources/MyLookup.java"),
             "package com.example.demo.gateway.resources;\n@Path(\"/lookup/{id}\")\npublic class MyLookup {}\n");
         assertRefused(() -> addEndpoint("GET", "/lookup/{key}", "return null;"), "hand-written MyLookup.java");

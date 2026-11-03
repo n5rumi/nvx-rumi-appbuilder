@@ -79,15 +79,25 @@ public final class ServiceClientIntrospector {
         return null;
     }
 
-    /** Every client, in any web service of the app, for {@code service}. */
+    /**
+     * Every client, in any web service of the app, for {@code service}. Reads
+     * only each client's target constant, not the target's api.xml, so the
+     * records carry no methods.
+     */
     public static List<ServiceClientDef> listClientsOf(Path appRoot, String service) throws IOException {
         String kebab = TokenUtils.toKebabCase(service);
         List<ServiceClientDef> out = new ArrayList<>();
         for (String name : ServiceIntrospector.listServiceNames(appRoot)) {
             if (!Files.isDirectory(AppIntrospector.resolveServiceModuleDir(appRoot, name))) continue;
             if (AppIntrospector.resolveServiceType(appRoot, name) != ServiceBuilder.ServiceType.WEBSERVICE) continue;
-            for (ServiceClientDef c : listClients(appRoot, name)) {
-                if (c.getService().equals(kebab)) out.add(c);
+            Layout layout = Layout.of(appRoot, name);
+            Path file = layout.clientFile(kebab);
+            if (!Files.exists(file)) continue;
+            String text = Files.readString(file);
+            Matcher m = TARGET.matcher(text);
+            if (text.contains(ServiceClientEditor.CLIENT_MARKER) && m.find() && m.group(1).equals(kebab)) {
+                out.add(new ServiceClientDef(layout.webKebab, kebab, ServiceClientEditor.generatedEngineName(file),
+                    layout.webPackage + ".rest." + layout.clientClassName(kebab), file, List.of()));
             }
         }
         return out;
