@@ -279,16 +279,16 @@ def build_server(base_url: str | None = None) -> FastMCP:
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},
         )
 
-    # ---- REST endpoints ----------------------------------------------
+    # ---- REST endpoints and service clients ---------------------------
 
     @tool()
     def list_rest_endpoints(app_root: str, webservice: str) -> list[dict[str, Any]]:
-        """List the REST endpoints on a webservice: each one's method, path, and the downstream service and operation it calls."""
+        """List the REST endpoints on a webservice (method and path). Bodies are omitted; use get_rest_endpoint for one body."""
         return rest.get(f"/v1/services/{webservice}/rest-endpoints", {"app_root": app_root})
 
     @tool()
     def get_rest_endpoint(app_root: str, webservice: str, method: str, path: str) -> dict[str, Any]:
-        """Return the REST endpoint on a webservice with this method and path."""
+        """Return one REST endpoint with its body verbatim. Hand the body back to update_rest_endpoint unchanged and the file is byte-identical."""
         return rest.get(
             f"/v1/services/{webservice}/rest-endpoints/{method.upper()}",
             {"app_root": app_root, "path": path},
@@ -300,25 +300,73 @@ def build_server(base_url: str | None = None) -> FastMCP:
         webservice: str,
         method: str,
         path: str,
-        service: str,
-        operation: str,
+        body: str,
+        imports: list[str] | None = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Add a REST endpoint to a webservice that serves method (GET|POST|PUT|PATCH|DELETE) + path by calling an api.xml operation of another service through its generated client. path is a JAX-RS template such as /orders/{orderId}; each {parameter} must be a field of the operation's request message, and query parameters and a JSON body fill the other fields. Writes the resource method, the client, the Maven dependency, the client bus and the client config. This is how a webservice calls another service: do not hand-write the client or its config. Idempotent on an identical endpoint."""
+        """Add a REST endpoint to a webservice: method (GET|POST|PUT|PATCH|DELETE), path (a JAX-RS template such as /orders/{orderId}), and body, the Java code of the method without its braces, like add_handler. The method receives `uri` (UriInfo), each {path parameter} as a String, and `body` (String) for POST/PUT/PATCH, and returns a JAX-RS Response. In the body: `RestJson.read(uri, body, Msg.create())` fills a message from the request; `RestJson.reply(msg)` renders one; request-reply with the webservice's own engine is `_engineProvider.getEngine().injectRequestAndWaitForReply(request, timeoutMs)`; request-reply with ANOTHER service is `<Service>Client.get().<operation>(request)` and needs add_service_client first (a body naming a missing client is refused). imports: fully qualified types the body uses."""
         return rest.post(
             f"/v1/services/{webservice}/rest-endpoints",
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},
-            json={"method": method, "path": path, "service": service, "operation": operation},
+            json={"method": method, "path": path, "body": body, "imports": imports or []},
+        )
+
+    @tool()
+    def update_rest_endpoint(
+        app_root: str,
+        webservice: str,
+        method: str,
+        path: str,
+        body: str,
+        imports: list[str] | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Replace an existing REST endpoint's body, leaving its signature and the rest of the file untouched. This is how you change what an endpoint does."""
+        return rest.put(
+            f"/v1/services/{webservice}/rest-endpoints/{method.upper()}",
+            params={"app_root": app_root, "path": path, "dry_run": str(dry_run).lower()},
+            json={"body": body, "imports": imports or []},
         )
 
     @tool()
     def remove_rest_endpoint(
         app_root: str, webservice: str, method: str, path: str, dry_run: bool = False
     ) -> dict[str, Any]:
-        """Remove a REST endpoint from a webservice, and once nothing else calls its downstream service, the client, dependency and client config it needed."""
+        """Remove a REST endpoint from a webservice. Service clients stay; remove them with remove_service_client."""
         return rest.delete(
             f"/v1/services/{webservice}/rest-endpoints/{method.upper()}",
             params={"app_root": app_root, "path": path, "dry_run": str(dry_run).lower()},
+        )
+
+    @tool()
+    def list_service_clients(app_root: str, webservice: str) -> list[dict[str, Any]]:
+        """List the service clients a webservice holds: the service each calls, its class, and its methods."""
+        return rest.get(f"/v1/services/{webservice}/service-clients", {"app_root": app_root})
+
+    @tool()
+    def get_service_client(app_root: str, webservice: str, service: str) -> dict[str, Any]:
+        """Return a webservice's client for one service: its class and its methods, one per operation of that service's api.xml."""
+        return rest.get(f"/v1/services/{webservice}/service-clients/{service}", {"app_root": app_root})
+
+    @tool()
+    def add_service_client(
+        app_root: str, webservice: str, service: str, dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Prepare a webservice for request-reply with another service. Required before any REST endpoint body calls that service. Writes the client class, the Maven dependency, the service's client bus and the client's config. The reason says how to call it, e.g. OrderProcessorClient.get().lookupOrder(request). One-way messages to a service need no client; calling the webservice's own engine needs none either. Idempotent."""
+        return rest.post(
+            f"/v1/services/{webservice}/service-clients",
+            params={"app_root": app_root, "dry_run": str(dry_run).lower()},
+            json={"service": service},
+        )
+
+    @tool()
+    def remove_service_client(
+        app_root: str, webservice: str, service: str, force: bool = False, dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Remove a webservice's client for a service, with its dependency and config. Refused while code in the webservice still uses it, unless force."""
+        return rest.delete(
+            f"/v1/services/{webservice}/service-clients/{service}",
+            params={"app_root": app_root, "force": str(force).lower(), "dry_run": str(dry_run).lower()},
         )
 
     # ---- Messages ----------------------------------------------------

@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -37,19 +38,20 @@ import java.util.stream.Stream;
 
 /**
  * Read-only introspection over the REST endpoints {@link RestEndpointEditor}
- * generated into a web service. An endpoint is found by the marker comment the
- * editor writes above its method, in a resource class under the web service's
+ * added to a web service. An endpoint is found by the marker comment the editor
+ * writes above its method, in a resource class under the web service's
  * {@code resources} package, so endpoints written by hand are not listed.
  */
 public final class RestEndpointIntrospector {
     private RestEndpointIntrospector() {}
 
-    /** {@code // @rest-endpoint GET /contracts/{id} -> orders.getContract} */
-    static final Pattern MARKER = Pattern.compile(
-        "^\\s*// @rest-endpoint (GET|POST|PUT|PATCH|DELETE) (\\S+) -> ([a-z0-9-]+)\\.(\\S+)\\s*$");
+    /** {@code // @rest-endpoint GET /contracts/{id}} */
+    static final Pattern MARKER = Pattern.compile("^\\s*// @rest-endpoint (GET|POST|PUT|PATCH|DELETE) (\\S+)\\s*$");
     static final String END_MARKER = "// @rest-endpoint-end";
+    /** Body lines are indented by this much inside the method. */
+    static final String BODY_INDENT = "        ";
 
-    /** Every generated endpoint on the web service, ordered by path and then method. */
+    /** Every endpoint on the web service, ordered by path and then method, without bodies. */
     public static List<RestEndpointDef> listEndpoints(Path appRoot, String webService) throws IOException {
         Layout layout = Layout.of(appRoot, webService);
         if (!Files.isDirectory(layout.resourcesDir)) return Collections.emptyList();
@@ -62,7 +64,7 @@ public final class RestEndpointIntrospector {
             for (String line : Files.readAllLines(file)) {
                 Matcher m = MARKER.matcher(line);
                 if (m.matches()) {
-                    out.add(new RestEndpointDef(layout.webKebab, m.group(1), m.group(2), m.group(3), m.group(4), file));
+                    out.add(new RestEndpointDef(layout.webKebab, m.group(1), m.group(2), file, null));
                 }
             }
         }
@@ -71,28 +73,53 @@ public final class RestEndpointIntrospector {
         return out;
     }
 
-    /** The endpoint with this method and path, or null if the web service has none. */
+    /** The endpoint with this method and path, with its body, or null if the web service has none. */
     public static RestEndpointDef getEndpoint(Path appRoot, String webService, String method, String path)
             throws IOException {
         String m = method == null ? null : method.trim().toUpperCase();
         for (RestEndpointDef e : listEndpoints(appRoot, webService)) {
-            if (e.getMethod().equals(m) && e.getPath().equals(path)) return e;
+            if (e.getMethod().equals(m) && e.getPath().equals(path)) {
+                List<String> lines = Arrays.asList(Files.readString(e.getJavaFile()).split("\n", -1));
+                int[] span = bodySpan(lines, m, path);
+                List<String> body = new ArrayList<>();
+                for (int i = span[0]; i < span[1]; i++) {
+                    String line = lines.get(i);
+                    body.add(line.startsWith(BODY_INDENT) ? line.substring(BODY_INDENT.length()) : line.stripLeading());
+                }
+                return new RestEndpointDef(e.getWebService(), e.getMethod(), e.getPath(), e.getJavaFile(),
+                    String.join("\n", body));
+            }
         }
         return null;
     }
 
-    /** Every generated endpoint, in any web service of the app, that calls {@code service}. */
-    public static List<RestEndpointDef> listCallers(Path appRoot, String service) throws IOException {
-        String kebab = TokenUtils.toKebabCase(service);
-        List<RestEndpointDef> out = new ArrayList<>();
-        for (String name : ServiceIntrospector.listServiceNames(appRoot)) {
-            if (!Files.isDirectory(AppIntrospector.resolveServiceModuleDir(appRoot, name))) continue;
-            if (AppIntrospector.resolveServiceType(appRoot, name) != ServiceBuilder.ServiceType.WEBSERVICE) continue;
-            for (RestEndpointDef e : listEndpoints(appRoot, name)) {
-                if (e.getService().equals(kebab)) out.add(e);
+    /**
+     * The marked block for {@code method path} in a resource class's lines:
+     * {@code [first body line, line after the body, marker line, end marker line]}.
+     * The body sits between the method's opening line and its closing brace,
+     * which is the line before the end marker.
+     */
+    static int[] bodySpan(List<String> lines, String method, String path) {
+        for (int i = 0; i < lines.size(); i++) {
+            Matcher m = MARKER.matcher(lines.get(i));
+            if (m.matches() && m.group(1).equals(method) && m.group(2).equals(path)) {
+                int end = i;
+                while (end < lines.size() && !lines.get(end).trim().equals(END_MARKER)) end++;
+                if (end == lines.size()) {
+                    throw new IllegalStateException("the " + method + " " + path + " endpoint has no "
+                        + END_MARKER + " line; restore it or change the method by hand");
+                }
+                int open = i;
+                while (open < end && !lines.get(open).trim().endsWith("{")) open++;
+                int close = end - 1;
+                if (open >= close || !lines.get(close).trim().equals("}")) {
+                    throw new IllegalStateException("the " + method + " " + path
+                        + " endpoint's method is not where its markers say; restore it or change it by hand");
+                }
+                return new int[] {open + 1, close, i, end};
             }
         }
-        return out;
+        throw new IllegalStateException("no " + method + " " + path + " endpoint marker");
     }
 
     /** Where a web service's generated REST code lives, and the names it uses. */
@@ -117,7 +144,7 @@ public final class RestEndpointIntrospector {
             // the generated support and client classes get a package of their own,
             // so they cannot collide with classes the developer wrote, such as a
             // hand-written clients.TenancyClient
-            this.supportFile = webSourceDir.resolve("rest").resolve("RestEndpointSupport.java");
+            this.supportFile = webSourceDir.resolve("rest").resolve("RestJson.java");
             this.resourcesDir = webSourceDir.resolve("resources");
             this.clientsDir = webSourceDir.resolve("rest");
         }

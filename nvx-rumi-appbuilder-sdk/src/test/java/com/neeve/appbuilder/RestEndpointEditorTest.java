@@ -24,6 +24,7 @@ package com.neeve.appbuilder;
 import com.neeve.appbuilder.model.ChangeSet;
 import com.neeve.appbuilder.model.FieldDef;
 import com.neeve.appbuilder.model.RestEndpointDef;
+import com.neeve.appbuilder.model.ServiceClientDef;
 import com.neeve.appbuilder.test.TestAppFactory;
 import org.junit.After;
 import org.junit.Before;
@@ -37,14 +38,21 @@ import java.util.Map;
 import static org.junit.Assert.*;
 
 /**
- * RUMI-457. A REST endpoint on a web service that calls another service's API
- * operation through its generated client. That it actually serves a request is
- * proven by {@code ci/verify-generated-app.sh}, which builds and runs a
- * generated app; this covers what the editor writes and refuses.
+ * RUMI-457. REST endpoints whose bodies are the caller's code, and the service
+ * clients that prepare a web service for request-reply with another service.
+ * That a generated app actually serves through them is proven by
+ * {@code ci/verify-generated-app.sh}; this covers what the editors write and refuse.
  */
 public class RestEndpointEditorTest {
     private static final String WEB = "gateway";
     private static final String SVC = "order-processor";
+    private static final String CALL_BODY =
+          "final com.example.demo.roe.LookupOrder request = RestJson.read(uri, null, com.example.demo.roe.LookupOrder.create());\n"
+        + "try {\n"
+        + "    return RestJson.reply(OrderProcessorClient.get().lookupOrder(request));\n"
+        + "} catch (com.neeve.client.EClientException e) {\n"
+        + "    return RestJson.clientFailure(e);\n"
+        + "}";
 
     private Path tempDir;
     private Path appRoot;
@@ -73,194 +81,118 @@ public class RestEndpointEditorTest {
         TestAppFactory.deleteRecursive(tempDir);
     }
 
-    private ChangeSet add(String method, String path) throws Exception {
-        return RestEndpointEditor.addEndpoint(appRoot, WEB, method, path, SVC, "lookupOrder", false);
+    private ChangeSet addClient() throws Exception {
+        return ServiceClientEditor.addServiceClient(appRoot, WEB, SVC, false);
     }
 
+    private ChangeSet addEndpoint(String method, String path, String body) throws Exception {
+        return RestEndpointEditor.addEndpoint(appRoot, WEB, method, path, body, List.of(), false);
+    }
+
+    // --- service clients ----------------------------------------------------
+
     @Test
-    public void addWritesTheEndpointClientDependencyAndClientBus() throws Exception {
-        ChangeSet cs = add("GET", "/orders/{orderId}");
+    public void addingAClientWritesTheClassDependencyAndClientBus() throws Exception {
+        ChangeSet cs = addClient();
         assertFalse(cs.isNoop());
+        assertTrue("the reason says how to call it: " + cs.getReason(),
+            cs.getReason().contains("OrderProcessorClient.get().<operation>(request)")
+                && cs.getReason().contains("lookupOrder(LookupOrder) -> OrderFound"));
 
-        String resource = Files.readString(webSource.resolve("resources/OrdersByOrderIdResource.java"));
-        assertTrue(resource.contains("@Path(\"/orders/{orderId}\")"));
-        assertTrue(resource.contains("com.example.demo.roe.LookupOrder.create()"));
-        assertTrue(resource.contains("OrderProcessorClient.get().lookupOrder(request)"));
-        assertTrue(Files.exists(webSource.resolve("rest/RestEndpointSupport.java")));
-
-        // the client must be keyed with the ENGINE's name, partition suffix and all
+        // keyed with the ENGINE name, partition suffix and all
         String client = Files.readString(webSource.resolve("rest/OrderProcessorClient.java"));
         assertTrue(client, client.contains("SERVICE_NAME = \"demo-order-processor-1\""));
-        assertTrue(client.contains("extends com.example.demo.order.processor.AbstractClient"));
-
+        assertTrue(client.contains("TARGET_SERVICE = \"order-processor\""));
+        assertTrue(client.contains("CLIENT_NAME = \"demo-gateway-rest\""));
         assertTrue(Files.readString(webPom).contains("<artifactId>test-demo-order-processor</artifactId>"));
 
         String cfg = Files.readString(config);
         assertTrue(cfg, cfg.contains("name=\"demo-order-processor-1_client_bus\""));
-        assertTrue("the test profile gets a loopback namespace of its own: " + cfg,
-            cfg.contains("<REST_CLIENT_BUS_DESCRIPTOR>loopback://demo-client</REST_CLIENT_BUS_DESCRIPTOR>"));
-        assertTrue(cfg.contains("<demo-order-processor-1>"));
+        assertTrue(cfg.contains("<REST_CLIENT_BUS_DESCRIPTOR>loopback://demo-client</REST_CLIENT_BUS_DESCRIPTOR>"));
         assertTrue(cfg.contains("<connectionDescriptor>${REST_CLIENT_BUS_DESCRIPTOR}</connectionDescriptor>"));
         assertTrue(ConfigValidator.validate(appRoot).isOk());
 
-        List<RestEndpointDef> endpoints = RestEndpointIntrospector.listEndpoints(appRoot, WEB);
-        assertEquals(1, endpoints.size());
-        assertEquals("GET /orders/{orderId} -> order-processor.lookupOrder", endpoints.get(0).toString());
+        List<ServiceClientDef> clients = ServiceClientIntrospector.listClients(appRoot, WEB);
+        assertEquals(1, clients.size());
+        assertEquals("order-processor", clients.get(0).getService());
+        assertEquals("demo-order-processor-1", clients.get(0).getEngine());
+        assertEquals(List.of("lookupOrder(LookupOrder) -> OrderFound"), clients.get(0).getMethods());
+
+        assertTrue(addClient().isNoop());
     }
 
     @Test
-    public void anIdenticalEndpointIsANoopAndADifferentOneOnTheSameRouteIsRefused() throws Exception {
-        add("GET", "/orders/{orderId}");
-        assertTrue(add("get", "/orders/{orderId}").isNoop());
-
-        MessageEditor.addMessage(appRoot, SVC, FieldEditor.ModelScope.ROE_MESSAGES, "CancelOrder",
-            List.of(new FieldDef("orderId", "String", Map.of())), false);
-        ApiOperationEditor.addOperation(appRoot, SVC, "cancelOrder", "CancelOrder", "OrderFound", false);
-        try {
-            RestEndpointEditor.addEndpoint(appRoot, WEB, "GET", "/orders/{orderId}", SVC, "cancelOrder", false);
-            fail("expected the taken route to be refused");
-        } catch (IllegalArgumentException expected) {
-            assertTrue(expected.getMessage().contains("remove_rest_endpoint"));
-        }
-        // a second method on the same path shares its resource class
-        RestEndpointEditor.addEndpoint(appRoot, WEB, "DELETE", "/orders/{orderId}", SVC, "cancelOrder", false);
-        assertEquals(2, RestEndpointIntrospector.listEndpoints(appRoot, WEB).size());
-        try (var files = Files.list(webSource.resolve("resources"))) {
-            assertEquals("WebMain plus one class for the path", 2, files.count());
-        }
-    }
-
-    @Test
-    public void invalidRequestsAreRefusedBeforeAnythingIsWritten() throws Exception {
-        String before = Files.readString(config);
-        assertRefused(() -> add("FETCH", "/orders"), "method must be one of");
-        assertRefused(() -> add("GET", "orders"), "must start with '/'");
-        assertRefused(() -> add("GET", "/orders/"), "must not end with '/'");
-        assertRefused(() -> add("GET", "/orders/{id}"), "is not a field of LookupOrder");
-        assertRefused(() -> RestEndpointEditor.addEndpoint(appRoot, WEB, "GET", "/x", SVC, "nope", false),
-            "add_operation");
-        assertRefused(() -> RestEndpointEditor.addEndpoint(appRoot, SVC, "GET", "/x", WEB, "lookupOrder", false),
-            "is not a webservice");
-        assertRefused(() -> RestEndpointEditor.addEndpoint(appRoot, WEB, "GET", "/x", WEB, "lookupOrder", false),
-            "its own operations");
-        assertEquals(before, Files.readString(config));
-        assertFalse(Files.exists(webSource.resolve("rest/RestEndpointSupport.java")));
-    }
-
-    @Test
-    public void aPartitionedServiceIsRefusedRatherThanCalledOnOnePartition() throws Exception {
+    public void aClientIsRefusedWhereItCannotWork() throws Exception {
         TestAppFactory.addProcessor(appRoot, "ledger", ServiceBuilder.ServiceHAModel.STATE_REPLICATION, false, 2);
-        MessageEditor.addMessage(appRoot, "ledger", FieldEditor.ModelScope.ROE_MESSAGES, "Balance",
-            List.of(new FieldDef("account", "String", Map.of())), false);
-        ApiOperationEditor.addOperation(appRoot, "ledger", "balance", "Balance", "OrderFound", false);
-        assertRefused(() -> RestEndpointEditor.addEndpoint(appRoot, WEB, "GET", "/balance", "ledger", "balance", false),
-            "partitions");
+        String before = Files.readString(config);
+        assertRefused(() -> ServiceClientEditor.addServiceClient(appRoot, SVC, WEB, false), "is not a webservice");
+        assertRefused(() -> ServiceClientEditor.addServiceClient(appRoot, WEB, WEB, false), "its own service");
+        assertRefused(() -> ServiceClientEditor.addServiceClient(appRoot, WEB, "nope", false), "not found");
+        assertRefused(() -> ServiceClientEditor.addServiceClient(appRoot, WEB, "ledger", false), "partitions");
+        assertEquals(before, Files.readString(config));
+        assertFalse(Files.exists(webSource.resolve("rest")));
     }
 
     @Test
-    public void removingTheLastEndpointPutsEverythingBack() throws Exception {
+    public void aRefusalWritesNothing() throws Exception {
+        Files.writeString(config, Files.readString(config).replace("APP_BUS_DESCRIPTOR>", "OTHER_BUS>"));
+        String before = Files.readString(config);
+        String pomBefore = Files.readString(webPom);
+        assertRefused(this::addClient, "APP_BUS_DESCRIPTOR");
+        assertEquals(before, Files.readString(config));
+        assertEquals(pomBefore, Files.readString(webPom));
+        assertFalse(Files.exists(webSource.resolve("rest")));
+    }
+
+    @Test
+    public void removingTheClientPutsEverythingBack() throws Exception {
         String configBefore = Files.readString(config);
         String pomBefore = Files.readString(webPom);
-        add("GET", "/orders/{orderId}");
-        add("POST", "/orders/lookup");
-
-        // the client outlives the first removal, because another endpoint still uses it
-        RestEndpointEditor.removeEndpoint(appRoot, WEB, "GET", "/orders/{orderId}", false);
-        assertFalse(Files.exists(webSource.resolve("resources/OrdersByOrderIdResource.java")));
-        assertTrue(Files.exists(webSource.resolve("rest/OrderProcessorClient.java")));
-        assertTrue(Files.readString(config).contains("_client_bus"));
-
-        RestEndpointEditor.removeEndpoint(appRoot, WEB, "POST", "/orders/lookup", false);
-        assertTrue(RestEndpointIntrospector.listEndpoints(appRoot, WEB).isEmpty());
-        assertFalse(Files.exists(webSource.resolve("rest/RestEndpointSupport.java")));
+        addClient();
+        ServiceClientEditor.removeServiceClient(appRoot, WEB, SVC, false, false);
         assertFalse(Files.exists(webSource.resolve("rest")));
         assertEquals(normalize(pomBefore), normalize(Files.readString(webPom)));
         assertEquals(normalize(configBefore), normalize(Files.readString(config)));
-
-        assertTrue(RestEndpointEditor.removeEndpoint(appRoot, WEB, "GET", "/orders/{orderId}", false).isNoop());
+        assertTrue(ServiceClientEditor.removeServiceClient(appRoot, WEB, SVC, false, false).isNoop());
     }
 
     @Test
-    public void aServiceThatEndpointsCallCannotBeRemovedButItsWebServiceCan() throws Exception {
-        String configBefore = Files.readString(config);
-        add("GET", "/orders/{orderId}");
-        assertRefused(() -> ServiceRemover.removeService(appRoot, SVC, false), "remove_rest_endpoint");
-
-        ServiceRemover.removeService(appRoot, WEB, false);
-        String cfg = Files.readString(config);
-        assertFalse("removing the web service takes its client bus with it: " + cfg, cfg.contains("_client_bus"));
-        assertFalse(cfg.contains("CLIENT_BUS_DESCRIPTOR"));
-        ServiceRemover.removeService(appRoot, SVC, false);
-        assertNotEquals(configBefore, cfg);
+    public void aClientInUseIsNotRemovedUnlessForced() throws Exception {
+        addClient();
+        addEndpoint("GET", "/orders/{orderId}", CALL_BODY);
+        assertRefused(() -> ServiceClientEditor.removeServiceClient(appRoot, WEB, SVC, false, false),
+            "still used by OrdersByOrderIdResource.java");
+        ServiceClientEditor.removeServiceClient(appRoot, WEB, SVC, true, false);
+        assertFalse(Files.exists(webSource.resolve("rest/OrderProcessorClient.java")));
     }
 
     @Test
     public void aClientBusTheDeveloperDeclaredIsUsedAsDeclared() throws Exception {
-        // the shape a hand-wired app has: its own descriptor variable and a pinned requests key
         String declared = "<bus descriptor=\"${ORDERS_CLIENT_BUS}\" name=\"demo-order-processor-1_client_bus\">"
             + "<channels><channel id=\"1\" name=\"requests\"><qos>Guaranteed</qos><key>demo-order-processor</key></channel>"
             + "<channel id=\"2\" name=\"responses\"><qos>Guaranteed</qos></channel></channels></bus>";
         Files.writeString(config, Files.readString(config).replace("</buses>", declared + "</buses>"));
-
-        add("GET", "/orders/{orderId}");
+        addClient();
         String cfg = Files.readString(config);
         assertTrue(cfg, cfg.contains("<connectionDescriptor>${ORDERS_CLIENT_BUS}</connectionDescriptor>"));
-        assertTrue("the client must send with the key the bus pins: " + cfg,
-            cfg.contains("<requestsChannelKey>demo-order-processor</requestsChannelKey>"));
+        assertTrue(cfg.contains("<requestsChannelKey>demo-order-processor</requestsChannelKey>"));
         assertFalse("no generated descriptor for a declared bus", cfg.contains("CLIENT_BUS_DESCRIPTOR"));
-
-        RestEndpointEditor.removeEndpoint(appRoot, WEB, "GET", "/orders/{orderId}", false);
+        ServiceClientEditor.removeServiceClient(appRoot, WEB, SVC, false, false);
         cfg = Files.readString(config);
         assertTrue("a declared bus is never removed", cfg.contains("demo-order-processor-1_client_bus"));
         assertFalse(cfg.contains("requestsChannelKey"));
     }
 
     @Test
-    public void aHandWrittenClassInTheGeneratedPackageIsNotOverwritten() throws Exception {
-        Path mine = webSource.resolve("rest/OrderProcessorClient.java");
-        Files.createDirectories(mine.getParent());
-        Files.writeString(mine, "package com.example.demo.gateway.rest; public class OrderProcessorClient {}");
-        assertRefused(() -> add("GET", "/orders/{orderId}"), "was not generated by App Builder");
-        assertEquals("package com.example.demo.gateway.rest; public class OrderProcessorClient {}", Files.readString(mine));
-    }
-
-    // --- code review on PR #21 --------------------------------------------
-
-    @Test
-    public void aDependencyTheDeveloperDeclaredSurvivesTheLastEndpoint() throws Exception {
+    public void aDependencyTheDeveloperDeclaredSurvivesRemoval() throws Exception {
         String dep = "        <dependency>\n            <groupId>com.example.demo</groupId>\n"
             + "            <artifactId>test-demo-order-processor</artifactId>\n"
             + "            <version>${project.version}</version>\n        </dependency>\n";
-        String pom = Files.readString(webPom);
-        Files.writeString(webPom, pom.replaceFirst("</dependencies>", java.util.regex.Matcher.quoteReplacement(dep) + "    </dependencies>"));
-        add("GET", "/orders/{orderId}");
-        RestEndpointEditor.removeEndpoint(appRoot, WEB, "GET", "/orders/{orderId}", false);
+        Files.writeString(webPom, Files.readString(webPom).replaceFirst("</dependencies>",
+            java.util.regex.Matcher.quoteReplacement(dep) + "    </dependencies>"));
+        addClient();
+        ServiceClientEditor.removeServiceClient(appRoot, WEB, SVC, false, false);
         assertTrue(Files.readString(webPom).contains("<artifactId>test-demo-order-processor</artifactId>"));
-    }
-
-    @Test
-    public void generatedConfigUsesAClientNameOfItsOwn() throws Exception {
-        // a client the developer configured under the web service's own name
-        String mine = "<demo-order-processor-1><client><demo-gateway><connectionDescriptor>loopback://mine</connectionDescriptor>"
-            + "</demo-gateway></client></demo-order-processor-1>";
-        String cfg = Files.readString(config);
-        int env = cfg.indexOf("<env>", cfg.indexOf("<profile name=\"test\""));
-        Files.writeString(config, cfg.substring(0, env + 5) + mine + cfg.substring(env + 5));
-        add("GET", "/orders/{orderId}");
-        assertTrue(Files.readString(webSource.resolve("rest/OrderProcessorClient.java")).contains("CLIENT_NAME = \"demo-gateway-rest\""));
-        RestEndpointEditor.removeEndpoint(appRoot, WEB, "GET", "/orders/{orderId}", false);
-        assertTrue("the developer's client config is untouched", Files.readString(config).contains("loopback://mine"));
-    }
-
-    @Test
-    public void aRefusalWritesNothing() throws Exception {
-        // no profile sets APP_BUS_DESCRIPTOR, which is only discovered while wiring the config
-        Files.writeString(config, Files.readString(config).replace("APP_BUS_DESCRIPTOR>", "OTHER_BUS>"));
-        String before = Files.readString(config);
-        assertRefused(() -> add("GET", "/orders/{orderId}"), "APP_BUS_DESCRIPTOR");
-        assertEquals(before, Files.readString(config));
-        assertFalse(Files.exists(webSource.resolve("resources/OrdersByOrderIdResource.java")));
-        assertFalse(Files.exists(webSource.resolve("rest")));
     }
 
     @Test
@@ -268,34 +200,19 @@ public class RestEndpointEditorTest {
         String cfg = Files.readString(config);
         int env = cfg.indexOf("<env>", cfg.indexOf("<profile name=\"test\""));
         Files.writeString(config, cfg.substring(0, env + 5) + "<CLIENT_BUS_DESCRIPTOR>loopback://theirs</CLIENT_BUS_DESCRIPTOR>" + cfg.substring(env + 5));
-        add("GET", "/orders/{orderId}");
-        RestEndpointEditor.removeEndpoint(appRoot, WEB, "GET", "/orders/{orderId}", false);
+        addClient();
+        ServiceClientEditor.removeServiceClient(appRoot, WEB, SVC, false, false);
         assertTrue(Files.readString(config).contains("<CLIENT_BUS_DESCRIPTOR>loopback://theirs</CLIENT_BUS_DESCRIPTOR>"));
     }
 
     @Test
-    public void anEndpointCanStillBeRemovedAfterItsTargetIsRepartitioned() throws Exception {
-        add("GET", "/orders/{orderId}");
+    public void aClientCanStillBeRemovedAfterItsTargetIsRepartitioned() throws Exception {
+        addClient();
         String cfg = Files.readString(config);
         String one = "<app name=\"demo-order-processor-1\" template=\"demo-order-processor-template\"/>";
-        assertTrue(cfg.contains(one));
         Files.writeString(config, cfg.replace(one, one + "<app name=\"demo-order-processor-2\" template=\"demo-order-processor-template\"/>"));
-        RestEndpointEditor.removeEndpoint(appRoot, WEB, "GET", "/orders/{orderId}", false);
-        assertTrue(RestEndpointIntrospector.listEndpoints(appRoot, WEB).isEmpty());
+        ServiceClientEditor.removeServiceClient(appRoot, WEB, SVC, false, false);
         assertFalse(Files.readString(config).contains("demo-order-processor-1_client_bus"));
-    }
-
-    @Test
-    public void anEquivalentRouteIsRefused() throws Exception {
-        add("GET", "/orders/{orderId}");
-        MessageEditor.addMessage(appRoot, SVC, FieldEditor.ModelScope.ROE_MESSAGES, "LookupById",
-            List.of(new FieldDef("id", "String", Map.of())), false);
-        ApiOperationEditor.addOperation(appRoot, SVC, "lookupById", "LookupById", "OrderFound", false);
-        assertRefused(() -> RestEndpointEditor.addEndpoint(appRoot, WEB, "GET", "/orders/{id}", SVC, "lookupById", false),
-            "same route");
-        Files.writeString(webSource.resolve("resources/MyLookup.java"),
-            "package com.example.demo.gateway.resources;\n@jakarta.ws.rs.Path(\"/x\")\n@Path(\"/lookup/{id}\")\npublic class MyLookup {}\n");
-        assertRefused(() -> add("GET", "/lookup/{orderId}"), "hand-written MyLookup.java");
     }
 
     @Test
@@ -304,7 +221,7 @@ public class RestEndpointEditorTest {
         String managed = "    <dependencyManagement>\n        <dependencies>\n        </dependencies>\n    </dependencyManagement>\n";
         int deps = pom.indexOf("    <dependencies>");
         Files.writeString(webPom, pom.substring(0, deps) + managed + pom.substring(deps));
-        add("GET", "/orders/{orderId}");
+        addClient();
         String after = Files.readString(webPom);
         String managedBlock = after.substring(after.indexOf("<dependencyManagement>"), after.indexOf("</dependencyManagement>"));
         assertFalse(managedBlock.contains("test-demo-order-processor"));
@@ -312,31 +229,119 @@ public class RestEndpointEditorTest {
     }
 
     @Test
-    public void anEndpointWithoutItsEndMarkerIsNotRemovedToTheEndOfTheFile() throws Exception {
-        add("GET", "/orders/{orderId}");
-        Path resource = webSource.resolve("resources/OrdersByOrderIdResource.java");
+    public void aServiceAWebServiceHoldsAClientForCannotBeRemovedButTheWebServiceCan() throws Exception {
+        addClient();
+        assertRefused(() -> ServiceRemover.removeService(appRoot, SVC, false), "remove_service_client");
+        ServiceRemover.removeService(appRoot, WEB, false);
+        String cfg = Files.readString(config);
+        assertFalse("removing the web service takes its client bus with it: " + cfg, cfg.contains("_client_bus"));
+        assertFalse(cfg.contains("CLIENT_BUS_DESCRIPTOR"));
+    }
+
+    // --- endpoints ----------------------------------------------------------
+
+    @Test
+    public void anEndpointIsTheCallersBodyInsideAGeneratedMethod() throws Exception {
+        addClient();
+        ChangeSet cs = addEndpoint("GET", "/orders/{orderId}", CALL_BODY);
+        assertFalse(cs.isNoop());
+        String resource = Files.readString(webSource.resolve("resources/OrdersByOrderIdResource.java"));
+        assertTrue(resource, resource.contains("@Path(\"/orders/{orderId}\")"));
+        assertTrue(resource, resource.contains(
+            "public Response get(@Context final UriInfo uri, @PathParam(\"orderId\") final String orderId) {"));
+        assertTrue(resource.contains("        return RestJson.reply(OrderProcessorClient.get().lookupOrder(request));"));
+        assertTrue(Files.exists(webSource.resolve("rest/RestJson.java")));
+
+        RestEndpointDef got = RestEndpointIntrospector.getEndpoint(appRoot, WEB, "get", "/orders/{orderId}");
+        assertEquals("the body comes back verbatim", CALL_BODY, got.getBody());
+        assertEquals("GET /orders/{orderId}", RestEndpointIntrospector.listEndpoints(appRoot, WEB).get(0).toString());
+        assertTrue(addEndpoint("GET", "/orders/{orderId}", CALL_BODY).isNoop());
+    }
+
+    @Test
+    public void aBodyThatCallsAServiceWithoutItsClientIsRefusedNamingTheStep() throws Exception {
+        assertRefused(() -> addEndpoint("GET", "/orders/{orderId}", CALL_BODY),
+            "add_service_client(gateway, order-processor)");
+        assertFalse(Files.exists(webSource.resolve("resources/OrdersByOrderIdResource.java")));
+    }
+
+    @Test
+    public void bodyMethodsReceiveTheRequestBodyAndImportsAreAdded() throws Exception {
+        addEndpoint("POST", "/echo", "return Response.ok(body).build();");
+        RestEndpointEditor.addEndpoint(appRoot, WEB, "PUT", "/echo", "return RestJson.error(Status.CONFLICT, \"no\");",
+            List.of("jakarta.ws.rs.core.Response.Status"), false);
+        String resource = Files.readString(webSource.resolve("resources/EchoResource.java"));
+        assertTrue(resource.contains("public Response post(@Context final UriInfo uri, final String body) {"));
+        assertTrue(resource.contains("import jakarta.ws.rs.core.Response.Status;"));
+        assertEquals(1, resource.split("import jakarta.ws.rs.core.Response.Status;", -1).length - 1);
+    }
+
+    @Test
+    public void updatingReplacesOnlyTheBody() throws Exception {
+        addEndpoint("GET", "/ping", "return Response.ok(\"one\").build();");
+        String newBody = "final String reply = \"two\";\nreturn Response.ok(reply).build();";
+        RestEndpointEditor.updateEndpoint(appRoot, WEB, "GET", "/ping", newBody, List.of(), false);
+        assertEquals(newBody, RestEndpointIntrospector.getEndpoint(appRoot, WEB, "GET", "/ping").getBody());
+        assertTrue(RestEndpointEditor.updateEndpoint(appRoot, WEB, "GET", "/ping", newBody, List.of(), false).isNoop());
+        assertRefused(() -> RestEndpointEditor.updateEndpoint(appRoot, WEB, "GET", "/nope", newBody, List.of(), false),
+            "add_rest_endpoint");
+        assertRefused(() -> addEndpoint("GET", "/ping", "return null;"), "update_rest_endpoint");
+    }
+
+    @Test
+    public void invalidRequestsAreRefused() throws Exception {
+        assertRefused(() -> addEndpoint("FETCH", "/orders", "return null;"), "method must be one of");
+        assertRefused(() -> addEndpoint("GET", "orders", "return null;"), "must start with '/'");
+        assertRefused(() -> addEndpoint("GET", "/orders/", "return null;"), "must not end with '/'");
+        assertRefused(() -> addEndpoint("GET", "/x/{body}", "return null;"), "clash");
+        assertRefused(() -> addEndpoint("GET", "/x", "  "), "body is required");
+        assertRefused(() -> RestEndpointEditor.addEndpoint(appRoot, SVC, "GET", "/x", "return null;", List.of(), false),
+            "is not a webservice");
+        assertRefused(() -> RestEndpointEditor.addEndpoint(appRoot, WEB, "GET", "/x", "return null;",
+            List.of("not an import!"), false), "not an import");
+    }
+
+    @Test
+    public void anEquivalentRouteIsRefused() throws Exception {
+        addEndpoint("GET", "/orders/{orderId}", "return null;");
+        assertRefused(() -> addEndpoint("GET", "/orders/{id}", "return null;"), "same route");
+        Files.writeString(webSource.resolve("resources/MyLookup.java"),
+            "package com.example.demo.gateway.resources;\n@Path(\"/lookup/{id}\")\npublic class MyLookup {}\n");
+        assertRefused(() -> addEndpoint("GET", "/lookup/{key}", "return null;"), "hand-written MyLookup.java");
+    }
+
+    @Test
+    public void removingTheLastEndpointRemovesItsClassAndRestJsonButNotClients() throws Exception {
+        addClient();
+        addEndpoint("GET", "/orders/{orderId}", CALL_BODY);
+        addEndpoint("POST", "/orders/{orderId}", CALL_BODY);
+        RestEndpointEditor.removeEndpoint(appRoot, WEB, "GET", "/orders/{orderId}", false);
+        assertTrue(Files.exists(webSource.resolve("resources/OrdersByOrderIdResource.java")));
+        RestEndpointEditor.removeEndpoint(appRoot, WEB, "POST", "/orders/{orderId}", false);
+        assertFalse(Files.exists(webSource.resolve("resources/OrdersByOrderIdResource.java")));
+        assertFalse(Files.exists(webSource.resolve("rest/RestJson.java")));
+        assertTrue("clients go with remove_service_client", Files.exists(webSource.resolve("rest/OrderProcessorClient.java")));
+        assertTrue(RestEndpointEditor.removeEndpoint(appRoot, WEB, "GET", "/orders/{orderId}", false).isNoop());
+    }
+
+    @Test
+    public void anEndpointWithoutItsEndMarkerIsLeftAlone() throws Exception {
+        addEndpoint("GET", "/ping", "return null;");
+        Path resource = webSource.resolve("resources/PingResource.java");
         String broken = Files.readString(resource).replace("// @rest-endpoint-end", "");
         Files.writeString(resource, broken);
-        assertRefused(() -> RestEndpointEditor.removeEndpoint(appRoot, WEB, "GET", "/orders/{orderId}", false),
-            "@rest-endpoint-end");
+        assertRefused(() -> RestEndpointEditor.removeEndpoint(appRoot, WEB, "GET", "/ping", false), "@rest-endpoint-end");
         assertEquals(broken, Files.readString(resource));
     }
 
     @Test
     public void dryRunWritesNothing() throws Exception {
         String before = Files.readString(config);
-        ChangeSet cs = RestEndpointEditor.addEndpoint(appRoot, WEB, "GET", "/orders/{orderId}", SVC, "lookupOrder", true);
-        assertFalse(cs.isApplied());
-        assertFalse(cs.getFilesCreated().isEmpty());
+        assertFalse(ServiceClientEditor.addServiceClient(appRoot, WEB, SVC, true).isApplied());
+        assertFalse(RestEndpointEditor.addEndpoint(appRoot, WEB, "GET", "/ping", "return null;", List.of(), true).isApplied());
         assertEquals(before, Files.readString(config));
+        assertFalse(Files.exists(webSource.resolve("rest")));
         assertTrue(RestEndpointIntrospector.listEndpoints(appRoot, WEB).isEmpty());
-    }
-
-    @Test
-    public void aMissingHandlerIsReportedNotRefused() throws Exception {
-        ChangeSet cs = add("GET", "/orders/{orderId}");
-        assertNotNull(cs.getReason());
-        assertTrue(cs.getReason(), cs.getReason().contains("no @EventHandler for LookupOrder"));
     }
 
     @Test

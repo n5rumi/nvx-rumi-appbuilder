@@ -27,8 +27,8 @@
 #   2. for EACH scaffold mode (with samples, and sample-free):
 #      a. scaffolds a `demo` app with EVERY service type (processor, driver,
 #         connector, webservice) plus a custom connector snapped into the
-#         processor, and REST endpoints on the webservice that call an API
-#         operation of the processor through its generated client (RUMI-457)
+#         processor, and a service client plus REST endpoints on the webservice
+#         whose bodies call an API operation of the processor (RUMI-457)
 #      b. drops in the in-process JUnit/EmbeddedXVM tests
 #      c. builds and RUNS the generated system
 #
@@ -131,6 +131,7 @@ import com.neeve.appbuilder.FieldEditor;
 import com.neeve.appbuilder.JavaSourceEditor;
 import com.neeve.appbuilder.MessageEditor;
 import com.neeve.appbuilder.RestEndpointEditor;
+import com.neeve.appbuilder.ServiceClientEditor;
 import com.neeve.appbuilder.model.FieldDef;
 import com.neeve.appbuilder.test.TestAppFactory;
 import java.nio.file.Path;
@@ -168,9 +169,10 @@ public class Build {
         // code path from the `connector` service type above.
         ConnectorEditor.addConnector(app, "order-processor", "audit", false);
 
-        // RUMI-457: the gateway fronts an API operation of the processor through
-        // generated REST endpoints, so one request crosses two services over the
-        // processor's client bus. RestEndpointTest calls them over HTTP.
+        // RUMI-457: the gateway's REST endpoints call an API operation of the
+        // processor through its generated client, so one request crosses two
+        // services over the processor's client bus. RestEndpointTest calls them
+        // over HTTP.
         MessageEditor.addMessage(app, "order-processor", FieldEditor.ModelScope.ROE_MESSAGES,
             "LookupOrderRequest", List.of(new FieldDef("orderId", "String", Map.of()),
                                           new FieldDef("verbose", "Boolean", Map.of())), false);
@@ -184,10 +186,21 @@ public class Build {
           + "reply.setOrderId(message.getOrderId());\n"
           + "reply.setStatus(message.getVerbose() ? \"FOUND (verbose)\" : \"FOUND\");\n"
           + "_messageSender.sendReply(message, reply);", false);
+        // The gateway is prepared for request-reply with the processor, then its
+        // endpoints' bodies make the call: the explicit two-step shape a developer
+        // or agent uses.
+        ServiceClientEditor.addServiceClient(app, "gateway", "order-processor", false);
+        String call = "final com.example.demo.roe.LookupOrderRequest request = RestJson.read(uri, %s, "
+            + "com.example.demo.roe.LookupOrderRequest.create());\n"
+            + "try {\n"
+            + "    return RestJson.reply(OrderProcessorClient.get().lookupOrder(request));\n"
+            + "} catch (com.neeve.client.EClientException e) {\n"
+            + "    return RestJson.clientFailure(e);\n"
+            + "}";
         RestEndpointEditor.addEndpoint(app, "gateway", "GET", "/orders/{orderId}",
-            "order-processor", "lookupOrder", false);
+            String.format(call, "null"), List.of(), false);
         RestEndpointEditor.addEndpoint(app, "gateway", "POST", "/orders/lookup",
-            "order-processor", "lookupOrder", false);
+            String.format(call, "body"), List.of(), false);
 
         System.out.println(app);
     }

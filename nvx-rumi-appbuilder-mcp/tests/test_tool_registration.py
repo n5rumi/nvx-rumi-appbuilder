@@ -37,6 +37,11 @@ EXPECTED_TOOLS: set[str] = {
     "get_rest_endpoint",
     "add_rest_endpoint",
     "remove_rest_endpoint",
+    "update_rest_endpoint",
+    "list_service_clients",
+    "get_service_client",
+    "add_service_client",
+    "remove_service_client",
     "remove_connector",
     # Messages
     "list_messages",
