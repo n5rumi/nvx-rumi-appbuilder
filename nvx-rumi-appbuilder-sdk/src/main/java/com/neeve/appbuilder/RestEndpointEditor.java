@@ -22,16 +22,8 @@
 package com.neeve.appbuilder;
 
 import com.neeve.appbuilder.RestEndpointIntrospector.Layout;
-import com.neeve.appbuilder.model.ApiOperationDef;
 import com.neeve.appbuilder.model.ChangeSet;
-import com.neeve.appbuilder.model.FieldDef;
-import com.neeve.appbuilder.model.HandlerDef;
-import com.neeve.appbuilder.model.MessageDef;
 import com.neeve.appbuilder.model.RestEndpointDef;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -40,226 +32,177 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
- * Adds REST endpoints to a web service and removes them. An endpoint is an HTTP
- * method and path on the web service that forwards each request to an API
- * operation of a downstream service, through that service's generated client.
- * Every aspect of it is given in the request: the web service that serves it,
- * the method, the path, the downstream service and its operation.
+ * Adds, updates and removes REST endpoints on a web service. An endpoint is an
+ * HTTP method and path whose body is the caller's Java code, the way a message
+ * handler's is: this editor writes the JAX-RS method around it, and the caller
+ * decides what it does.
  *
- * <p>Adding an endpoint writes everything the call needs, and removing the last
- * one undoes it:
+ * <p>A body talks to Rumi in one of three ways. Request-reply with its own
+ * service needs nothing extra: the engine is injected into every resource
+ * ({@code _engineProvider.getEngine().injectRequestAndWaitForReply(...)}). A
+ * one-way message to a downstream service needs only the shared message model.
+ * Request-reply with another service needs a client in the code and
+ * configuration for its bus, which {@link ServiceClientEditor#addServiceClient}
+ * adds as a separate, explicit step; a body that names a service's client before
+ * that step is refused, naming the step.
  *
- * <ol>
- *   <li>the endpoint method, in a resource class of its own for its path under
- *       the web service's {@code resources} package, which the web service's
- *       HTTP server picks up by package scan;
- *   <li>{@code rest.RestEndpointSupport}, shared by every endpoint in the web
- *       service, which reads the request into the request message and renders
- *       the reply;
- *   <li>a client class for the downstream service in the same {@code rest}
- *       package, extending the
- *       {@code AbstractClient} generated from its api.xml;
- *   <li>a Maven dependency from the web service on the downstream service,
- *       which is where that generated client lives;
- *   <li>in the system {@code config.xml}: the downstream service's
- *       {@code <service>_client_bus}, a {@code REST_CLIENT_BUS_DESCRIPTOR} in every
- *       profile that sets {@code APP_BUS_DESCRIPTOR}, and the client's
- *       {@code connectionDescriptor} in each of those profiles. A client bus the
- *       developer already declared is reused as declared, with its own
- *       descriptor and any requests key it pins, and is never removed.
- * </ol>
+ * <p>Each path gets its own resource class under the web service's
+ * {@code resources} package, which its HTTP server picks up by package scan; the
+ * path is at class level because JAX-RS picks a root resource by its longest
+ * literal prefix and does not backtrack, so a shared {@code @Path("/")} class
+ * would be shadowed by {@code WebMain}'s. Method signature: path parameters as
+ * {@code @PathParam String} arguments, {@code UriInfo uri} for the query, and the
+ * request body as {@code String body} for POST, PUT and PATCH; it returns a JAX-RS
+ * {@code Response}. The first endpoint also adds {@code rest.RestJson}, which reads
+ * a request into a message and renders a reply.
  *
- * <p>Two rules in (5) decide whether a request is ever answered, and neither
- * fails loudly when broken. The client keys its requests with the service name
- * it is given, and the downstream engine subscribes with its own name, which is
- * the service name plus a partition suffix ({@code orders-1}), so the client is
- * always given the engine's name (see {@link #engineName}). And the client bus gets
- * its own descriptor rather than the application bus's: on a loopback bus a
- * second binding from one engine into the same namespace is refused, so the
- * test profile puts every client bus in a {@code <app>-client} namespace of its
- * own. The engine joins its client bus by itself once the bus is declared, so
- * it is not added to the service's {@code <messaging>}.
- *
- * <p>Adds are idempotent on an identical endpoint, and refuse a method and path
- * already taken by a different one. Both operations support {@code dryRun}.
+ * <p>Adds are idempotent on an identical body and refuse a route already taken.
+ * All three operations support {@code dryRun}.
  */
 public final class RestEndpointEditor {
     private RestEndpointEditor() {}
 
     static final List<String> METHODS = Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE");
     private static final Set<String> BODY_METHODS = new HashSet<>(Arrays.asList("POST", "PUT", "PATCH"));
+    private static final Set<String> RESERVED_PARAMS = new HashSet<>(Arrays.asList("uri", "body", "_engineProvider"));
+    // a path parameter becomes a Java argument name, so it must be a legal, unshadowing one
+    private static final Set<String> JAVA_KEYWORDS = new HashSet<>(Arrays.asList(
+        "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char", "class", "const", "continue",
+        "default", "do", "double", "else", "enum", "extends", "final", "finally", "float", "for", "goto", "if",
+        "implements", "import", "instanceof", "int", "interface", "long", "native", "new", "package", "private",
+        "protected", "public", "return", "short", "static", "strictfp", "super", "switch", "synchronized", "this",
+        "throw", "throws", "transient", "try", "void", "volatile", "while", "true", "false", "null", "var",
+        "record", "yield", "_"));
     private static final Pattern SEGMENT = Pattern.compile("[A-Za-z0-9._~-]+|\\{([A-Za-z_][A-Za-z0-9_]*)\\}");
-    private static final String CLIENT_BUS_SUFFIX = "_client_bus";
-    private static final String APP_BUS_VAR = "APP_BUS_DESCRIPTOR";
-    // a name of its own, so a developer's CLIENT_BUS_DESCRIPTOR is never mistaken for ours
-    private static final String CLIENT_BUS_VAR = "REST_CLIENT_BUS_DESCRIPTOR";
+    private static final Pattern IMPORT = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*(\\.\\*)?");
     private static final String SNIPPETS = "/templates/maven/snippets/rest/";
-    private static final String CLIENT_MARKER = "// @rest-endpoint-client";
-    private static final String GENERATED_BUS_DESCRIPTOR = "${" + CLIENT_BUS_VAR + "}";
-    private static final String DEPENDENCY_MARKER = "<!-- the service called by the generated REST endpoints, for its generated client -->";
+    private static final Pattern CLASS_PATH = Pattern.compile("(?m)^@Path\\(\"([^\"]*)\"\\)\\s*$");
+    // comments and string literals, which a client check must not read as code
+    private static final Pattern COMMENTS_AND_STRINGS =
+        Pattern.compile("//[^\\n]*|/\\*.*?\\*/|\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'", Pattern.DOTALL);
 
     /**
-     * Add an endpoint to {@code webService} that serves {@code method path} by
-     * calling {@code operation} on {@code service}.
+     * Add an endpoint serving {@code method path} on {@code webService}, whose
+     * method body is {@code body}.
      *
-     * @return the files written. When the downstream service has no handler for
-     *         the operation's request message, the reason says so: the endpoint
-     *         is still added, but every call to it will time out until one is.
+     * @param imports fully qualified types (or {@code pkg.*}) the body uses, added
+     *        to the resource class; the {@code rest} package (clients and
+     *        {@code RestJson}) is always imported
      */
     public static ChangeSet addEndpoint(Path appRoot, String webService, String method, String path,
-                                        String service, String operation, boolean dryRun) throws IOException {
+                                        String body, List<String> imports, boolean dryRun) throws IOException {
         String httpMethod = normalizeMethod(method);
         List<String> pathParams = parsePath(path);
-        Layout layout = Layout.of(appRoot, webService);
-        String targetKebab = requireTarget(appRoot, webService, service);
-        if (operation == null || operation.isBlank()) {
-            throw new IllegalArgumentException("operation is required");
-        }
-
-        ApiOperationDef op = ApiIntrospector.getOperation(appRoot, service, operation);
-        if (op == null) {
-            throw new IllegalArgumentException("service '" + targetKebab + "' has no API operation '" + operation
-                + "'; add it with add_operation first");
-        }
-        Request request = resolveRequest(appRoot, service, op);
-        for (String param : pathParams) {
-            if (!request.fields.contains(param)) {
-                throw new IllegalArgumentException("path parameter {" + param + "} is not a field of "
-                    + request.name + " (fields: " + request.fields + ")");
-            }
-        }
+        Layout layout = requireWebService(appRoot, webService);
+        String code = requireBody(body);
+        List<String> importList = checkImports(imports);
 
         RestEndpointDef existing = RestEndpointIntrospector.getEndpoint(appRoot, webService, httpMethod, path);
         if (existing != null) {
-            if (existing.getService().equals(targetKebab) && existing.getOperation().equals(operation)) {
-                return ChangeSet.noop(httpMethod + " " + path + " already calls " + targetKebab + "." + operation
-                    + " on service " + layout.webKebab);
+            if (!existing.getBody().strip().equals(code.strip())) {
+                throw new IllegalArgumentException(httpMethod + " " + path + " already exists on service "
+                    + layout.webKebab + "; change it with update_rest_endpoint");
             }
-            throw new IllegalArgumentException(httpMethod + " " + path + " on service " + layout.webKebab
-                + " already calls " + existing.getService() + "." + existing.getOperation()
-                + "; remove it with remove_rest_endpoint first");
+            // the same body again may still bring imports a failed compile asked for
+            String text = Files.readString(existing.getJavaFile());
+            String withImports = addImports(text, importList);
+            if (withImports.equals(text)) {
+                return ChangeSet.noop(httpMethod + " " + path + " already exists on service " + layout.webKebab
+                    + " with this body");
+            }
+            if (!dryRun) Files.writeString(existing.getJavaFile(), withImports);
+            return ChangeSet.builder().addModified(existing.getJavaFile()).applied(!dryRun).build();
         }
-
-        Path configPath = ConnectorSupport.configPath(appRoot, layout.tokens);
-        Document doc = loadConfig(configPath);
-        String targetEngine = engineName(doc, layout.tokens, targetKebab);
+        Map<Path, String> resources = readResources(layout);
+        requireNoEquivalentRoute(layout, appRoot, webService, path, resources);
+        requireClientsFor(appRoot, layout, code);
 
         Map<String, String> tokens = new HashMap<>();
         tokens.put("WebPackageName", layout.webPackage);
-        tokens.put("WebTokenName", layout.webFullName);
-        tokens.put("TargetServiceName", targetEngine);
-        tokens.put("TargetServiceToken", targetKebab);
-        tokens.put("TargetPackageName", layout.tokens.get(TokenUtils.toToken("AppPackageName")) + "."
-            + TokenUtils.toPackagePath(targetKebab));
-        tokens.put("ClientName", layout.clientName());
-        tokens.put("ClientClassName", layout.clientClassName(targetKebab));
         tokens.put("EndpointPath", path);
         tokens.put("HttpMethod", httpMethod);
         tokens.put("JavaMethodName", httpMethod.toLowerCase());
-        tokens.put("OperationName", operation);
-        tokens.put("OperationMethodName", Character.toLowerCase(operation.charAt(0)) + operation.substring(1));
-        tokens.put("RequestClassName", request.className);
-        boolean hasBody = BODY_METHODS.contains(httpMethod);
-        tokens.put("BodyParameter", hasBody ? ", final String body" : "");
-        tokens.put("BodyArgument", hasBody ? "body" : "null");
-
-        // Everything that can refuse runs before anything is written, so a refusal
-        // leaves the app exactly as it was rather than half-wired, where a retry
-        // would find the endpoint's marker and report it as already present.
-        requireNoEquivalentRoute(layout, appRoot, webService, httpMethod, path);
-        Path clientFile = layout.clientFile(targetKebab);
-        if (Files.exists(clientFile) && !Files.readString(clientFile).contains(CLIENT_MARKER)) {
-            throw new IllegalStateException(clientFile + " exists and was not generated by App Builder;"
-                + " move it out of the " + layout.webPackage + ".rest package, which holds generated code");
-        }
-        Path pom = layout.webModuleDir.resolve("pom.xml");
-        String targetArtifact = artifactId(layout.tokens, targetKebab);
-        boolean needDependency = !hasDependency(pom, targetArtifact);
-        if (needDependency && projectDependenciesEnd(Files.readAllLines(pom)) < 0) {
-            throw new IllegalStateException("no project <dependencies> block in " + pom);
-        }
-        boolean configChanged = wireClientBus(doc, layout, targetEngine);
+        tokens.put("Parameters", parameters(httpMethod, pathParams));
+        tokens.put("Body", indent(code));
 
         ChangeSet.Builder cs = ChangeSet.builder();
-
-        // (1) the endpoint method, in its path's resource class
-        Path resourceFile = findResourceFile(layout, path);
+        Path resourceFile = findResourceFile(path, resources);
         String methodText = render("EndpointMethod.java", tokens);
         if (resourceFile == null) {
             resourceFile = layout.resourcesDir.resolve(uniqueResourceClassName(layout, path) + ".java");
             tokens.put("ResourceClassName", fileStem(resourceFile));
-            String content = insertMethod(render("EndpointResource.java", tokens), methodText);
+            String content = addImports(insertMethod(render("EndpointResource.java", tokens), methodText), importList);
             if (!dryRun) write(resourceFile, content);
             cs.addCreated(resourceFile);
         } else {
-            String content = insertMethod(Files.readString(resourceFile), methodText);
+            String content = addImports(insertMethod(Files.readString(resourceFile), methodText), importList);
             if (!dryRun) Files.writeString(resourceFile, content);
             cs.addModified(resourceFile);
         }
-
-        // (2) the shared support class
         if (!Files.exists(layout.supportFile)) {
-            if (!dryRun) write(layout.supportFile, render("RestEndpointSupport.java", tokens));
+            if (!dryRun) write(layout.supportFile, render("RestJson.java", tokens));
             cs.addCreated(layout.supportFile);
-        }
-
-        // (3) the downstream service's client
-        if (!Files.exists(clientFile)) {
-            if (!dryRun) write(clientFile, render("ServiceClient.java", tokens));
-            cs.addCreated(clientFile);
-        }
-
-        // (4) the dependency that brings in its generated AbstractClient
-        if (needDependency) {
-            if (!dryRun) addDependency(pom, layout.tokens.get(TokenUtils.toToken("GroupId")), targetArtifact);
-            cs.addModified(pom);
-        }
-
-        // (5) the client bus and the client's connection
-        if (configChanged) {
-            if (!dryRun) saveConfig(doc, configPath);
-            cs.addModified(configPath);
-        }
-
-        if (!hasHandlerFor(appRoot, service, request.name)) {
-            cs.reason("service '" + targetKebab + "' has no @EventHandler for " + request.name
-                + ", so every call to this endpoint will time out until one replies with sendReply");
         }
         return cs.applied(!dryRun).build();
     }
 
+    /** Replace the body of the endpoint at {@code method path}, leaving its signature alone. */
+    public static ChangeSet updateEndpoint(Path appRoot, String webService, String method, String path,
+                                           String body, List<String> imports, boolean dryRun) throws IOException {
+        String httpMethod = normalizeMethod(method);
+        Layout layout = requireWebService(appRoot, webService);
+        String code = requireBody(body);
+        List<String> importList = checkImports(imports);
+        RestEndpointDef existing = RestEndpointIntrospector.getEndpoint(appRoot, webService, httpMethod, path);
+        if (existing == null) {
+            throw new IllegalArgumentException("no " + httpMethod + " " + path + " endpoint on service "
+                + layout.webKebab + "; add it with add_rest_endpoint");
+        }
+        requireClientsFor(appRoot, layout, code);
+        List<String> lines = new ArrayList<>(Arrays.asList(Files.readString(existing.getJavaFile()).split("\n", -1)));
+        int[] span = RestEndpointIntrospector.bodySpan(lines, httpMethod, path);
+        lines.subList(span[0], span[1]).clear();
+        lines.addAll(span[0], Arrays.asList(indent(code).split("\n", -1)));
+        String content = addImports(String.join("\n", lines), importList);
+        if (content.equals(Files.readString(existing.getJavaFile()))) {
+            return ChangeSet.noop(httpMethod + " " + path + " already has this body");
+        }
+        if (!dryRun) Files.writeString(existing.getJavaFile(), content);
+        return ChangeSet.builder().addModified(existing.getJavaFile()).applied(!dryRun).build();
+    }
+
     /**
-     * Remove the endpoint at {@code method path} from {@code webService}. Once no
-     * endpoint in the web service calls the downstream service, its client,
-     * dependency and client configuration go too; once no endpoint anywhere in
-     * the app calls it, so does its client bus. No-op when the endpoint is absent.
+     * Remove the endpoint at {@code method path}, its class once empty, and
+     * {@code RestJson} with the web service's last endpoint if nothing else uses
+     * it. Service clients stay: they are removed with remove_service_client. No-op
+     * when the endpoint is absent.
      */
     public static ChangeSet removeEndpoint(Path appRoot, String webService, String method, String path,
                                            boolean dryRun) throws IOException {
         String httpMethod = normalizeMethod(method);
         if (path == null || path.isBlank()) throw new IllegalArgumentException("path is required");
-        Layout layout = Layout.of(appRoot, webService);
+        Layout layout = requireWebService(appRoot, webService);
         RestEndpointDef endpoint = RestEndpointIntrospector.getEndpoint(appRoot, webService, httpMethod, path);
         if (endpoint == null) {
             return ChangeSet.noop("no " + httpMethod + " " + path + " endpoint on service " + layout.webKebab);
         }
-        String targetKebab = endpoint.getService();
         ChangeSet.Builder cs = ChangeSet.builder();
-
-        // (1) the method, and its class once empty
-        String remaining = removeMethod(Files.readString(endpoint.getJavaFile()), httpMethod, path);
+        List<String> lines = new ArrayList<>(Arrays.asList(Files.readString(endpoint.getJavaFile()).split("\n", -1)));
+        int[] span = RestEndpointIntrospector.bodySpan(lines, httpMethod, path);
+        int start = span[2];
+        if (start > 0 && lines.get(start - 1).isBlank()) start--;
+        lines.subList(start, span[3] + 1).clear();
+        String remaining = String.join("\n", lines);
         if (countMarkers(remaining) == 0) {
             if (!dryRun) Files.delete(endpoint.getJavaFile());
             cs.addDeleted(endpoint.getJavaFile());
@@ -267,110 +210,23 @@ public final class RestEndpointEditor {
             if (!dryRun) Files.writeString(endpoint.getJavaFile(), remaining);
             cs.addModified(endpoint.getJavaFile());
         }
-
-        List<RestEndpointDef> others = new ArrayList<>(RestEndpointIntrospector.listEndpoints(appRoot, webService));
-        others.removeIf(e -> e.getMethod().equals(httpMethod) && e.getPath().equals(path));
-
-        // (2) the support class, with the web service's last endpoint
-        if (others.isEmpty() && Files.exists(layout.supportFile)) {
-            if (!dryRun) Files.delete(layout.supportFile);
-            cs.addDeleted(layout.supportFile);
-        }
-
-        Path configPath = ConnectorSupport.configPath(appRoot, layout.tokens);
-        Document doc = loadConfig(configPath);
-        boolean configChanged = false;
-        // the engine the client was generated for, read back from the client
-        // itself: re-deriving it would refuse once the target has been
-        // repartitioned, leaving an endpoint that no tool can remove
-        String targetFullName = generatedEngineName(layout.clientFile(targetKebab));
-        if (targetFullName == null) {
-            try {
-                targetFullName = engineName(doc, layout.tokens, targetKebab);
-            } catch (RuntimeException e) {
-                targetFullName = null;
-            }
-        }
-
-        // (3)-(5) the client, dependency and client configuration, with the last caller in this web service
-        if (others.stream().noneMatch(e -> e.getService().equals(targetKebab))) {
-            Path clientFile = layout.clientFile(targetKebab);
-            if (Files.exists(clientFile)) {
+        boolean othersLeft = RestEndpointIntrospector.listEndpoints(appRoot, webService).stream()
+            .anyMatch(e -> !(e.getMethod().equals(httpMethod) && e.getPath().equals(path)));
+        if (!othersLeft && Files.exists(layout.supportFile)) {
+            List<String> users = ServiceClientEditor.usersOf(layout, "RestJson", layout.supportFile);
+            users.remove(endpoint.getJavaFile().getFileName().toString());
+            if (users.isEmpty()) {
                 if (!dryRun) {
-                    Files.delete(clientFile);
+                    Files.delete(layout.supportFile);
                     deleteIfEmpty(layout.clientsDir);
                 }
-                cs.addDeleted(clientFile);
+                cs.addDeleted(layout.supportFile);
             }
-            Path pom = layout.webModuleDir.resolve("pom.xml");
-            String targetArtifact = artifactId(layout.tokens, targetKebab);
-            // only a dependency this editor added; one the developer declared stays
-            if (hasGeneratedDependency(pom, targetArtifact)) {
-                if (!dryRun) removeDependency(pom, targetArtifact);
-                cs.addModified(pom);
-            }
-            if (targetFullName != null) configChanged |= removeClientConfig(doc, targetFullName, layout.clientName());
-
-            // the client bus, with the last caller in the app
-            boolean calledElsewhere = RestEndpointIntrospector.listCallers(appRoot, targetKebab).stream()
-                .anyMatch(e -> !e.getWebService().equals(layout.webKebab));
-            if (!calledElsewhere && targetFullName != null) {
-                configChanged |= removeClientBus(doc, targetFullName);
-            }
-        }
-        if (configChanged) {
-            if (!dryRun) saveConfig(doc, configPath);
-            cs.addModified(configPath);
         }
         return cs.applied(!dryRun).build();
     }
 
     // --- validation -----------------------------------------------------
-
-    /** A path with its parameter names erased: {@code /orders/{id}} and {@code /orders/{orderId}} are one route. */
-    static String routeKey(String path) {
-        return path.replaceAll("\\{[^}]*\\}", "{}");
-    }
-
-    /**
-     * Refuse a path that JAX-RS would treat as the same route as one already
-     * served, under different parameter names: Jersey rejects the pair as
-     * ambiguous at startup. Covers generated endpoints for the method, and
-     * hand-written resource classes whose class-level path is equivalent.
-     */
-    private static void requireNoEquivalentRoute(Layout layout, Path appRoot, String webService,
-                                                 String method, String path) throws IOException {
-        String key = routeKey(path);
-        for (RestEndpointDef e : RestEndpointIntrospector.listEndpoints(appRoot, webService)) {
-            if (e.getMethod().equals(method) && !e.getPath().equals(path) && routeKey(e.getPath()).equals(key)) {
-                throw new IllegalArgumentException(method + " " + path + " is the same route as the existing "
-                    + method + " " + e.getPath() + " on service " + layout.webKebab);
-            }
-        }
-        if (!Files.isDirectory(layout.resourcesDir)) return;
-        Pattern classPath = Pattern.compile("^@Path\\(\"([^\"]*)\"\\)\\s*$");
-        try (var files = Files.list(layout.resourcesDir)) {
-            for (Path file : (Iterable<Path>) files.sorted()::iterator) {
-                if (!file.toString().endsWith(".java")) continue;
-                String text = Files.readString(file);
-                if (countMarkers(text) > 0) continue;
-                for (String line : (Iterable<String>) text.lines()::iterator) {
-                    Matcher m = classPath.matcher(line);
-                    if (m.matches() && routeKey(m.group(1)).equals(key)) {
-                        throw new IllegalArgumentException(path + " is already served by the hand-written "
-                            + file.getFileName() + " (@Path(\"" + m.group(1) + "\"))");
-                    }
-                }
-            }
-        }
-    }
-
-    /** The engine name a generated client was built for, or null if there is no generated client. */
-    private static String generatedEngineName(Path clientFile) throws IOException {
-        if (!Files.exists(clientFile)) return null;
-        Matcher m = Pattern.compile("SERVICE_NAME = \"([^\"]+)\"").matcher(Files.readString(clientFile));
-        return m.find() ? m.group(1) : null;
-    }
 
     static String normalizeMethod(String method) {
         String m = method == null ? "" : method.trim().toUpperCase();
@@ -400,89 +256,120 @@ public final class RestEndpointEditor {
                 if (params.contains(m.group(1))) {
                     throw new IllegalArgumentException("path parameter {" + m.group(1) + "} appears twice in '" + path + "'");
                 }
+                if (JAVA_KEYWORDS.contains(m.group(1)) || !Character.isLowerCase(m.group(1).charAt(0))) {
+                    throw new IllegalArgumentException("path parameter {" + m.group(1) + "} becomes a Java argument"
+                        + " name, so it must start with a lowercase letter and not be a Java keyword; rename it");
+                }
+                if (RESERVED_PARAMS.contains(m.group(1))) {
+                    throw new IllegalArgumentException("path parameter {" + m.group(1) + "} would clash with the"
+                        + " method's own '" + m.group(1) + "' argument; rename it");
+                }
                 params.add(m.group(1));
             }
         }
         return params;
     }
 
-    private static String requireTarget(Path appRoot, String webService, String service) throws IOException {
+    private static Layout requireWebService(Path appRoot, String webService) throws IOException {
         if (AppIntrospector.resolveServiceType(appRoot, webService) != ServiceBuilder.ServiceType.WEBSERVICE) {
             throw new IllegalArgumentException("service '" + webService + "' is not a webservice; REST endpoints are served by a webservice");
         }
-        if (service == null || service.isBlank()) {
-            throw new IllegalArgumentException("service is required");
-        }
-        String targetKebab = TokenUtils.toKebabCase(service);
-        if (targetKebab.equals(TokenUtils.toKebabCase(webService))) {
-            throw new IllegalArgumentException("a webservice cannot call its own operations through a client; "
-                + "inject the request into its own engine instead (injectRequestAndWaitForReply)");
-        }
-        if (!Files.isDirectory(AppIntrospector.resolveServiceModuleDir(appRoot, service))) {
-            throw new IllegalArgumentException("service '" + service + "' not found under " + appRoot);
-        }
-        return targetKebab;
+        return Layout.of(appRoot, webService);
     }
 
-    /** The operation's request message: its class and its field names. */
-    private static final class Request {
-        final String name;
-        final String className;
-        final Set<String> fields;
-
-        Request(String name, String className, Set<String> fields) {
-            this.name = name;
-            this.className = className;
-            this.fields = fields;
+    private static String requireBody(String body) {
+        if (body == null || body.isBlank()) {
+            throw new IllegalArgumentException("body is required: the Java code of the endpoint method, without its braces");
         }
+        return body.strip();
+    }
+
+    private static List<String> checkImports(List<String> imports) {
+        List<String> out = new ArrayList<>();
+        if (imports == null) return out;
+        for (String i : imports) {
+            String t = i == null ? "" : i.trim().replaceFirst("^import\\s+", "").replaceFirst(";$", "").trim();
+            if (!IMPORT.matcher(t).matches()) throw new IllegalArgumentException("not an import: '" + i + "'");
+            out.add(t);
+        }
+        return out;
     }
 
     /**
-     * Find the request message in the model the downstream api.xml names, which
-     * is the model its generated client is built from (see
-     * {@link ApiOperationEditor}).
+     * Refuse a body that names another service's client before
+     * {@code add_service_client} has added it. Client class names are
+     * predictable ({@code <Service>Client}), so this is a plain text check; a
+     * compile catches anything it misses.
      */
-    private static Request resolveRequest(Path appRoot, String service, ApiOperationDef op) throws IOException {
-        Document api = ApiIntrospector.loadApiXml(appRoot, service);
-        Element messages = ApiOperationEditor.firstChild(api.getDocumentElement(), "messages");
-        String modelFile = messages == null ? null : messages.getAttribute("modelFile").trim();
-        Path model = modelFile == null || modelFile.isEmpty() ? null : ApiOperationEditor.resolveModelFile(appRoot, modelFile);
-        if (model == null) {
-            throw new IllegalStateException("cannot find the message model named by service '" + service + "' api.xml");
-        }
-        Document doc;
-        try {
-            doc = XmlDomUtils.parseXmlDocument(model);
-        } catch (Exception e) {
-            throw new IOException("failed to parse " + model, e);
-        }
-        String namespace = doc.getDocumentElement().getAttribute("namespace");
-        for (MessageDef m : MessageIntrospector.parseMessages(doc)) {
-            if (m.getName().equals(op.getInMessage())) {
-                Set<String> fields = m.getFields().stream().map(FieldDef::getName)
-                    .collect(Collectors.toCollection(LinkedHashSet::new));
-                return new Request(m.getName(), namespace + "." + m.getName(), fields);
+    private static void requireClientsFor(Path appRoot, Layout layout, String code) throws IOException {
+        String codeOnly = COMMENTS_AND_STRINGS.matcher(code).replaceAll(" ");
+        for (String name : ServiceIntrospector.listServiceNames(appRoot)) {
+            String kebab = TokenUtils.toKebabCase(name);
+            if (kebab.equals(layout.webKebab)) continue;
+            String cls = layout.clientClassName(kebab);
+            Path clientFile = layout.clientFile(kebab);
+            if (Pattern.compile("\\b" + Pattern.quote(cls) + "\\b").matcher(codeOnly).find()
+                    && !(Files.exists(clientFile) && Files.readString(clientFile).contains(ServiceClientEditor.CLIENT_MARKER))) {
+                throw new IllegalStateException("the body uses " + cls + ", but " + layout.webKebab
+                    + " has no client for " + kebab + "; call add_service_client(" + layout.webKebab + ", "
+                    + kebab + ") first");
             }
         }
-        throw new IllegalStateException("request message " + op.getInMessage() + " of operation " + op.getName()
-            + " is not in " + modelFile);
     }
 
-    private static boolean hasHandlerFor(Path appRoot, String service, String messageName) {
-        try {
-            for (HandlerDef h : HandlerIntrospector.listHandlers(appRoot, service)) {
-                if (messageName.equals(h.getMessageType())) return true;
+    /** A path with its parameter names erased: {@code /orders/{id}} and {@code /orders/{orderId}} are one route. */
+    static String routeKey(String path) {
+        return path.replaceAll("\\{[^}]*\\}", "{}");
+    }
+
+    /**
+     * Refuse a path that JAX-RS would treat as the same route as one already
+     * served, under different parameter names, whatever the method: each spelling
+     * would get a root resource class of its own, and Jersey routes a request to
+     * one of them without backtracking, so the other's methods answer 405 (or the
+     * pair is rejected as ambiguous at startup). Covers endpoints added here and
+     * hand-written resource classes whose class-level path is equivalent.
+     */
+    private static void requireNoEquivalentRoute(Layout layout, Path appRoot, String webService, String path,
+                                                 Map<Path, String> resources) throws IOException {
+        String key = routeKey(path);
+        for (RestEndpointDef e : RestEndpointIntrospector.listEndpoints(appRoot, webService)) {
+            if (!e.getPath().equals(path) && routeKey(e.getPath()).equals(key)) {
+                throw new IllegalArgumentException(path + " is the same route as the existing " + e.getPath()
+                    + " on service " + layout.webKebab + "; use that spelling");
             }
-            return false;
-        } catch (Exception e) {
-            // a service whose Main.java cannot be read is reported elsewhere; do not warn on a guess
-            return true;
         }
+        for (Map.Entry<Path, String> r : resources.entrySet()) {
+            if (countMarkers(r.getValue()) > 0) continue;
+            String classPath = classPath(r.getValue());
+            if (classPath != null && routeKey(classPath).equals(key)) {
+                throw new IllegalArgumentException(path + " is already served by the hand-written "
+                    + r.getKey().getFileName() + " (@Path(\"" + classPath + "\"))");
+            }
+        }
+    }
+
+    /** The web service's resource classes and their text, read once per operation. */
+    private static Map<Path, String> readResources(Layout layout) throws IOException {
+        Map<Path, String> out = new java.util.TreeMap<>();
+        if (!Files.isDirectory(layout.resourcesDir)) return out;
+        try (Stream<Path> files = Files.list(layout.resourcesDir)) {
+            for (Path file : (Iterable<Path>) files::iterator) {
+                if (file.toString().endsWith(".java")) out.put(file, Files.readString(file));
+            }
+        }
+        return out;
+    }
+
+    /** A class-level {@code @Path} value, or null. */
+    private static String classPath(String text) {
+        Matcher m = CLASS_PATH.matcher(text);
+        return m.find() ? m.group(1) : null;
     }
 
     // --- generated Java -------------------------------------------------
 
-    private static String render(String snippet, Map<String, String> tokens) throws IOException {
+    static String render(String snippet, Map<String, String> tokens) throws IOException {
         String text;
         try (InputStream in = RestEndpointEditor.class.getResourceAsStream(SNIPPETS + snippet)) {
             if (in == null) throw new IOException("REST endpoint snippet not found: " + snippet);
@@ -494,18 +381,40 @@ public final class RestEndpointEditor {
         return text;
     }
 
+    private static String parameters(String method, List<String> pathParams) {
+        StringBuilder sb = new StringBuilder("@Context final UriInfo uri");
+        for (String p : pathParams) {
+            sb.append(", @PathParam(\"").append(p).append("\") final String ").append(p);
+        }
+        if (BODY_METHODS.contains(method)) sb.append(", final String body");
+        return sb.toString();
+    }
+
+    private static String indent(String code) {
+        StringBuilder sb = new StringBuilder();
+        for (String line : code.split("\n", -1)) {
+            if (sb.length() > 0) sb.append('\n');
+            if (!line.isBlank()) sb.append(RestEndpointIntrospector.BODY_INDENT).append(line.stripTrailing());
+        }
+        return sb.toString();
+    }
+
+    private static String addImports(String classText, List<String> imports) {
+        String text = classText;
+        for (String i : imports) {
+            String line = "import " + i + ";";
+            if (text.contains(line)) continue;
+            int last = text.lastIndexOf("\nimport ");
+            int at = last < 0 ? text.indexOf('\n', text.indexOf("package ")) : text.indexOf('\n', last + 1);
+            text = text.substring(0, at + 1) + line + "\n" + text.substring(at + 1);
+        }
+        return text;
+    }
+
     /** The generated resource class already serving {@code path}, or null. */
-    private static Path findResourceFile(Layout layout, String path) throws IOException {
-        if (!Files.isDirectory(layout.resourcesDir)) return null;
-        String annotation = "@Path(\"" + path + "\")";
-        try (var files = Files.list(layout.resourcesDir)) {
-            for (Path file : (Iterable<Path>) files.sorted()::iterator) {
-                if (!file.toString().endsWith(".java")) continue;
-                String text = Files.readString(file);
-                if (countMarkers(text) > 0 && text.lines().anyMatch(l -> l.trim().equals(annotation))) {
-                    return file;
-                }
-            }
+    private static Path findResourceFile(String path, Map<Path, String> resources) {
+        for (Map.Entry<Path, String> r : resources.entrySet()) {
+            if (countMarkers(r.getValue()) > 0 && path.equals(classPath(r.getValue()))) return r.getKey();
         }
         return null;
     }
@@ -540,31 +449,8 @@ public final class RestEndpointEditor {
     /** Insert {@code method} before the class's closing brace. */
     private static String insertMethod(String classText, String method) {
         int close = classText.lastIndexOf('}');
-        String before = classText.substring(0, close);
-        String body = before.stripTrailing();
-        String separator = body.endsWith("{") ? "\n" : "\n\n";
-        return body + separator + method.stripTrailing() + "\n" + classText.substring(close);
-    }
-
-    /** Remove the marked method for {@code method path}, with the blank line before it. */
-    private static String removeMethod(String classText, String method, String path) {
-        List<String> lines = new ArrayList<>(Arrays.asList(classText.split("\n", -1)));
-        for (int i = 0; i < lines.size(); i++) {
-            Matcher m = RestEndpointIntrospector.MARKER.matcher(lines.get(i));
-            if (m.matches() && m.group(1).equals(method) && m.group(2).equals(path)) {
-                int end = i;
-                while (end < lines.size() && !lines.get(end).trim().equals(RestEndpointIntrospector.END_MARKER)) end++;
-                if (end == lines.size()) {
-                    throw new IllegalStateException("the " + method + " " + path + " endpoint has no "
-                        + RestEndpointIntrospector.END_MARKER + " line; restore it or remove the method by hand");
-                }
-                int start = i;
-                if (start > 0 && lines.get(start - 1).isBlank()) start--;
-                lines.subList(start, Math.min(end + 1, lines.size())).clear();
-                break;
-            }
-        }
-        return String.join("\n", lines);
+        String body = classText.substring(0, close).stripTrailing();
+        return body + "\n\n" + method.stripTrailing() + "\n" + classText.substring(close);
     }
 
     private static int countMarkers(String text) {
@@ -576,290 +462,16 @@ public final class RestEndpointEditor {
         return name.substring(0, name.length() - ".java".length());
     }
 
-    private static void write(Path file, String content) throws IOException {
+    static void write(Path file, String content) throws IOException {
         Files.createDirectories(file.getParent());
         Files.writeString(file, content);
     }
 
-    private static void deleteIfEmpty(Path dir) throws IOException {
+    static void deleteIfEmpty(Path dir) throws IOException {
         if (Files.isDirectory(dir)) {
-            try (var s = Files.list(dir)) {
+            try (Stream<Path> s = Files.list(dir)) {
                 if (s.findAny().isEmpty()) Files.delete(dir);
             }
         }
-    }
-
-    // --- pom ------------------------------------------------------------
-
-    private static String artifactId(Map<String, String> tokens, String serviceKebab) {
-        return tokens.get(TokenUtils.toToken("ParentArtifactId")) + "-" + serviceKebab;
-    }
-
-    private static boolean hasDependency(Path pom, String artifactId) throws IOException {
-        return Files.readString(pom).contains("<artifactId>" + artifactId + "</artifactId>");
-    }
-
-    private static boolean hasGeneratedDependency(Path pom, String artifactId) throws IOException {
-        List<String> lines = Files.readAllLines(pom);
-        for (int i = 0; i < lines.size(); i++) {
-            if (lines.get(i).contains("<artifactId>" + artifactId + "</artifactId>")) {
-                int open = i;
-                while (open >= 0 && !lines.get(open).contains("<dependency>")) open--;
-                return open > 0 && lines.get(open - 1).contains(DEPENDENCY_MARKER);
-            }
-        }
-        return false;
-    }
-
-    /**
-     * The line of the {@code </dependencies>} that closes the project's own
-     * dependencies, skipping the ones inside {@code <dependencyManagement>},
-     * {@code <build>} (plugin dependencies) and {@code <profiles>}; -1 if none.
-     */
-    static int projectDependenciesEnd(List<String> lines) {
-        int nested = 0;
-        for (int i = 0; i < lines.size(); i++) {
-            String line = lines.get(i);
-            if (line.contains("<dependencyManagement>") || line.contains("<build>") || line.contains("<profiles>")) nested++;
-            if (line.contains("</dependencyManagement>") || line.contains("</build>") || line.contains("</profiles>")) nested--;
-            if (nested == 0 && line.contains("</dependencies>")) return i;
-        }
-        return -1;
-    }
-
-    /** Add the dependency at the end of the project's own {@code <dependencies>}. */
-    private static void addDependency(Path pom, String groupId, String artifactId) throws IOException {
-        List<String> lines = new ArrayList<>(Files.readAllLines(pom));
-        int i = projectDependenciesEnd(lines);
-        if (i < 0) throw new IOException("no project <dependencies> block in " + pom);
-        lines.add(i, String.format(
-            "        " + DEPENDENCY_MARKER + "\n" +
-            "        <dependency>\n" +
-            "            <groupId>%s</groupId>\n" +
-            "            <artifactId>%s</artifactId>\n" +
-            "            <version>${project.version}</version>\n" +
-            "        </dependency>", groupId, artifactId));
-        Files.write(pom, lines);
-    }
-
-    private static void removeDependency(Path pom, String artifactId) throws IOException {
-        List<String> lines = new ArrayList<>(Files.readAllLines(pom));
-        int artifact = -1;
-        for (int i = 0; i < lines.size(); i++) {
-            if (lines.get(i).contains("<artifactId>" + artifactId + "</artifactId>")) { artifact = i; break; }
-        }
-        if (artifact < 0) return;
-        int open = artifact;
-        while (open >= 0 && !lines.get(open).contains("<dependency>")) open--;
-        int close = artifact;
-        while (close < lines.size() && !lines.get(close).contains("</dependency>")) close++;
-        if (open < 0 || close >= lines.size()) return;
-        if (open > 0 && lines.get(open - 1).contains(DEPENDENCY_MARKER)) open--;
-        lines.subList(open, close + 1).clear();
-        Files.write(pom, lines);
-    }
-
-    // --- config.xml -----------------------------------------------------
-
-    private static Document loadConfig(Path configPath) throws IOException {
-        if (!Files.exists(configPath)) throw new IOException("config.xml not found at " + configPath);
-        try {
-            return XmlDomUtils.parseXmlDocument(configPath);
-        } catch (Exception e) {
-            throw new IOException("failed to parse " + configPath, e);
-        }
-    }
-
-    private static void saveConfig(Document doc, Path configPath) throws IOException {
-        try {
-            XmlDomUtils.saveXmlDocument(doc, configPath);
-        } catch (Exception e) {
-            throw new IOException("failed to write " + configPath, e);
-        }
-    }
-
-    /**
-     * Declare the downstream service's client bus, give every profile that sets
-     * the application bus a client bus descriptor, and point the client at it.
-     *
-     * @return true if anything changed.
-     */
-    private static boolean wireClientBus(Document doc, Layout layout, String targetFullName) {
-        Element root = doc.getDocumentElement();
-        boolean changed = false;
-
-        Element buses = XmlDomUtils.getOrCreateChild(root, "buses");
-        String busName = targetFullName + CLIENT_BUS_SUFFIX;
-        Element bus = childNamed(buses, "bus", busName);
-        boolean generatedBus = bus == null || GENERATED_BUS_DESCRIPTOR.equals(bus.getAttribute("descriptor"));
-        if (bus == null) {
-            bus = doc.createElementNS(root.getNamespaceURI(), "bus");
-            bus.setAttribute("name", busName);
-            bus.setAttribute("descriptor", GENERATED_BUS_DESCRIPTOR);
-            buses.appendChild(bus);
-            changed = true;
-        }
-        // A client bus the developer declared is used exactly as declared: the
-        // client connects with the bus's own descriptor and, if the bus pins its
-        // requests channel key, sends with that key. Anything else would put the
-        // client on a different bus or key from the engine, and nothing reports it.
-        String descriptor = generatedBus ? GENERATED_BUS_DESCRIPTOR : bus.getAttribute("descriptor");
-        String requestsKey = generatedBus ? null : pinnedRequestsKey(bus);
-
-        List<Element> envs = profileEnvsWithAppBus(doc);
-        if (envs.isEmpty()) {
-            throw new IllegalStateException("no profile in config.xml sets " + APP_BUS_VAR
-                + ", so there is nothing to derive the client bus descriptor from");
-        }
-        String appToken = layout.tokens.get(TokenUtils.toToken("AppTokenName"));
-        for (Element env : envs) {
-            if (generatedBus && directChild(env, CLIENT_BUS_VAR) == null) {
-                Element appBus = directChild(env, APP_BUS_VAR);
-                String appDescriptor = appBus.getTextContent().trim();
-                Element clientBus = doc.createElementNS(env.getNamespaceURI(), CLIENT_BUS_VAR);
-                // a loopback namespace takes one binding per engine, so client buses get one of their own
-                clientBus.setTextContent(appDescriptor.startsWith("loopback://")
-                    ? "loopback://" + appToken + "-client" : appDescriptor);
-                env.insertBefore(clientBus, appBus.getNextSibling());
-                changed = true;
-            }
-            Element client = XmlDomUtils.getOrCreateChild(
-                XmlDomUtils.getOrCreateChild(XmlDomUtils.getOrCreateChild(env, targetFullName), "client"),
-                layout.clientName());
-            if (directChild(client, "connectionDescriptor") == null) {
-                Element connection = doc.createElementNS(env.getNamespaceURI(), "connectionDescriptor");
-                connection.setTextContent(descriptor);
-                client.appendChild(connection);
-                changed = true;
-            }
-            if (requestsKey != null && directChild(client, "requestsChannelKey") == null) {
-                Element key = doc.createElementNS(env.getNamespaceURI(), "requestsChannelKey");
-                key.setTextContent(requestsKey);
-                client.appendChild(key);
-                changed = true;
-            }
-        }
-        return changed;
-    }
-
-    private static boolean removeClientConfig(Document doc, String targetFullName, String clientName) {
-        boolean changed = false;
-        for (Element env : profileEnvsWithAppBus(doc)) {
-            Element service = directChild(env, targetFullName);
-            Element clients = service == null ? null : directChild(service, "client");
-            Element client = clients == null ? null : directChild(clients, clientName);
-            if (client == null) continue;
-            XmlDomUtils.removeElement(client);
-            if (!hasElementChildren(clients)) XmlDomUtils.removeElement(clients);
-            if (!hasElementChildren(service)) XmlDomUtils.removeElement(service);
-            changed = true;
-        }
-        return changed;
-    }
-
-    /**
-     * Remove the client bus if this editor created it, and the profiles' client
-     * bus descriptor once no generated client bus is left. A client bus the
-     * developer declared stays: other callers may depend on it.
-     */
-    private static boolean removeClientBus(Document doc, String targetFullName) {
-        Element buses = XmlDomUtils.getElementByPath(doc.getDocumentElement(), Collections.singletonList("buses"));
-        if (buses == null) return false;
-        Element bus = childNamed(buses, "bus", targetFullName + CLIENT_BUS_SUFFIX);
-        if (bus == null || !GENERATED_BUS_DESCRIPTOR.equals(bus.getAttribute("descriptor"))) return false;
-        XmlDomUtils.removeElement(bus);
-        boolean anyLeft = false;
-        for (Element b : elementChildren(buses)) {
-            if (GENERATED_BUS_DESCRIPTOR.equals(b.getAttribute("descriptor"))) anyLeft = true;
-        }
-        if (!anyLeft) {
-            for (Element env : profileEnvsWithAppBus(doc)) {
-                Element clientBus = directChild(env, CLIENT_BUS_VAR);
-                if (clientBus != null) XmlDomUtils.removeElement(clientBus);
-            }
-        }
-        return true;
-    }
-
-    /**
-     * The name of the engine that serves {@code serviceKebab}: its
-     * {@code <app>} instance, which the scaffolder names
-     * {@code <service>-<partition>}. That name, not the service's, is what the
-     * engine subscribes to its client bus with and what it names that bus after,
-     * so it is the name the client must be given. A client keyed with the bare
-     * service name reaches a bus nothing listens on, and nothing on either side
-     * reports it.
-     */
-    static String engineName(Document doc, Map<String, String> tokens, String serviceKebab) {
-        String serviceName = ConnectorSupport.serviceFullName(tokens, serviceKebab);
-        String template = serviceName + "-template";
-        Set<String> engines = new java.util.TreeSet<>();
-        NodeList apps = doc.getElementsByTagNameNS("*", "app");
-        for (int i = 0; i < apps.getLength(); i++) {
-            Element app = (Element) apps.item(i);
-            if (template.equals(app.getAttribute("template")) && !app.getAttribute("name").isEmpty()) {
-                engines.add(app.getAttribute("name"));
-            }
-        }
-        if (engines.isEmpty()) {
-            throw new IllegalStateException("config.xml declares no app instance of service '" + serviceKebab
-                + "' (no <app template=\"" + template + "\">)");
-        }
-        if (engines.size() > 1) {
-            throw new IllegalArgumentException("service '" + serviceKebab + "' runs as " + engines.size()
-                + " partitions " + engines + ", and a REST endpoint's client calls a single engine;"
-                + " endpoints for a partitioned service are not supported yet");
-        }
-        return engines.iterator().next();
-    }
-
-    /** The key a declared client bus pins on its requests channel, or null. */
-    private static String pinnedRequestsKey(Element bus) {
-        Element channels = directChild(bus, "channels");
-        if (channels == null) return null;
-        for (Element channel : elementChildren(channels)) {
-            if ("requests".equals(channel.getAttribute("name"))) {
-                Element key = directChild(channel, "key");
-                String text = key == null ? "" : key.getTextContent().trim();
-                return text.isEmpty() ? null : text;
-            }
-        }
-        return null;
-    }
-
-    private static List<Element> profileEnvsWithAppBus(Document doc) {
-        List<Element> out = new ArrayList<>();
-        Element profiles = XmlDomUtils.getElementByPath(doc.getDocumentElement(), Collections.singletonList("profiles"));
-        if (profiles == null) return out;
-        for (Element profile : elementChildren(profiles)) {
-            Element env = directChild(profile, "env");
-            if (env != null && directChild(env, APP_BUS_VAR) != null) out.add(env);
-        }
-        return out;
-    }
-
-    private static Element childNamed(Element parent, String localName, String nameAttribute) {
-        for (Element e : elementChildren(parent)) {
-            if (localName.equals(e.getLocalName()) && nameAttribute.equals(e.getAttribute("name"))) return e;
-        }
-        return null;
-    }
-
-    private static Element directChild(Element parent, String localName) {
-        return ApiOperationEditor.firstChild(parent, localName);
-    }
-
-    private static boolean hasElementChildren(Element parent) {
-        return !elementChildren(parent).isEmpty();
-    }
-
-    private static List<Element> elementChildren(Element parent) {
-        List<Element> out = new ArrayList<>();
-        NodeList kids = parent.getChildNodes();
-        for (int i = 0; i < kids.getLength(); i++) {
-            Node n = kids.item(i);
-            if (n.getNodeType() == Node.ELEMENT_NODE) out.add((Element) n);
-        }
-        return out;
     }
 }

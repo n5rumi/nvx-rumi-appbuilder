@@ -254,39 +254,49 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
   escapes, and validates the shape — keep all three if you touch it, and test
   with a TTY (`script -q /dev/null …`), not just a pipe.
 
-## REST endpoints (RUMI-457)
+## REST endpoints and service clients (RUMI-457)
 
-`add_rest_endpoint` / `remove_rest_endpoint` (`RestEndpointEditor`) put an HTTP endpoint on a
-webservice that calls another service's `api.xml` operation through its generated client. Every aspect
-is in the request: webservice, method, path, service, operation. Rules that fail silently if broken:
+Two separate operations, deliberately:
+
+- **`add_rest_endpoint` / `update_rest_endpoint`** (`RestEndpointEditor`) take the endpoint's **body as
+  Java code**, the way `add_handler` does: the editor writes the JAX-RS method around it (path params as
+  `@PathParam String`, `UriInfo uri`, `String body` for POST/PUT/PATCH, returns `Response`) and the caller
+  decides what it does. `get_rest_endpoint` hands the body back verbatim.
+- **`add_service_client`** (`ServiceClientEditor`) is the **explicit prerequisite** for a body that does
+  request-reply with ANOTHER service: client class, Maven dependency, client bus and client config. Calling
+  the webservice's own engine (`injectRequestAndWaitForReply`) needs no client, and a one-way message needs
+  only the shared model. A body naming `<Service>Client` before its client exists is refused, naming the
+  step: client names are predictable, so it is a text check, and RUMI-416's compile catches the rest.
+
+Rules that fail silently if broken:
 
 - ⚠️ **The client is keyed with the target's ENGINE name, `<service>-<partition>` (`demo-orders-1`),
-  read from the `<app template="...-template">` instance in config.xml** (`RestEndpointEditor.engineName`).
+  read from the `<app template="...-template">` instance in config.xml** (`ServiceClientEditor.engineName`).
   The client sends on the `requests` channel keyed with the name it is given; the engine subscribes
   with its own. The bare service name times out with **nothing logged on either side**. This was a
   customer's failure, reproduced on a generated app (RUMI-458). The client bus is
   `<engine>_client_bus` for the same reason.
 - **A partitioned target is refused**, not called on partition 1: one client calls one engine.
 - **A client bus the developer already declared is used AS DECLARED** (verified on a hand-wired
-  customer app): the client connects with that bus's own descriptor expression and,
-  if the bus pins a `requests` `<key>` (a hand-wired app may pin the bare service name), gets a
-  `requestsChannelKey` of that key. Pointing it at the generated `${REST_CLIENT_BUS_DESCRIPTOR}` or keying
-  it with the engine name would recreate the silent timeout. Such a bus is never removed.
-- **Generated support and client classes live in `<web>.rest`**, and a file there without the
-  `// @rest-endpoint-client` marker is refused rather than overwritten: a hand-written
-  `clients/TenancyClient` is exactly what an app that wired this by hand already has.
+  customer app): its own descriptor expression and, if the bus pins a `requests` `<key>`, a
+  `requestsChannelKey` of that key. Such a bus is never removed.
+- **What removal takes is only what the editor added**: the dependency carries a marker comment, the
+  client config sits under its own client name `<web>-rest`, and the generated descriptor variable is
+  `REST_CLIENT_BUS_DESCRIPTOR`, so a developer's own `CLIENT_BUS_DESCRIPTOR` is never taken for ours.
+- **A client in use is not removed** unless forced, and `ServiceRemover` refuses to remove a service
+  some webservice holds a client for.
+- **Generated support (`RestJson`) and client classes live in `<web>.rest`**, and a file there without
+  the `// @rest-endpoint-client` marker is refused rather than overwritten.
 - ⚠️ **Snippets must compile at Java 8.** Older scaffolds pin `<release>8</release>`;
-  `String.isBlank()` in a snippet broke its build. Unit tests never compile the snippets, so only a
-  build of a generated or real app catches this.
+  `String.isBlank()` in a snippet broke a real app's build. Unit tests never compile the snippets.
 - **The client bus gets its own descriptor.** On loopback an engine may bind a namespace once, so the
   test profile uses `loopback://<app>-client` (else `<engine> already connected` at startup). Declared
   in `<buses>` only: the engine joins it by itself, so it is NOT added to `<messaging>`.
 - **One resource class per path**, with the path at class level. JAX-RS picks a root resource by its
   longest literal prefix and does not backtrack, so a shared `@Path("/")` class would be shadowed by
-  `WebMain`'s `/<svc>/v1`.
+  `WebMain`'s `/<svc>/v1`. Equivalent routes (`/orders/{id}` vs `/orders/{orderId}`) are refused.
 - Endpoints are found by the `// @rest-endpoint` marker comments, so hand-written resources are never
-  listed or removed. Removing the last caller of a service removes its client, dependency, client
-  config and (app-wide) client bus; `ServiceRemover` refuses to remove a service endpoints still call.
+  listed or removed.
 - ⚠️ **In tests, a service restarted in the same JVM on loopback stops receiving client requests**
   (RUMI-460, cause unproven). The release gate runs `RestEndpointTest` in a JVM of its own for that
   reason; do not fold it back into the shared `mvn test`.

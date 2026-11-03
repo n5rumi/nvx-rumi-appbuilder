@@ -23,33 +23,33 @@ package com.neeve.appbuilder.rest.dto;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.List;
 
 /**
  * Request body for {@code POST /v1/services/{svc}/rest-endpoints}, where
- * {@code svc} is the web service that serves the endpoint. Every other aspect
- * of the endpoint is given here: the HTTP {@code method}, the {@code path}, the
- * downstream {@code service} and the {@code operation} of its api.xml the
- * endpoint calls.
+ * {@code svc} is the web service: the HTTP {@code method}, the {@code path}, the
+ * Java {@code body} of the endpoint method (without its braces), and any
+ * {@code imports} the body needs.
  */
 public final class AddRestEndpointRequest {
     private final String method;
     private final String path;
-    private final String service;
-    private final String operation;
+    private final String body;
+    private final List<String> imports;
 
     @JsonCreator
     public AddRestEndpointRequest(@JsonProperty("method") String method,
                                   @JsonProperty("path") String path,
-                                  @JsonProperty("service") String service,
-                                  @JsonProperty("operation") String operation) {
+                                  @JsonProperty("body") String body,
+                                  @JsonProperty("imports") List<String> imports) {
         this.method = method;
         this.path = path;
-        this.service = service;
-        this.operation = operation;
+        this.body = body;
+        this.imports = imports;
     }
 
     public String getMethod() { return method; }
     public String getPath() { return path; }
-    public String getService() { return service; }
-    public String getOperation() { return operation; }
+    public String getBody() { return body; }
+    public List<String> getImports() { return imports; }
 }

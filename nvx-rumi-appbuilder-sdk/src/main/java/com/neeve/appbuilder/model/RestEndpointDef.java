@@ -25,27 +25,23 @@ import java.nio.file.Path;
 import java.util.Objects;
 
 /**
- * A REST endpoint generated into a web service by
- * {@link com.neeve.appbuilder.RestEndpointEditor}: an HTTP method and path on
- * the web service that forwards each request to an API operation of a
- * downstream service, through that service's generated client.
+ * A REST endpoint added to a web service by
+ * {@link com.neeve.appbuilder.RestEndpointEditor}: an HTTP method and path whose
+ * body is the developer's code.
  */
 public final class RestEndpointDef {
     private final String webService;
     private final String method;
     private final String path;
-    private final String service;
-    private final String operation;
     private final Path javaFile;
+    private final String body;
 
-    public RestEndpointDef(String webService, String method, String path,
-                           String service, String operation, Path javaFile) {
+    public RestEndpointDef(String webService, String method, String path, Path javaFile, String body) {
         this.webService = Objects.requireNonNull(webService, "webService");
         this.method = Objects.requireNonNull(method, "method");
         this.path = Objects.requireNonNull(path, "path");
-        this.service = Objects.requireNonNull(service, "service");
-        this.operation = Objects.requireNonNull(operation, "operation");
         this.javaFile = javaFile;
+        this.body = body;
     }
 
     /** The web service that serves the endpoint. */
@@ -63,23 +59,18 @@ public final class RestEndpointDef {
         return path;
     }
 
-    /** The downstream service whose operation the endpoint calls. */
-    public String getService() {
-        return service;
-    }
-
-    /** The downstream service's api.xml operation the endpoint calls. */
-    public String getOperation() {
-        return operation;
-    }
-
-    /** The generated JAX-RS resource class that holds the endpoint. */
+    /** The resource class that holds the endpoint. */
     public Path getJavaFile() {
         return javaFile;
     }
 
+    /** The method body, verbatim and without its braces; null in a listing. */
+    public String getBody() {
+        return body;
+    }
+
     @Override
     public String toString() {
-        return method + " " + path + " -> " + service + "." + operation;
+        return method + " " + path;
     }
 }

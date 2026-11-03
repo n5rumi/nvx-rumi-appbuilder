@@ -22,7 +22,7 @@
 package com.neeve.appbuilder;
 
 import com.neeve.appbuilder.model.ChangeSet;
-import com.neeve.appbuilder.model.RestEndpointDef;
+import com.neeve.appbuilder.model.ServiceClientDef;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -104,24 +104,23 @@ public final class ServiceRemover {
             return ChangeSet.noop("service '" + serviceName + "' is not present in " + appRoot);
         }
 
-        // (0) REST endpoints. A service that another web service's endpoints
-        // call cannot go while they do, or they would compile against a client
-        // whose service no longer exists. A web service's own endpoints are
-        // removed first, so the client configuration they put in config.xml
-        // goes with them rather than being left for a service that is gone.
-        List<RestEndpointDef> callers = new ArrayList<>(RestEndpointIntrospector.listCallers(appRoot, serviceName));
-        callers.removeIf(e -> e.getWebService().equals(kebab));
-        if (!callers.isEmpty()) {
-            throw new IllegalStateException("cannot remove service '" + kebab + "': still called by REST endpoints "
-                + callers.stream().map(e -> e.getWebService() + " " + e.getMethod() + " " + e.getPath())
-                    .collect(java.util.stream.Collectors.joining(", "))
-                + " (remove them with remove_rest_endpoint first)");
+        // (0) Service clients. A service that a web service holds a client for
+        // cannot go while it does, or that client's generated AbstractClient
+        // would no longer exist. A web service's own clients are removed first,
+        // so the configuration they put in config.xml goes with them rather than
+        // being left behind for a service that is gone.
+        List<ServiceClientDef> holders = new ArrayList<>(ServiceClientIntrospector.listClientsOf(appRoot, serviceName));
+        holders.removeIf(c -> c.getWebService().equals(kebab));
+        if (!holders.isEmpty()) {
+            throw new IllegalStateException("cannot remove service '" + kebab + "': "
+                + holders.stream().map(ServiceClientDef::getWebService).collect(java.util.stream.Collectors.joining(", "))
+                + " still hold a client for it (remove it with remove_service_client first)");
         }
-        boolean endpointConfigTouched = false;
+        boolean clientConfigTouched = false;
         if (moduleDirExists && AppIntrospector.resolveServiceType(appRoot, serviceName) == ServiceBuilder.ServiceType.WEBSERVICE) {
-            for (RestEndpointDef e : RestEndpointIntrospector.listEndpoints(appRoot, serviceName)) {
-                ChangeSet removed = RestEndpointEditor.removeEndpoint(appRoot, serviceName, e.getMethod(), e.getPath(), dryRun);
-                endpointConfigTouched |= removed.getFilesModified().stream().anyMatch(f -> f.endsWith("config.xml"));
+            for (ServiceClientDef c : ServiceClientIntrospector.listClients(appRoot, serviceName)) {
+                ChangeSet removed = ServiceClientEditor.removeServiceClient(appRoot, serviceName, c.getService(), true, dryRun);
+                clientConfigTouched |= removed.getFilesModified().stream().anyMatch(f -> f.endsWith("config.xml"));
             }
         }
 
@@ -170,7 +169,7 @@ public final class ServiceRemover {
         Path configPath = appRoot.resolve(systemArtifactId).resolve("conf/config.xml");
         if (Files.exists(configPath)) {
             boolean configTouched = removeConfigFragmentsForService(configPath, tokens, serviceName, kebab, dryRun);
-            if (configTouched || endpointConfigTouched) cs.addModified(configPath);
+            if (configTouched || clientConfigTouched) cs.addModified(configPath);
         }
 
         // (5) Remove script snippets for this service.
