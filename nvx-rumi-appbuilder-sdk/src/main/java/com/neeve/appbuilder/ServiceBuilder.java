@@ -173,7 +173,7 @@ public class ServiceBuilder {
             String serviceArtifactId = parentArtifactId + "-" + kebabCase;
             map.put(TokenUtils.toToken("ServiceDisplayName"), TokenUtils.forDisplay(serviceName));
             map.put(TokenUtils.toToken("ServiceTokenName"), kebabCase);     // e.g., "order-processor"
-            map.put(TokenUtils.toToken("ServiceClassPrefix"), TokenUtils.toPascalCase(kebabCase)); // e.g., "OrderProcessor"
+            map.put(TokenUtils.toToken("ServiceClassPrefix"), classPrefix(kebabCase)); // e.g., "OrderProcessor"
             map.put(TokenUtils.toToken("ServiceName"), map.get(TokenUtils.toToken("AppTokenName")) + "-" + kebabCase); // e.g., "tradingsystem-order-processor"
             map.put(TokenUtils.toToken("ServicePackageName"), dottedCase);  // e.g., "order.processor"
             map.put(TokenUtils.toToken("ServicePackagePath"), slashCase);      // e.g., "order/processor"
@@ -298,14 +298,39 @@ public class ServiceBuilder {
         Files.write(pomPath, lines);
     }
 
+    /**
+     * The service's name as a class-name prefix, e.g. {@code OrderProcessor}. The
+     * {@code ServiceClassPrefix} token and the sample echo message names both use
+     * it, so the template's handler always names the messages the builder made.
+     */
+    static String classPrefix(String serviceName) {
+        return TokenUtils.toPascalCase(TokenUtils.toKebabCase(serviceName));
+    }
+
     /** The request message of a sample processor's echo operation (RUMI-459). */
     static String sampleEchoRequest(String serviceName) {
-        return TokenUtils.toPascalCase(TokenUtils.toKebabCase(serviceName)) + "EchoRequest";
+        return classPrefix(serviceName) + "EchoRequest";
     }
 
     /** The reply message of a sample processor's echo operation (RUMI-459). */
     static String sampleEchoResponse(String serviceName) {
-        return TokenUtils.toPascalCase(TokenUtils.toKebabCase(serviceName)) + "EchoResponse";
+        return classPrefix(serviceName) + "EchoResponse";
+    }
+
+    /**
+     * Refuse a sample processor whose echo message names the ROE model already
+     * holds. Adding a message is a noop when the name exists, so the operation
+     * would pair messages of some other shape, the handler would not compile,
+     * and removing the processor later would take them with it.
+     */
+    private static void requireSampleEchoNamesFree(Path appRoot, String serviceName) throws IOException {
+        for (String m : new String[] {sampleEchoRequest(serviceName), sampleEchoResponse(serviceName)}) {
+            if (MessageIntrospector.getMessage(appRoot, serviceName, m, FieldEditor.ModelScope.ROE_MESSAGES) != null) {
+                throw new IllegalArgumentException("the ROE model already has a message " + m
+                    + ", which the sample echo operation of '" + serviceName + "' would use; rename that message,"
+                    + " choose another service name, or scaffold this service without samples");
+            }
+        }
     }
 
     /**
@@ -341,6 +366,10 @@ public class ServiceBuilder {
         String serviceTypeName = params.getServiceType().getName();
         String buildToolName = appParams.getBuildTool().getName();
 
+        // checked before anything is written
+        boolean sampleEcho = params.getServiceType() == ServiceType.PROCESSOR && params.isIncludeSamples();
+        if (sampleEcho) requireSampleEchoNamesFree(appRoot, params.getServiceName());
+
         // extract template to a temp directory
         Path templateDir;
         try {
@@ -374,15 +403,16 @@ public class ServiceBuilder {
         // update the parent pom
         updateParentPom(appRoot, params);
 
-        // a processor scaffolded with samples gets a working request-reply
-        // operation, so a webservice can show calling it through a client
-        if (params.getServiceType() == ServiceType.PROCESSOR && params.isIncludeSamples()) {
-            addSampleEchoOperation(appRoot, params.getServiceName());
-        }
-
         // record the factory ids this service now owns into the app-global ledger
         // so they are never reused even after the service is later removed.
+        // First, so a failure below cannot leave them unrecorded.
         FactoryIdCollector.recordAllocatedIds(appRoot);
+
+        // a processor scaffolded with samples gets a working request-reply
+        // operation, so a webservice can show calling it through a client
+        if (sampleEcho) {
+            addSampleEchoOperation(appRoot, params.getServiceName());
+        }
 
         // done
         return this;

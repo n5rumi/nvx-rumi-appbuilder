@@ -107,8 +107,9 @@ public class Main implements AepEngineProvider {
 
     // Request handlers go here. Each one takes a message declared in this
     // service's messages.xml, reads and mutates the replicated Repository via
-    // _engine.getApplicationState(request), and answers the blocked web-layer
-    // call with _messageSender.sendReply(request, response):
+    // _engine.getApplicationState(request), and answers a REST endpoint body
+    // waiting in injectRequestAndWaitForReply with
+    // _messageSender.sendReply(request, response):
     //
     //     @EventHandler
     //     final public void onMyRequest(final MyRequest request) { ... }

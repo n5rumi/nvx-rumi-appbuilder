@@ -686,9 +686,11 @@ through the exact defect it exists to catch.
 
 A scaffold is a first impression, and for most of this project's life there was
 only one audience to make it on: a human opening a generated app, who wants a
-worked example to imitate. So the templates ship one — an `/echo` endpoint wired
+worked example to imitate. So the templates ship one — an echo request wired
 through a real message to real replicated state, a driver with a rate-governed
-sending thread, a connector with a scheduled alarm loop.
+sending thread, a connector with a scheduled alarm loop. (The webservice used to
+ship a ready-made `/echo` REST endpoint too; since RUMI-459 endpoints are added
+by command, and the app README shows the two that reach the samples.)
 
 Then the audience changed. Sutra and the Rumi Support Agent build Rumi apps
 through the Dev MCP, and the first thing they do after scaffolding is *delete all
