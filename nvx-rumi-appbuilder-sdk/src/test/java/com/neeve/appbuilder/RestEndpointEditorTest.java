@@ -136,6 +136,16 @@ public class RestEndpointEditorTest {
     }
 
     @Test
+    public void aMistypedWebserviceIsRefusedRatherThanReadAsEmpty() throws Exception {
+        // reads and removals too: an empty list or a noop would read as success
+        assertRefused(() -> ServiceClientIntrospector.listClients(appRoot, "gatway"), "not found");
+        assertRefused(() -> RestEndpointIntrospector.listEndpoints(appRoot, "gatway"), "not found");
+        assertRefused(() -> ServiceClientEditor.removeServiceClient(appRoot, "gatway", SVC, false, false), "not found");
+        assertRefused(() -> ServiceClientIntrospector.listClients(appRoot, SVC), "is not a webservice");
+        assertRefused(() -> RestEndpointIntrospector.listEndpoints(appRoot, SVC), "is not a webservice");
+    }
+
+    @Test
     public void aRefusalWritesNothing() throws Exception {
         Files.writeString(config, Files.readString(config).replace("APP_BUS_DESCRIPTOR>", "OTHER_BUS>"));
         String before = Files.readString(config);

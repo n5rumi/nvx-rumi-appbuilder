@@ -95,7 +95,7 @@ public final class ServiceClientEditor {
      */
     public static ChangeSet addServiceClient(Path appRoot, String webService, String service, boolean dryRun)
             throws IOException {
-        Layout layout = Layout.of(appRoot, webService);
+        Layout layout = Layout.ofWebService(appRoot, webService);
         String targetKebab = requireTarget(appRoot, webService, service);
         Path configPath = ConnectorSupport.configPath(appRoot, layout.tokens);
         Document doc = loadConfig(configPath);
@@ -154,7 +154,7 @@ public final class ServiceClientEditor {
      */
     public static ChangeSet removeServiceClient(Path appRoot, String webService, String service, boolean force,
                                                 boolean dryRun) throws IOException {
-        Layout layout = Layout.of(appRoot, webService);
+        Layout layout = Layout.ofWebService(appRoot, webService);
         String targetKebab = TokenUtils.toKebabCase(service);
         Path clientFile = layout.clientFile(targetKebab);
         if (!Files.exists(clientFile) || !Files.readString(clientFile).contains(CLIENT_MARKER)) {

@@ -50,7 +50,7 @@ public final class ServiceClientIntrospector {
 
     /** Every client the web service holds, ordered by target service. */
     public static List<ServiceClientDef> listClients(Path appRoot, String webService) throws IOException {
-        Layout layout = Layout.of(appRoot, webService);
+        Layout layout = Layout.ofWebService(appRoot, webService);
         if (!Files.isDirectory(layout.clientsDir)) return Collections.emptyList();
         List<Path> files;
         try (Stream<Path> s = Files.list(layout.clientsDir)) {

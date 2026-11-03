@@ -103,7 +103,7 @@ public final class RestEndpointEditor {
                                         String body, List<String> imports, boolean dryRun) throws IOException {
         String httpMethod = normalizeMethod(method);
         List<String> pathParams = parsePath(path);
-        Layout layout = requireWebService(appRoot, webService);
+        Layout layout = Layout.ofWebService(appRoot, webService);
         String code = requireBody(body);
         List<String> importList = checkImports(imports);
 
@@ -160,7 +160,7 @@ public final class RestEndpointEditor {
     public static ChangeSet updateEndpoint(Path appRoot, String webService, String method, String path,
                                            String body, List<String> imports, boolean dryRun) throws IOException {
         String httpMethod = normalizeMethod(method);
-        Layout layout = requireWebService(appRoot, webService);
+        Layout layout = Layout.ofWebService(appRoot, webService);
         String code = requireBody(body);
         List<String> importList = checkImports(imports);
         RestEndpointDef existing = RestEndpointIntrospector.getEndpoint(appRoot, webService, httpMethod, path);
@@ -191,7 +191,7 @@ public final class RestEndpointEditor {
                                            boolean dryRun) throws IOException {
         String httpMethod = normalizeMethod(method);
         if (path == null || path.isBlank()) throw new IllegalArgumentException("path is required");
-        Layout layout = requireWebService(appRoot, webService);
+        Layout layout = Layout.ofWebService(appRoot, webService);
         RestEndpointDef endpoint = RestEndpointIntrospector.getEndpoint(appRoot, webService, httpMethod, path);
         if (endpoint == null) {
             return ChangeSet.noop("no " + httpMethod + " " + path + " endpoint on service " + layout.webKebab);
@@ -268,13 +268,6 @@ public final class RestEndpointEditor {
             }
         }
         return params;
-    }
-
-    private static Layout requireWebService(Path appRoot, String webService) throws IOException {
-        if (AppIntrospector.resolveServiceType(appRoot, webService) != ServiceBuilder.ServiceType.WEBSERVICE) {
-            throw new IllegalArgumentException("service '" + webService + "' is not a webservice; REST endpoints are served by a webservice");
-        }
-        return Layout.of(appRoot, webService);
     }
 
     private static String requireBody(String body) {
