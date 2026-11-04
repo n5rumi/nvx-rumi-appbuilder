@@ -287,7 +287,10 @@ verify_mode() {
     # this phase's output, and the warning it looks for is emitted HERE and not
     # by the runner. `set -o pipefail` is on, so `if !` still tests mvn's status.
     local build_log="${out_dir}/build.log"
-    if ! (cd "${app}" && "${MVN}" test -DfailIfNoTests=false 2>&1 | tee "${build_log}"); then
+    # Colour off for the same reason as RUMI_VERSION above (RUMI-464): this log is
+    # grepped below, and under TeamCity's Docker wrapper Maven colourises it.
+    if ! (cd "${app}" && "${MVN}" -B -Dstyle.color=never test -DfailIfNoTests=false 2>&1 \
+            | tee "${build_log}"); then
         echo >&2
         echo "!! [${label}] The generated app failed to build or run." >&2
         echo "!! This is a builder defect, not a test defect — the generated app is" >&2
@@ -312,8 +315,8 @@ verify_mode() {
     local t2
     for t2 in "${own_jvm[@]}"; do
         cp "${EXAMPLES}/${t2}.java" "${test_dir}/" || fail "[${label}] Could not stage ${t2}"
-        if ! (cd "${app}" && "${MVN}" test -Dtest="${t2}" -Dsurefire.failIfNoSpecifiedTests=false \
-                2>&1 | tee "${out_dir}/${t2}.log"); then
+        if ! (cd "${app}" && "${MVN}" -B -Dstyle.color=never test -Dtest="${t2}" \
+                -Dsurefire.failIfNoSpecifiedTests=false 2>&1 | tee "${out_dir}/${t2}.log"); then
             echo >&2
             echo "!! [${label}] ${t2}: a REST endpoint did not get its reply from the processor." >&2
             echo "!! Inspect the app at: ${app}" >&2
@@ -321,8 +324,14 @@ verify_mode() {
         fi
         # -Dsurefire.failIfNoSpecifiedTests=false keeps the other modules quiet, so it
         # would also let this gate pass with the test never run: require its result.
+        # RUMI-464: read it with escapes stripped. A colourised log splits the line
+        # as "Tests run: <ESC>[0;1;32m1<ESC>[m, ..." and wraps the class name, so a
+        # PASSING test failed this check and blocked the 1.0.26 release. Colour is
+        # also off on the mvn call above; this guard covers the next variant.
+        # Process substitution, not `sed | grep -q`: under pipefail, grep -q exiting
+        # on its first match can SIGPIPE sed and fail the gate on a PASS.
         grep -q "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0.*in com.example.demo.${t2}" \
-            "${out_dir}/${t2}.log" \
+                <(sed "s/${ESC}\[[0-9;]*[a-zA-Z]//g" "${out_dir}/${t2}.log") \
             || fail "[${label}] ${t2} did not run and pass; see ${out_dir}/${t2}.log"
     done
     info "[${label}] Generated REST endpoints reached the processor through its client"
