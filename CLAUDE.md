@@ -258,8 +258,12 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
   `Tests run: <ESC>[0;1;32m1<ESC>[m, …` and the class name is wrapped in bold, so a
   **passing** test failed the gate and blocked the 1.0.26 release. It runs only in
   `release.sh`, never in the snapshot build, so nothing caught it before a release.
-  Every `mvn` whose log is grepped runs with `-B -Dstyle.color=never`, and result
-  greps read the log with escapes stripped. Two traps when you check this:
+  The script now exports `MAVEN_ARGS="-B -Dstyle.color=never"` once, which covers
+  every `mvn` it starts, including the generated `run-in-process.sh` (a per-call
+  flag is what RUMI-457 forgot after RUMI-384). Every reader of Maven output also
+  goes through the one `strip_ansi` helper; a new grep over a Maven log must too,
+  and one that passes on *no* match (the Jersey check) needs it most, since an
+  escape inside the text it looks for makes it pass silently. Two traps when you check this:
   TeamCity's *downloadable* build log replaces ESC with a space, so it is not the
   bytes the gate saw; and under `set -o pipefail`, `sed … | grep -q` can fail on a
   match (grep exits early, sed takes SIGPIPE), so feed grep by process substitution.

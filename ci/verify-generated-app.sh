@@ -67,6 +67,23 @@ fail() { echo "!! $*" >&2; exit 1; }
 
 : "${JAVA_HOME:?JAVA_HOME env var is required (Java 17+)}"
 
+# Colour off for EVERY mvn this script starts, children included (the generated
+# run-in-process.sh runs its own mvn). Maven colourises when it believes stdout is
+# a terminal, which under TeamCity's Docker wrapper it does, and this script greps
+# Maven's output in several places. Set once, here, rather than per call: a
+# per-call flag is exactly what the RUMI-457 gate forgot after RUMI-384 (RUMI-464).
+# MAVEN_ARGS is read by Maven >= 3.9, which this script already requires.
+export MAVEN_ARGS="${MAVEN_ARGS:-} -B -Dstyle.color=never"
+
+# The second line of defence: strip any escape sequence that gets through anyway
+# (CSI incl. private-mode "ESC[?25l", OSC "ESC]...BEL", and CRs). Every reader of
+# Maven output below goes through this one helper, so widening it covers them all.
+ESC="$(printf '\033')"
+BEL="$(printf '\007')"
+strip_ansi() {
+    sed -e "s/${ESC}\[[0-9;?]*[a-zA-Z]//g" -e "s/${ESC}\][^${BEL}]*${BEL}//g" "$@" | tr -d '\r'
+}
+
 # The generated app must be proven against the Rumi version this builder
 # targets. Reading it from the POM rather than hardcoding means a milestone
 # bump moves this check with it — the whole point of RUMI-377.
@@ -85,10 +102,7 @@ if [[ -z "${RUMI_VERSION:-}" ]]; then
         help:evaluate -Dexpression=nvx.rumi.version -f "${REPO_DIR}/pom.xml" 2>/dev/null | tail -1)"
 fi
 # 2. Strip any escape sequence that got through anyway, plus stray whitespace/CR.
-ESC="$(printf '\033')"
-RUMI_VERSION="$(printf '%s' "${RUMI_VERSION}" \
-    | sed "s/${ESC}\[[0-9;]*[a-zA-Z]//g" \
-    | tr -d '[:space:]')"
+RUMI_VERSION="$(printf '%s' "${RUMI_VERSION}" | strip_ansi | tr -d '[:space:]')"
 [[ -n "${RUMI_VERSION}" ]] || fail "Could not determine nvx.rumi.version from the parent POM"
 # 3. A version that is not a version means we captured decoration rather than
 #    data. Say so here, naming the value, instead of letting it surface three
@@ -287,10 +301,7 @@ verify_mode() {
     # this phase's output, and the warning it looks for is emitted HERE and not
     # by the runner. `set -o pipefail` is on, so `if !` still tests mvn's status.
     local build_log="${out_dir}/build.log"
-    # Colour off for the same reason as RUMI_VERSION above (RUMI-464): this log is
-    # grepped below, and under TeamCity's Docker wrapper Maven colourises it.
-    if ! (cd "${app}" && "${MVN}" -B -Dstyle.color=never test -DfailIfNoTests=false 2>&1 \
-            | tee "${build_log}"); then
+    if ! (cd "${app}" && "${MVN}" test -DfailIfNoTests=false 2>&1 | tee "${build_log}"); then
         echo >&2
         echo "!! [${label}] The generated app failed to build or run." >&2
         echo "!! This is a builder defect, not a test defect — the generated app is" >&2
@@ -315,8 +326,8 @@ verify_mode() {
     local t2
     for t2 in "${own_jvm[@]}"; do
         cp "${EXAMPLES}/${t2}.java" "${test_dir}/" || fail "[${label}] Could not stage ${t2}"
-        if ! (cd "${app}" && "${MVN}" -B -Dstyle.color=never test -Dtest="${t2}" \
-                -Dsurefire.failIfNoSpecifiedTests=false 2>&1 | tee "${out_dir}/${t2}.log"); then
+        if ! (cd "${app}" && "${MVN}" test -Dtest="${t2}" -Dsurefire.failIfNoSpecifiedTests=false \
+                2>&1 | tee "${out_dir}/${t2}.log"); then
             echo >&2
             echo "!! [${label}] ${t2}: a REST endpoint did not get its reply from the processor." >&2
             echo "!! Inspect the app at: ${app}" >&2
@@ -324,14 +335,15 @@ verify_mode() {
         fi
         # -Dsurefire.failIfNoSpecifiedTests=false keeps the other modules quiet, so it
         # would also let this gate pass with the test never run: require its result.
-        # RUMI-464: read it with escapes stripped. A colourised log splits the line
-        # as "Tests run: <ESC>[0;1;32m1<ESC>[m, ..." and wraps the class name, so a
-        # PASSING test failed this check and blocked the 1.0.26 release. Colour is
-        # also off on the mvn call above; this guard covers the next variant.
-        # Process substitution, not `sed | grep -q`: under pipefail, grep -q exiting
-        # on its first match can SIGPIPE sed and fail the gate on a PASS.
-        grep -q "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0.*in com.example.demo.${t2}" \
-                <(sed "s/${ESC}\[[0-9;]*[a-zA-Z]//g" "${out_dir}/${t2}.log") \
+        # RUMI-464: read it through strip_ansi. A colourised log splits the line as
+        # "Tests run: <ESC>[0;1;32m1<ESC>[m, ..." and wraps the class name, so a
+        # PASSING test failed this check and blocked the 1.0.26 release.
+        # Any non-zero count, so adding a @Test does not block a release on a pass;
+        # the class name is anchored, so RestEndpointTestFoo does not satisfy it.
+        # Process substitution, not `strip_ansi | grep -q`: under pipefail, grep -q
+        # exiting on its first match can SIGPIPE the producer and fail on a PASS.
+        grep -qE "Tests run: [1-9][0-9]*, Failures: 0, Errors: 0, Skipped: 0, .* in com\.example\.demo\.${t2}[[:space:]]*\$" \
+                <(strip_ansi "${out_dir}/${t2}.log") \
             || fail "[${label}] ${t2} did not run and pass; see ${out_dir}/${t2}.log"
     done
     info "[${label}] Generated REST endpoints reached the processor through its client"
@@ -497,10 +509,12 @@ PYEOF
     local l
     for l in "${build_log}" "${run_log}"; do
         [[ -f "${l}" ]] || continue
-        if grep -qE "${jersey_noise}" "${l}"; then
+        # Through strip_ansi (RUMI-464): this check passes on NO match, so an escape
+        # landing inside the warning text would make it pass silently.
+        if grep -qE "${jersey_noise}" <(strip_ansi "${l}"); then
             echo >&2
             echo "!! [${label}] The webservice logs a spurious Jersey warning in ${l##*/}:" >&2
-            grep -E "${jersey_noise}" "${l}" | head -3 >&2
+            strip_ansi "${l}" | grep -E "${jersey_noise}" | head -3 >&2 || true
             echo "!! A warning on a correct boot teaches people to ignore warnings." >&2
             echo "!! Supply the missing provider; do not raise the logger level." >&2
             exit 1
