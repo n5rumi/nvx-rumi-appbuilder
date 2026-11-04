@@ -863,6 +863,33 @@ writing the script, not part of debugging it. The general form: when a script's
 behaviour depends on its environment, exercise it in the environment that
 differs, not only the one on your desk.
 
+### Same bug, second reader (RUMI-464, 1.0.26 burned)
+
+Three months later the colour came back through a different door. RUMI-384 had
+fixed the one place the gate read a *value* from Maven. RUMI-457 (11-02) added a
+second place that read a *result*: a grep for the `Tests run: N, Failures: 0 ...
+in com.example.demo.RestEndpointTest` summary line. Under TeamCity's TTY that line
+arrives wrapped in bold and green escape codes, the regex never matched, and the
+1.0.26 release refused to publish a test that had passed. It had already deployed
+the parent, SDK and REST jars, so those were purged from Nexus and the re-run
+shipped as **1.0.27**.
+
+The fix kills the mechanism instead of patching the reader: colour is switched off
+once for every Maven call in the script (`MAVEN_ARGS="-B -Dstyle.color=never"`),
+and every place that reads Maven output goes through one `strip_ansi` helper as a
+backstop. Two traps turned up while proving it:
+
+- **TeamCity's downloadable build log is not the raw log.** It replaces ESC with a
+  space, so a fixture cut from it "passes" under the old regex. The real failure
+  only reproduced after rebuilding the escape bytes with `perl`.
+- **`sed ... | grep -q` under `pipefail` can fail on a match.** `grep -q` exits on
+  the first hit, `sed` takes SIGPIPE, and the pipeline reports failure. Feeding
+  grep through process substitution (`grep -q ... <(strip_ansi file)`) avoids it.
+
+The lesson generalises the RUMI-384 one: when you fix a class of bug, fix it for
+every reader of that input, including the ones that do not exist yet. A per-reader
+fix is a fix for one release.
+
 ## Mirror the generator (App Builder 1.0.21)
 
 Four tickets shipped together in August 2026 as **1.0.21** against Rumi 4.0.640
