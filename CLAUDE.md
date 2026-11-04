@@ -253,6 +253,20 @@ Builder parent POM is `com.neeve:nvx-os-parent:1.1.5`.
   every dependency 404s at `4.0.637<ESC>[0m`. The capture disables colour, strips
   escapes, and validates the shape — keep all three if you touch it, and test
   with a TTY (`script -q /dev/null …`), not just a pipe.
+- ⚠️ **The same goes for any grep over Maven's output** (RUMI-464). The RUMI-457
+  check that `RestEndpointTest` ran read a coloured log, where the result line is
+  `Tests run: <ESC>[0;1;32m1<ESC>[m, …` and the class name is wrapped in bold, so a
+  **passing** test failed the gate and blocked the 1.0.26 release. It runs only in
+  `release.sh`, never in the snapshot build, so nothing caught it before a release.
+  The script now exports `MAVEN_ARGS="-B -Dstyle.color=never"` once, which covers
+  every `mvn` it starts, including the generated `run-in-process.sh` (a per-call
+  flag is what RUMI-457 forgot after RUMI-384). Every reader of Maven output also
+  goes through the one `strip_ansi` helper; a new grep over a Maven log must too,
+  and one that passes on *no* match (the Jersey check) needs it most, since an
+  escape inside the text it looks for makes it pass silently. Two traps when you check this:
+  TeamCity's *downloadable* build log replaces ESC with a space, so it is not the
+  bytes the gate saw; and under `set -o pipefail`, `sed … | grep -q` can fail on a
+  match (grep exits early, sed takes SIGPIPE), so feed grep by process substitution.
 
 ## REST endpoints and service clients (RUMI-457)
 
