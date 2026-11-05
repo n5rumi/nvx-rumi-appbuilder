@@ -414,6 +414,41 @@ PYEOF
     grep -q "JDK ${release}" "${app}/README.md" \
         || fail "[${label}] The pom compiles at release ${release} but the README does not say 'JDK ${release}' -- they disagree about what this app targets"
     info "[${label}] Compile target is release ${release}, and the README agrees"
+    # ...and the app must be LAUNCHED on at least that Java (RUMI-466). RUMI-429
+    # moved the compile target to 17 and left every generated javaHome, and the
+    # standalone NVJRE, on %JAVA_HOME_11%, so agent-deployed apps died with "main
+    # class ... is not supported by this VM <version=11>". Nothing above caught it:
+    # the pom and README agreed with each other, and neither is what launches the
+    # app. Every runtime Java the scaffold names must be a %JAVA_HOME_<N>% with
+    # N >= release, and there must be at least one, so the check cannot pass by
+    # finding nothing to compare.
+    local runtime_javas
+    runtime_javas="$(python3 - "${app}" "${release}" <<'PYEOF'
+import re, sys, pathlib
+app, release = pathlib.Path(sys.argv[1]), int(sys.argv[2])
+found, bad = [], []
+files = [f for f in app.rglob("config.xml") if "target" not in f.parts]
+files += [f for f in app.rglob("wrapper.env.vars") if "target" not in f.parts]
+for f in files:
+    text = f.read_text()
+    for m in re.finditer(r"<javaHome>(.*?)</javaHome>|^set\.NVJRE=(.*)$", text, re.M):
+        value = (m.group(1) or m.group(2)).strip()
+        found.append(value)
+        v = re.search(r"%JAVA_HOME_(\d+)%", value)
+        if not v or int(v.group(1)) < release:
+            bad.append(f"{f.relative_to(app)}: {value}")
+if not found:
+    print("NONE")
+else:
+    print("\n".join(bad))
+PYEOF
+)"
+    [[ "${runtime_javas}" != "NONE" ]] \
+        || fail "[${label}] The scaffold names no runtime Java (no <javaHome>, no NVJRE); the launch JDK is implicit"
+    [[ -z "${runtime_javas}" ]] \
+        || fail "[${label}] The pom compiles at release ${release} but the app is launched on an older Java:
+${runtime_javas}"
+    info "[${label}] Every runtime Java the scaffold names is at least ${release}"
     # A literal `--` inside an XML comment is illegal and Maven rejects the POM.
     # This repo has been bitten by it before (see the header), and it recurred
     # three times writing the runner, so it is a check rather than a habit.
