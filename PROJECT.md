@@ -1234,3 +1234,38 @@ version actually move?" now sits in the release checklist right next to
 "did the push trigger a build?", and both are there for the same reason:
 the failures that cost you a release are the ones that never raise their
 hand.
+
+### Half a version bump: compiled for 17, launched on 11 (RUMI-466)
+
+RUMI-429 was a good fix with a sound argument. Scaffolded apps compiled at
+`release 8` while they ran on a 17 JVM, so every API Java gained after 8
+compiled nowhere and existed at runtime, and the error always landed late and
+named your file. It raised `maven.compiler.release` to 17, made the README say
+so, and taught the release gate to check the pom and the README agreed.
+
+What it never checked was the premise in its own first line: *"the app runs on
+a 17 JVM"*. The build side of the templates says what a scaffold compiles for;
+a completely different set of files says what it launches on. Every generated
+container template carried `<javaHome>${<app>.java.home::%JAVA_HOME_11%}</javaHome>`,
+and the standalone distribution set `NVJRE=%JAVA_HOME_11%`. So from App Builder
+1.0.26 on, every scaffold compiled to class file 61 and was launched on Java 11.
+It surfaced the first time a freshly generated quickstart went through a real
+agent instead of `run-in-process.sh` (which runs on whatever JDK built it):
+`application main class [org.rumi.quickstart.processor.Main] is not supported by
+this VM <version=11.0.31+11>`, for every service.
+
+The gate passed because it compared two documents with each other, and both
+were about compiling. Neither is what launches the app. The fix moves the
+runtime defaults to `%JAVA_HOME_17%` (every Rumi worker defines it: the AWS
+AMI, Civo, Hetzner's `setup_java.sh`, and the Docker worker image), and the gate
+now checks the invariant that actually matters: **every runtime Java a scaffold
+names is at least its compile target**, and it must name one, so the check
+cannot pass by finding nothing. Run against a quickstart generated before the
+fix, it flags all five Java 11 entries.
+
+The lesson generalises past Java. A version is rarely one setting; it is a
+contract between a producer and a consumer, written down in at least two
+places that do not reference each other. Bump one side and every check that
+reads only that side will agree with you. **When a change rests on a claim
+about another part of the system ("it runs on 17"), the claim is what to test,
+not the change.**

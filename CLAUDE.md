@@ -312,6 +312,12 @@ Rules that fail silently if broken:
   some webservice holds a client for.
 - **Generated support (`RestJson`) and client classes live in `<web>.rest`**, and a file there without
   the `// @rest-endpoint-client` marker is refused rather than overwritten.
+- ⚠️ **A scaffold's runtime Java must be at least its compile target** (RUMI-466). The build side
+  (`maven.compiler.release`, 17 since RUMI-429) and the runtime side (`<javaHome>` in every
+  `templates/maven/config/*/profiles/cloud/xvms/templates/config.xml`, and `NVJRE` in the system's
+  `wrapper.env.vars`) live in different files. RUMI-429 moved only the first, so 1.0.26/1.0.27 apps
+  compiled for 17 and launched on `%JAVA_HOME_11%`. Move them together; `verify-generated-app.sh`
+  fails if any runtime Java the scaffold names is below its release, or if it names none.
 - ⚠️ **Snippets must compile at Java 8.** Older scaffolds pin `<release>8</release>`;
   `String.isBlank()` in a snippet broke a real app's build. Unit tests never compile the snippets.
 - **The client bus gets its own descriptor.** On loopback an engine may bind a namespace once, so the
