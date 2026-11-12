@@ -1049,6 +1049,60 @@ or in the same change set. Prose in a review thread has no owner and no due date
 the only reason this cost minutes instead of a release is that the CLI happens to
 build on a snapshot.
 
+## The request that went nowhere (RUMI-456 to 461)
+
+A customer building a system with a separate REST tier in front of their
+services reported that a REST call into a service simply never came back. No
+error, no log line, just a timeout. Their write-up called it a platform gap, and
+it was three gaps stacked on top of each other.
+
+**The silent drop.** A Rumi client sends its requests on the target's client bus,
+keyed with the *name it was given* for the target. The target engine subscribes
+with its own engine name, which is `<service>-<partition>` (`demo-orders-1`), not
+the bare service name. Hand the client `orders` and every request lands on a key
+nobody listens to. Nothing is wrong enough to fail; it is just addressed to an
+empty room. The fix came in two halves. Core (RUMI-458) now logs an unanswered
+request with the service, key and channel it went to, so the next person sees
+*where* it went. App Builder writes the engine name itself, read from the
+`<app template>` instance in config.xml, so nobody types it.
+
+**The attributes that did nothing.** api.xml accepted `RESTPath` and `RESTMethod`
+on an operation. They looked like the switch that turns an operation into an
+HTTP endpoint, and nothing read them. They were removed outright (RUMI-456)
+rather than deprecated: a deprecation warning on a field that never worked would
+have told people it used to.
+
+**The generator that guessed.** The first cut of the REST-endpoint tools generated
+an endpoint *from* an operation: pick the verb, the path and the downstream
+operation, and out comes the code. Girish turned it around before it merged. An
+endpoint's body is the developer's code, exactly like a message handler's, so
+`add_rest_endpoint` takes the body and writes only the JAX-RS method around it.
+Calling another service is a separate, explicit step, `add_service_client`,
+which adds the client class, dependency, client bus and config. Generation that
+guesses intent produces code nobody chose; a tool that does the plumbing and
+leaves the decisions to the caller produces code somebody can own. The
+quickstart (RUMI-459) then shows both kinds of request-reply, with the
+webservice's own engine and with another service, built through those same
+commands rather than shipped pre-wired.
+
+Three things worth carrying forward:
+
+- **A shared model has a blast radius.** The sample processor's echo messages
+  live in the ROE model every service shares. The first version of removal
+  force-deleted them, which would break a build in a service the user never
+  touched if anything else used them. Removal now checks every other module
+  first, and scaffolding refuses a name that is already taken, because adding a
+  message is a silent noop on an existing name.
+- **An empty answer is not a safe answer.** Listing endpoints on a mistyped
+  webservice returned an empty list and exited 0, which a script reads as
+  success. Every read and removal now refuses a name that is not a webservice,
+  and the reverse lookup (`list_service_clients` with only `service`) refuses an
+  unknown service instead of saying nobody calls it.
+- **A gate that skips the new tools is not a gate for them.** The MCP end-to-end
+  gate, which exists to catch field-name mismatches between the MCP and REST
+  layers, called none of the nine new tools. Every mocked test passed. It now
+  drives all of them over the wire.
+
 ## Lessons Learned (REST distribution & runtime)
 
 Lessons from getting the REST service to build, publish, and stop
