@@ -133,7 +133,11 @@ public final class TestAppFactory {
         private String artifactPrefix = "test";
         private String rumiVersion = "4.0.0";
         private String rumiBindingsVersion = "4.0.0";
-        private String rumiMgmtVersion = "2.0.0";
+        // NOT a literal (RUMI-443). "2.0.0" sat here and in the REST layer,
+        // and was never published -- so an app scaffolded by this fixture pins
+        // an unresolvable xar-maven-plugin. The release gate could not catch it
+        // because the plugin is bound to `package` and the gate runs `mvn test`.
+        private String rumiMgmtVersion = com.neeve.appbuilder.BuildVersions.managementVersion();
         private EncodingType encodingType = EncodingType.QUARK;
         private MessagingProvider messagingProvider = MessagingProvider.ACTIVEMQ;
         private BuildTool buildTool = BuildTool.MAVEN;

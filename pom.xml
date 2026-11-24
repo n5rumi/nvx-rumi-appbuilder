@@ -38,6 +38,21 @@
              schemas (x-ddl, x-adml, x-asml) from the matching artifacts at
              build time. A milestone bump is this one line. -->
         <nvx.rumi.version>4.0.667</nvx.rumi.version>
+        <!-- The Rumi Management version a scaffolded app is pinned to when the
+             caller does not name one. It reaches runtime through
+             nvx-rumi-appbuilder-rest's filtered appbuilder-versions.properties,
+             so the default cannot be a literal in Java again (RUMI-443): the
+             old hard-coded "2.0.0" was never published, so an app scaffolded
+             without rumiMgmtVersion compiled and then died minutes later in its
+             -system module on an unresolvable xar-maven-plugin.
+
+             This does NOT move with a Rumi milestone. Management is its own
+             release line on its own cadence, cut by the Management release
+             authority, so it is deliberately absent from the versions-plugin's
+             includeProperties below. Raising it is a deliberate edit, and
+             ci/verify-generated-app.sh proves whatever is here resolves by
+             scaffolding without the parameter and packaging the result. -->
+        <nvx.rumi.management.version>2.0.108</nvx.rumi.management.version>
     </properties>
 
     <modules>

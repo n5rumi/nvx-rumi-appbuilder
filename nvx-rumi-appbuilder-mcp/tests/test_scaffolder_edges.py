@@ -107,3 +107,34 @@ def test_create_app_names_the_class_finder_it_scaffolds():
         "naming the script is not enough -- the description has to take back the "
         "jar scan, which is what the reporting session actually did"
     )
+
+
+def test_create_app_describes_the_management_version_default():
+    """RUMI-443: the default used to be an unpublished literal.
+
+    `create_app` without rumi_mgmt_version pinned "2.0.0", which was never
+    published, so the app compiled and then died in packaging on an
+    unresolvable xar-maven-plugin -- minutes later, with an error that reads
+    like a repository fault. The default is now sourced from the build.
+
+    The description has to say the default exists AND what goes wrong if the
+    caller overrides it with something that does not, because that is the one
+    way to re-enter the same failure from the outside.
+    """
+    fn = _tool("create_app").fn
+    params = inspect.signature(fn).parameters
+    assert params["rumi_mgmt_version"].default is None, (
+        "it must stay optional -- the build-time default is the safe path"
+    )
+    flat = " ".join(_description("create_app").split())
+    assert "rumi_mgmt_version is OPTIONAL" in flat, (
+        "nothing tells the caller it can be left unset"
+    )
+    assert "published" in flat, (
+        "the description must say the default is a published version; that is "
+        "the whole fix"
+    )
+    assert "xar-maven-plugin" in flat and "packaging" in flat, (
+        "it must say WHERE a bad version fails, or the agent will not connect "
+        "the packaging error to this argument"
+    )

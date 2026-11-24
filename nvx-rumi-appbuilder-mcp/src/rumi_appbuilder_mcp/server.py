@@ -114,6 +114,15 @@ def build_server(base_url: str | None = None) -> FastMCP:
         The generated README states all three. Never call the in-process runner
         "local".
 
+        rumi_mgmt_version is OPTIONAL and defaults to the Rumi Management
+        version this App Builder was built against, which is a published one.
+        Leave it unset unless you have a reason. If you do set it, set it to a
+        version that EXISTS: the generated `-system` module runs
+        nvx-rumi-xar-maven-plugin at this version, so a version that does not
+        resolve lets the app compile and then fails it minutes later in
+        packaging, with an error that reads like a broken repository and names
+        nothing to do with this call.
+
         The scaffold also carries `./find-class.sh`: Rumi is ~40 jars and the
         package name does not name the artifact, so when a Rumi type will not
         resolve, `./find-class.sh RogXStringMap` prints the artifact and the

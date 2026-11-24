@@ -23,6 +23,7 @@ package com.neeve.appbuilder.rest.dto;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.neeve.appbuilder.BuildVersions;
 import com.neeve.appbuilder.ApplicationBuilder;
 
 /**
@@ -91,7 +92,7 @@ public final class AppParamsRequest {
             artifactPrefix,
             rumiVersion,
             rumiBindingsVersion != null ? rumiBindingsVersion : rumiVersion,
-            rumiMgmtVersion != null ? rumiMgmtVersion : "2.0.0",
+            rumiMgmtVersion != null ? rumiMgmtVersion : BuildVersions.managementVersion(),
             encodingType != null ? ApplicationBuilder.EncodingType.valueOf(encodingType.toUpperCase()) : ApplicationBuilder.EncodingType.QUARK,
             messagingProvider != null ? ApplicationBuilder.MessagingProvider.valueOf(messagingProvider.toUpperCase()) : ApplicationBuilder.MessagingProvider.ACTIVEMQ,
             buildTool != null ? ApplicationBuilder.BuildTool.valueOf(buildTool.toUpperCase()) : ApplicationBuilder.BuildTool.MAVEN,
