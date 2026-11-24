@@ -41,8 +41,26 @@
 
     <build>
         <resources>
+            <!-- ⚠️ The SPLIT below is load-bearing, not tidiness. The
+                 scaffolding TEMPLATES live in this same tree and are full of
+                 ${...} that must reach a generated app's POM VERBATIM.
+                 Filtering the whole directory would substitute them at build
+                 time and ship templates with this repo's own values baked in.
+                 So exactly one file is filtered, and it is excluded from the
+                 unfiltered copy so it is not written twice. -->
             <resource>
                 <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>appbuilder-versions.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>appbuilder-versions.properties</exclude>
+                </excludes>
             </resource>
             <!-- Schemas unpacked from the pinned Rumi artifacts (see below).
                  Deliberately NOT checked in, so they cannot drift from

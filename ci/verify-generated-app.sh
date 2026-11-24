@@ -310,6 +310,40 @@ verify_mode() {
     fi
     info "[${label}] Generated app built and ran cleanly against Rumi ${RUMI_VERSION}"
 
+    # ---- RUMI-443 -----------------------------------------------------------
+    # PACKAGE it, not just test it. The xar-maven-plugin is bound to the
+    # `package` phase, so `mvn test` above stops one phase short of ever
+    # resolving it -- which is exactly why a default management version that was
+    # never published survived this gate in TWO places (the REST layer and the
+    # test fixture) and surfaced on a user's first build instead.
+    #
+    # The version under test is the DEFAULT: nothing here passes
+    # rumiMgmtVersion, so the app carries whatever BuildVersions pins. A
+    # version that does not resolve fails here now.
+    info "[${label}] Packaging the generated app (resolves the xar plugin)"
+    local pkg_log="${out_dir}/package.log"
+    if ! (cd "${app}" && "${MVN}" package -DskipTests 2>&1 | tee "${pkg_log}"); then
+        echo >&2
+        echo "!! [${label}] The generated app failed to PACKAGE." >&2
+        if grep -qE 'xar-maven-plugin:[0-9.]+ .*could not be resolved|Plugin com\.neeve:nvx-rumi-xar-maven-plugin' "${pkg_log}"; then
+            echo "!! The xar plugin version could not be resolved. That is the" >&2
+            echo "!! default management version (RUMI-443): check" >&2
+            echo "!! nvx.rumi.management.version in the root POM against Nexus." >&2
+        fi
+        echo "!! Inspect it at: ${app}" >&2
+        exit 1
+    fi
+    # And prove the pinned version is the build-time default rather than a
+    # literal that happens to work -- the defect was a LITERAL, so a passing
+    # package alone would not say the mechanism is in place.
+    local pinned
+    pinned="$(grep -oE '<nvx\.rumi\.management\.version>[^<]+' "${app}/pom.xml" | head -1 | sed 's/.*>//')"
+    [[ -n "${pinned}" ]] \
+        || fail "[${label}] The generated POM pins no management version at all"
+    [[ "${pinned}" != "2.0.0" ]] \
+        || fail "[${label}] The generated POM pins 2.0.0, which was never published (RUMI-443)"
+    info "[${label}] Packaged; management version ${pinned} resolved"
+
     # ---- RUMI-457: a request that crosses two services ----------------------
     # The gateway's generated REST endpoints call the processor through its
     # generated client over the processor's client bus. This runs in a JVM of its
