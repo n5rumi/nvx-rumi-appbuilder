@@ -82,4 +82,84 @@ public class ConfigValidatorTest {
         assertTrue(r.getErrors().stream().anyMatch(
             e -> e.getSeverity() == ValidationResult.ValidationError.Severity.FATAL));
     }
+
+    // ---- RUMI-442 AC4: two same-named siblings under one scope ------------
+    //
+    // Written against validateFile with a hand-built document, matching the
+    // rest of this class: PhaseBTestSupport.scaffoldApp does not produce a
+    // config.xml, so ConfigValidator.validate(appRoot) has nothing to read.
+
+    private static final String XDDL = "http://www.neeveresearch.com/schema/x-ddl";
+
+    private Path writeDdl(String name, String body) throws IOException {
+        Path f = tempDir.resolve(name);
+        Files.writeString(f, "<x-ddl xmlns=\"" + XDDL + "\">" + body + "</x-ddl>");
+        return f;
+    }
+
+    private static boolean hasDuplicateFinding(ValidationResult r, String named) {
+        return r.getErrors().stream().anyMatch(
+            e -> e.getMessage() != null
+                 && e.getMessage().contains("elements named")
+                 && e.getMessage().contains(named));
+    }
+
+    /**
+     * The schema cannot catch this. X-DDL does not declare {@code name} as a
+     * key, so a second {@code <app name="x">} is structurally valid and only
+     * shows up at boot, as whichever copy the loader picks.
+     *
+     * <p>Still needed after addFragment stopped CREATING duplicates: a
+     * config.xml written before that fix, or by hand, still has them, and this
+     * is the only thing that will say so.
+     */
+    @Test
+    public void validate_reportsTwoSameNamedSiblingsUnderOneScope() throws Exception {
+        Path f = writeDdl("dup.xml",
+            "<apps><templates>"
+            + "<app name=\"twin\"/><app name=\"twin\"/>"
+            + "</templates></apps>");
+        ValidationResult r = ConfigValidator.validateFile(f);
+
+        // Asserted on the SPECIFIC finding, not on isOk(). A hand-built X-DDL
+        // may also draw schema complaints, and isOk() would then be false for
+        // a reason that has nothing to do with this check.
+        assertTrue("the duplicate must be reported and must name it: " + r.getErrors(),
+                   hasDuplicateFinding(r, "twin"));
+        assertTrue("and say why it matters, not just that it is a duplicate: " + r.getErrors(),
+                   r.getErrors().stream().anyMatch(
+                       e -> e.getMessage() != null && e.getMessage().contains("document order")));
+        assertFalse("a duplicate must make the document invalid", r.isOk());
+    }
+
+    /**
+     * The same name under two DIFFERENT scopes is legitimate X-DDL -- one app
+     * template per profile is the normal shape -- so the check is per parent.
+     * Without this, the fix for RUMI-442 would flag every profiled config.
+     */
+    @Test
+    public void validate_allowsTheSameNameUnderDifferentScopes() throws Exception {
+        Path f = writeDdl("scoped.xml",
+            "<apps><templates><app name=\"shared\"/></templates></apps>"
+            + "<profiles><profile name=\"standalone\"><apps><templates>"
+            + "<app name=\"shared\"/>"
+            + "</templates></apps></profile></profiles>");
+        ValidationResult r = ConfigValidator.validateFile(f);
+
+        assertFalse("one name per scope in two scopes is not a duplicate: " + r.getErrors(),
+                    hasDuplicateFinding(r, "shared"));
+    }
+
+    /** A named element and an UNNAMED sibling of the same tag are not a pair. */
+    @Test
+    public void validate_doesNotFlagUnnamedSiblingsOfTheSameTag() throws Exception {
+        Path f = writeDdl("unnamed.xml",
+            "<apps><templates><app name=\"holder\">"
+            + "<factory id=\"1\"/><factory id=\"2\"/>"
+            + "</app></templates></apps>");
+        ValidationResult r = ConfigValidator.validateFile(f);
+        assertTrue("no element named \"\" should ever be reported: " + r.getErrors(),
+                   r.getErrors().stream().noneMatch(
+                       e -> e.getMessage() != null && e.getMessage().contains("elements named \"\"")));
+    }
 }

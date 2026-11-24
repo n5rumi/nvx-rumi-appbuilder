@@ -88,6 +88,135 @@ public class ConfigFragmentEditorTest {
         assertTrue(second.isNoop());
     }
 
+    // ---- RUMI-442: a MODIFIED fragment replaces, and says so --------------
+
+    private static final String NS = "http://www.neeveresearch.com/schema/x-ddl";
+
+    private String configXml() throws Exception {
+        return Files.readString(ConfigFragmentEditor.resolveConfigPath(appRoot));
+    }
+
+    private static int countOccurrences(String haystack, String needle) {
+        int c = 0, i = 0;
+        while ((i = haystack.indexOf(needle, i)) >= 0) { c++; i += needle.length(); }
+        return c;
+    }
+
+    /**
+     * The defect: a fragment whose name already exists was APPENDED, so
+     * config.xml ended up with two competing definitions, `applied: true` came
+     * back, and it surfaced at boot as whichever copy the loader picked.
+     */
+    @Test
+    public void addFragment_replacesAModifiedFragmentWithTheSameName() throws Exception {
+        ConfigFragmentEditor.addFragment(appRoot, List.of("apps", "templates"),
+            "<app xmlns=\"" + NS + "\" name=\"x-template\"/>", false);
+        ChangeSet second = ConfigFragmentEditor.addFragment(appRoot, List.of("apps", "templates"),
+            "<app xmlns=\"" + NS + "\" name=\"x-template\">"
+            + "<inboundEventMultiplexing enabled=\"true\"/></app>", false);
+
+        assertTrue("a changed fragment is a real change, not a no-op", second.isApplied());
+        assertFalse(second.isNoop());
+        assertEquals("exactly one <app name=\"x-template\"> must remain",
+                     1, countOccurrences(configXml(), "name=\"x-template\""));
+        assertTrue("the replacement must actually carry the new content",
+                   configXml().contains("inboundEventMultiplexing"));
+    }
+
+    /** AC2: the caller is told which of the three outcomes happened. */
+    @Test
+    public void addFragment_saysWhetherItAddedOrReplaced() throws Exception {
+        ChangeSet added = ConfigFragmentEditor.addFragment(appRoot, List.of("apps", "templates"),
+            "<app xmlns=\"" + NS + "\" name=\"r-template\"/>", false);
+        assertNotNull("an applied change must carry a reason (RUMI-442 AC2)", added.getReason());
+        assertTrue("the reason must say it ADDED: " + added.getReason(),
+                   added.getReason().startsWith("added"));
+
+        ChangeSet replaced = ConfigFragmentEditor.addFragment(appRoot, List.of("apps", "templates"),
+            "<app xmlns=\"" + NS + "\" name=\"r-template\"><inboundEventMultiplexing enabled=\"true\"/></app>",
+            false);
+        assertNotNull(replaced.getReason());
+        assertTrue("replacing is destructive, so it must say so: " + replaced.getReason(),
+                   replaced.getReason().startsWith("replaced"));
+        assertTrue("and name what it displaced: " + replaced.getReason(),
+                   replaced.getReason().contains("r-template"));
+    }
+
+    /**
+     * Position is preserved. Order is meaningful in X-DDL, and replacing by
+     * remove-then-append would silently move an app to the end of its scope --
+     * a second surprise inside the fix for the first.
+     */
+    @Test
+    public void addFragment_replacesInPlaceRatherThanMovingToTheEnd() throws Exception {
+        for (String nm : List.of("first", "middle", "last")) {
+            ConfigFragmentEditor.addFragment(appRoot, List.of("apps", "templates"),
+                "<app xmlns=\"" + NS + "\" name=\"" + nm + "\"/>", false);
+        }
+        ConfigFragmentEditor.addFragment(appRoot, List.of("apps", "templates"),
+            "<app xmlns=\"" + NS + "\" name=\"middle\"><inboundEventMultiplexing enabled=\"true\"/></app>",
+            false);
+
+        String xml = configXml();
+        assertTrue("middle must stay between first and last",
+                   xml.indexOf("\"first\"") < xml.indexOf("\"middle\"")
+                   && xml.indexOf("\"middle\"") < xml.indexOf("\"last\""));
+    }
+
+    /**
+     * Identity is tag PLUS name. Two differently-named apps must coexist.
+     *
+     * <p>This is the test that actually pins it. A mutation making
+     * {@code sameIdentity} match on tag alone slipped past the unnamed-siblings
+     * test below, because that one replaces a whole {@code <app>} whose
+     * replacement happens to carry the same children -- so it passed while the
+     * identity rule was broken. Two distinct names cannot pass that way.
+     */
+    @Test
+    public void addFragment_doesNotReplaceADifferentlyNamedSibling() throws Exception {
+        ConfigFragmentEditor.addFragment(appRoot, List.of("apps", "templates"),
+            "<app xmlns=\"" + NS + "\" name=\"alpha\"/>", false);
+        ChangeSet second = ConfigFragmentEditor.addFragment(appRoot, List.of("apps", "templates"),
+            "<app xmlns=\"" + NS + "\" name=\"beta\"/>", false);
+
+        assertTrue(second.getReason().startsWith("added"));
+        String xml = configXml();
+        assertTrue("alpha must survive adding beta", xml.contains("name=\"alpha\""));
+        assertTrue("beta must be added", xml.contains("name=\"beta\""));
+    }
+
+    /**
+     * An element with no name is not an identity. Several unnamed siblings of
+     * one tag are legitimate X-DDL, so matching on tag alone would make the
+     * second silently replace the first.
+     */
+    @Test
+    public void addFragment_doesNotReplaceUnnamedSiblingsOfTheSameTag() throws Exception {
+        ConfigFragmentEditor.addFragment(appRoot, List.of("apps", "templates"),
+            "<app xmlns=\"" + NS + "\" name=\"holder\"><factory id=\"1\"/></app>", false);
+        ChangeSet second = ConfigFragmentEditor.addFragment(appRoot, List.of("apps", "templates"),
+            "<app xmlns=\"" + NS + "\" name=\"holder\"><factory id=\"1\"/><factory id=\"2\"/></app>",
+            false);
+        assertTrue(second.isApplied());
+        assertEquals("both unnamed <factory> children must survive the replacement",
+                     2, countOccurrences(configXml(), "<factory"));
+    }
+
+    /** A dry run must decide the same way without writing. */
+    @Test
+    public void addFragment_dryRunReportsTheReplacementWithoutWriting() throws Exception {
+        ConfigFragmentEditor.addFragment(appRoot, List.of("apps", "templates"),
+            "<app xmlns=\"" + NS + "\" name=\"d-template\"/>", false);
+        String before = configXml();
+        ChangeSet dry = ConfigFragmentEditor.addFragment(appRoot, List.of("apps", "templates"),
+            "<app xmlns=\"" + NS + "\" name=\"d-template\"><inboundEventMultiplexing enabled=\"true\"/></app>",
+            true);
+        assertFalse("a dry run must not report itself as applied", dry.isApplied());
+        assertTrue("a dry run must still say what it WOULD do: " + dry.getReason(),
+                   dry.getReason() != null && dry.getReason().startsWith("replaced"));
+        assertEquals("a dry run must not touch the file", before, configXml());
+    }
+
     @Test
     public void addFragment_createsProfileScopeOnDemand() throws Exception {
         ChangeSet r = ConfigFragmentEditor.addFragment(appRoot,

@@ -722,7 +722,7 @@ def build_server(base_url: str | None = None) -> FastMCP:
     def add_config_fragment(
         app_root: str, scope_path: list[str], xml: str, dry_run: bool = False
     ) -> dict[str, Any]:
-        """Add an X-DDL fragment under the given scope path (e.g. ["apps","templates"], ["buses"]). Idempotent — a structurally identical fragment is a no-op."""
+        """Add or UPDATE an X-DDL fragment under the given scope path (e.g. ["apps","templates"], ["buses"]). This is also how you CHANGE an existing fragment: one whose tag and name already exist is REPLACED in place, keeping its position among its siblings. A structurally identical fragment is a no-op. The reason says which of the three happened — added, replaced or no-op — and replacing is destructive, so read it: if it says "replaced" and you meant to add something new, you have overwritten a fragment that was already there under that name. You do not need remove_config_fragment first."""
         return rest.post(
             "/v1/config/fragments",
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},

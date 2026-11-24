@@ -138,3 +138,36 @@ def test_create_app_describes_the_management_version_default():
         "it must say WHERE a bad version fails, or the agent will not connect "
         "the packaging error to this argument"
     )
+
+
+def test_add_config_fragment_describes_the_replace_behaviour():
+    """RUMI-442: it used to append a second same-named fragment, silently.
+
+    The old docstring said "Idempotent -- a structurally identical fragment is
+    a no-op", which was true and said nothing about the case agents actually
+    hit: a CHANGED fragment. That returned applied:true and left config.xml
+    with two competing <app name="x-template"> definitions, surfacing at boot
+    as whichever copy the DDL loader picked.
+
+    The description has to say three things now, and the third is the one that
+    keeps the fix honest -- replacing is destructive, so the caller has to know
+    to read the outcome.
+    """
+    d = _description("add_config_fragment")
+    flat = " ".join(d.split())
+    assert "REPLACED" in flat or "replaced" in flat, (
+        "nothing tells the caller a same-named fragment is replaced"
+    )
+    assert "no-op" in flat, "the identical-fragment case must still be stated"
+    assert "destructive" in flat, (
+        "replacing silently overwrites a fragment that was already there; the "
+        "description must say so, since that is the hazard the fix introduces"
+    )
+    assert "position" in flat, (
+        "order is meaningful in X-DDL -- the caller should know the fragment "
+        "keeps its place rather than moving to the end"
+    )
+    assert "do not need remove_config_fragment" in flat.lower(), (
+        "the old workaround was remove-then-add; agents that learned it will "
+        "keep paying for two calls unless the description retires it"
+    )
