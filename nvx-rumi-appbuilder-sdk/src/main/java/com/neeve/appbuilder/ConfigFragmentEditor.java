@@ -70,8 +70,37 @@ public final class ConfigFragmentEditor {
 
     /**
      * Inject an X-DDL fragment at {@code targetPath}, creating scope
-     * containers as needed. Noop if an equivalent direct-child already
-     * exists at the target parent.
+     * containers as needed.
+     *
+     * <p>Three outcomes, and the {@link ChangeSet}'s reason says which:
+     *
+     * <ul>
+     *   <li><b>no-op</b> — an equivalent direct child is already there.</li>
+     *   <li><b>replaced</b> — a direct child has the same tag and {@code name}
+     *       but different content. The existing one is replaced IN PLACE.</li>
+     *   <li><b>added</b> — nothing matched; the fragment is appended.</li>
+     * </ul>
+     *
+     * <p><b>Why replace rather than append (RUMI-442).</b> This used to append
+     * unconditionally unless the fragment was byte-equivalent, so changing an
+     * existing fragment left {@code config.xml} with two competing
+     * {@code <app name="x-template">} definitions. Everything downstream stayed
+     * quiet: {@code applied: true} came back, {@code mvn package} is green
+     * because config is not compiled, and it surfaced at boot as whichever copy
+     * the DDL loader happened to pick. Changing a fragment is the normal reason
+     * to call this, so append was the wrong default.
+     *
+     * <p><b>Why the reason is not optional.</b> Replacing is destructive: an
+     * accidental name clash now overwrites configuration instead of
+     * duplicating it. That is the better failure of the two, but only if it is
+     * visible — so a replacement always reports what it displaced, and the
+     * caller gets it through {@code CompactReceipt.reason}. Silence either way
+     * is the trap this ticket is about.
+     *
+     * <p>Replacement is IN PLACE, not remove-then-append, so a fragment keeps
+     * its position among its siblings. Order is meaningful in X-DDL, and an
+     * edit that silently moved an app to the end of its scope would be a second
+     * surprise hiding inside the fix for the first.
      */
     public static ChangeSet addFragment(Path appRoot,
                                         List<String> targetPath,
@@ -107,20 +136,45 @@ public final class ConfigFragmentEditor {
             throw new IOException("config fragment contained no element: " + xmlFragment);
         }
 
+        // One pass, two questions: is an equivalent fragment already here, and
+        // is there a same-identity one to replace? Equivalence wins, so an
+        // identical fragment stays a no-op rather than reporting a replacement
+        // of itself.
+        Element sameIdentity = null;
         NodeList existing = parent.getChildNodes();
         for (int i = 0; i < existing.getLength(); i++) {
             Node child = existing.item(i);
-            if (child.getNodeType() == Node.ELEMENT_NODE
-                    && XmlDomUtils.nodesAreEquivalent((Element) child, newNode)) {
+            if (child.getNodeType() != Node.ELEMENT_NODE) {
+                continue;
+            }
+            Element el = (Element) child;
+            if (XmlDomUtils.nodesAreEquivalent(el, newNode)) {
                 return ChangeSet.noop("equivalent fragment already present at "
                     + String.join("/", targetPath));
             }
+            if (sameIdentity == null && sameIdentity(el, newNode)) {
+                sameIdentity = el;
+            }
         }
 
+        String scope = String.join("/", targetPath);
+        String outcome;
         Node imported = doc.importNode(newNode, true);
-        parent.appendChild(imported);
+        if (sameIdentity != null) {
+            // replaceChild, NOT remove-then-append: position is preserved.
+            parent.replaceChild(imported, sameIdentity);
+            outcome = "replaced the existing <" + newNode.getNodeName() + ">"
+                + (identityOf(newNode) == null ? "" : " name=\"" + identityOf(newNode) + "\"")
+                + " at " + scope + "; it differed from the fragment supplied";
+        }
+        else {
+            parent.appendChild(imported);
+            outcome = "added <" + newNode.getNodeName() + ">"
+                + (identityOf(newNode) == null ? "" : " name=\"" + identityOf(newNode) + "\"")
+                + " at " + scope;
+        }
 
-        ChangeSet.Builder cs = ChangeSet.builder().addModified(configPath);
+        ChangeSet.Builder cs = ChangeSet.builder().addModified(configPath).reason(outcome);
         if (dryRun) return cs.applied(false).build();
         try {
             XmlDomUtils.saveXmlDocument(doc, configPath);
@@ -128,6 +182,37 @@ public final class ConfigFragmentEditor {
             throw new IOException("failed to write " + configPath, e);
         }
         return cs.applied(true).build();
+    }
+
+    /**
+     * The {@code name} attribute that gives an X-DDL element its identity
+     * within a scope, or null for an element that has none.
+     *
+     * <p>Only {@code name} is treated as identity. X-DDL scopes are keyed on it
+     * throughout, and a broader notion (say, matching on every attribute) would
+     * make this method agree with {@code nodesAreEquivalent} and the replace
+     * branch would never run.
+     */
+    private static String identityOf(Element e) {
+        String name = e.getAttribute("name");
+        return name == null || name.isEmpty() ? null : name;
+    }
+
+    /**
+     * Do these two elements occupy the same slot in a scope -- same tag and
+     * same {@code name}?
+     *
+     * <p>An element with NO name is never the same identity as another, even
+     * with a matching tag. Several unnamed siblings of one tag are legitimate
+     * X-DDL (a list of entries), so treating tag alone as identity would make
+     * the second one silently replace the first.
+     */
+    private static boolean sameIdentity(Element a, Element b) {
+        if (!a.getNodeName().equals(b.getNodeName())) {
+            return false;
+        }
+        String an = identityOf(a);
+        return an != null && an.equals(identityOf(b));
     }
 
     /**

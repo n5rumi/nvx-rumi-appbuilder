@@ -34,9 +34,16 @@ import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 /**
  * Validate an app's config.xml against the X-DDL schema (x-ddl.xsd).
@@ -107,6 +114,16 @@ public final class ConfigValidator {
         // supply at load time.
         errors.removeIf(e -> e.getMessage() != null && e.getMessage().contains("${"));
 
+        // RUMI-442: two same-named siblings under one scope. The schema does
+        // not catch this -- X-DDL does not declare name as a key, so a second
+        // <app name="x-template"> is structurally valid XML and only shows up
+        // at boot, as whichever copy the DDL loader happens to pick.
+        //
+        // Reported even though addFragment no longer CREATES duplicates,
+        // because a config.xml written before that fix, or by hand, still has
+        // them, and this is the only thing that will say so.
+        errors.addAll(findDuplicateNamedSiblings(resolved, xmlFile));
+
         boolean ok = errors.stream().noneMatch(
             err -> err.getSeverity() == ValidationError.Severity.ERROR
                 || err.getSeverity() == ValidationError.Severity.FATAL);
@@ -150,6 +167,66 @@ public final class ConfigValidator {
             current = next;
         }
         return current;
+    }
+
+    /**
+     * Find elements that share a tag and a {@code name} with a sibling.
+     *
+     * <p>Parsed separately from the schema validation above because that path
+     * streams the document and keeps no tree. Namespace-aware and
+     * non-validating: this is a structural question, and the schema has already
+     * had its say by the time this runs.
+     *
+     * <p>Reported as an ERROR rather than a warning deliberately. There is no
+     * reading of two {@code <app name="x">} entries in one scope that is
+     * correct, the platform silently picks one, and a warning on a condition
+     * that always means a defect is a warning people learn to scroll past.
+     */
+    private static List<ValidationError> findDuplicateNamedSiblings(String xml, Path xmlFile) {
+        List<ValidationError> found = new ArrayList<>();
+        final Document doc;
+        try {
+            doc = XmlDomUtils.parseXmlString(xml);
+        }
+        catch (Exception e) {
+            // Unparseable XML is already reported by the schema pass above with
+            // a line number; duplicating it here with less detail helps nobody.
+            return found;
+        }
+        walkForDuplicates(doc.getDocumentElement(), found);
+        return found;
+    }
+
+    private static void walkForDuplicates(Element parent, List<ValidationError> found) {
+        // Keyed on tag + name, per PARENT, so the same app name under two
+        // different profiles is legitimate and is not reported.
+        Map<String, Element> seen = new LinkedHashMap<>();
+        NodeList children = parent.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() != Node.ELEMENT_NODE) {
+                continue;
+            }
+            Element el = (Element) child;
+            String name = el.getAttribute("name");
+            if (name != null && !name.isEmpty()) {
+                String key = el.getNodeName() + "#" + name;
+                Element prior = seen.get(key);
+                if (prior != null) {
+                    found.add(new ValidationError(
+                        ValidationError.Severity.ERROR, 0, 0,
+                        "two <" + el.getNodeName() + "> elements named \"" + name
+                        + "\" under the same <" + parent.getNodeName() + ">."
+                        + " X-DDL does not merge them and the loader picks one at"
+                        + " boot, so the app's behaviour depends on document order."
+                        + " Keep one, or give them different names."));
+                }
+                else {
+                    seen.put(key, el);
+                }
+            }
+            walkForDuplicates(el, found);
+        }
     }
 
     private static ValidationError toError(ValidationError.Severity severity, SAXParseException ex) {
