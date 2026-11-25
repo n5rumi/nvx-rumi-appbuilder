@@ -177,3 +177,121 @@ async def test_registered_tool_set_matches_the_documented_expectation(mcp) -> No
         "these tools are registered but absent from EXPECTED_TOOLS in "
         f"test_tool_registration.py: {sorted(unlisted)}"
     )
+
+
+# Tools that change nothing and POST anyway, each because it SENDS a document
+# rather than because it writes one. Deliberately a short, named list: the
+# moment it grows without a reason beside each entry, readOnlyHint on this
+# surface stops meaning anything.
+_READ_ONLY_POSTS = {
+    # Validates a config and returns findings; writes nothing. POSTs because
+    # the app root and options go in a body rather than a query string.
+    "validate_config",
+}
+
+
+async def test_every_tool_is_annotated(mcp) -> None:
+    """A client sees name, description and schema -- and nothing about safety.
+
+    That is the gap behind RUMI-415 ("most of the tool surface is never reached
+    for"): an agent with 59 undifferentiated tools cannot tell which are safe to
+    try from which delete a service, so it falls back to whatever the prompt
+    happened to name. ``readOnlyHint`` is what makes the surface explorable
+    without being told about it.
+    """
+    missing = [t.name for t in await _registered_tools(mcp) if t.annotations is None]
+    assert not missing, (
+        "these tools carry no annotations, so a client cannot tell a read from "
+        "a delete:\n  " + "\n  ".join(missing)
+    )
+
+
+@respx.mock
+async def test_read_only_annotations_match_the_wire(mcp) -> None:
+    """The annotation is verified against BEHAVIOUR, not against the name.
+
+    Annotations are derived from the naming convention, which makes them cheap
+    and keeps 59 of them from drifting -- but it also means a misnamed tool
+    would ship a LIE, and a wrong ``readOnlyHint`` is worse than none: it
+    invites a client to call something freely that writes to the user's app.
+
+    ⚠️ ``readOnlyHint`` is SEMANTIC -- "does not modify its environment" -- and
+    is not the same as "issues a GET". The first version of this test asserted
+    read-only implies GET and immediately failed on ``validate_config``, which
+    changes nothing and POSTs because it sends a document. So the rule is the
+    one that actually holds: a read-only tool must never issue a method that is
+    unambiguously mutating, and a read-only POST has to be named here with a
+    reason. That is weaker than the wire check I first wrote, and it is true,
+    which the stronger version was not.
+    """
+    route = respx.route(host="test").mock(return_value=httpx.Response(200, json={}))
+
+    lying: list[str] = []
+    observed = 0
+    for tool in await _registered_tools(mcp):
+        ann = tool.annotations
+        if ann is None or not ann.readOnlyHint:
+            continue
+        before = route.call_count
+        try:
+            await mcp.call_tool(tool.name, _arguments_for(tool))
+        except Exception:  # noqa: BLE001 - reachability is another test's job
+            pass
+        if route.call_count == before:
+            continue  # never reached HTTP; nothing observed, nothing to judge
+        observed += 1
+        method = route.calls.last.request.method
+        if method in {"PUT", "PATCH", "DELETE"}:
+            lying.append(f"{tool.name} is annotated readOnlyHint but issued {method}")
+        elif method == "POST" and tool.name not in _READ_ONLY_POSTS:
+            lying.append(
+                f"{tool.name} is annotated readOnlyHint and POSTs. If it really "
+                f"changes nothing, add it to _READ_ONLY_POSTS with the reason; "
+                f"otherwise the annotation is wrong"
+            )
+
+    assert not lying, (
+        "these annotations contradict what the tool does on the wire:\n  "
+        + "\n  ".join(lying)
+    )
+    # NOT vacuous. Without @respx.mock no call reaches the wire, every tool is
+    # skipped, and a deliberately wrong annotation passes -- which is how this
+    # test first shipped. The floor is deliberately well under the real count
+    # (26 of 27 at the time of writing) so it fails on a broken harness without
+    # failing on a legitimately added tool.
+    assert observed >= 20, (
+        f"only {observed} read-only tools reached the HTTP layer, so this test "
+        f"verified almost nothing -- the mock is probably not active"
+    )
+
+
+async def test_destructive_tools_are_annotated_destructive(mcp) -> None:
+    """The other direction: a remove_ tool must not look harmless.
+
+    Checked separately from the read-only case because the failure is the
+    opposite shape -- not a client calling something dangerous freely, but a
+    client with no way to know it should confirm first.
+    """
+    wrong = [
+        t.name for t in await _registered_tools(mcp)
+        if t.name.startswith(("remove_", "delete_"))
+        and not (t.annotations and t.annotations.destructiveHint)
+    ]
+    assert not wrong, (
+        "these tools delete things and are not annotated destructive:\n  "
+        + "\n  ".join(wrong)
+    )
+
+
+async def test_no_tool_claims_an_open_world(mcp) -> None:
+    """Every tool here acts on one app directory on this machine.
+
+    ``openWorldHint`` true would tell a client the tool reaches an open-ended
+    external system, which would be false for all 59 and would discourage a
+    client from retrying something that is in fact local and deterministic.
+    """
+    wrong = [
+        t.name for t in await _registered_tools(mcp)
+        if t.annotations and t.annotations.openWorldHint
+    ]
+    assert not wrong, "these claim an open world and do not have one: " + ", ".join(wrong)

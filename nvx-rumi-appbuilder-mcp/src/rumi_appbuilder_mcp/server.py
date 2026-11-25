@@ -16,9 +16,50 @@ from __future__ import annotations
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from .client import AppBuilderClient
 from .usage import ToolUsage
+
+
+# Verbs that CHANGE the app. Kept in step with the prefix list in
+# tests/test_tool_coverage.py::test_mutating_tools_use_a_mutating_http_method --
+# that test proves the verb matches the HTTP method on the wire, and these
+# annotations then describe the same fact to a client. A new verb belongs in
+# both; neither list can derive itself.
+_MUTATING_PREFIXES = ("add_", "apply_", "create_", "update_", "set_", "rename_",
+                      "deprecate_", "snap_")
+_DESTRUCTIVE_PREFIXES = ("remove_", "delete_")
+_READ_ONLY_PREFIXES = ("list_", "get_", "inspect_", "validate_", "describe_")
+
+
+def _annotations_for(name: str) -> ToolAnnotations:
+    """Derive a tool's annotations from its name.
+
+    The surface's naming convention is load-bearing and already enforced, so it
+    is the honest source for this: `list_`/`get_` read, `remove_`/`delete_`
+    destroy, `add_`/`update_` change. A tool outside the convention gets the
+    conservative answer -- NOT read-only, NOT idempotent -- because a wrong
+    `readOnlyHint` is worse than none: it invites a client to call something
+    freely that writes to the user's app.
+
+    `openWorldHint` is False throughout. Every tool here acts on one app
+    directory on this machine; none reaches an open-ended external system.
+    """
+    read_only = name.startswith(_READ_ONLY_PREFIXES)
+    destructive = name.startswith(_DESTRUCTIVE_PREFIXES)
+    mutating = name.startswith(_MUTATING_PREFIXES)
+    return ToolAnnotations(
+        readOnlyHint=read_only,
+        # Only meaningful when readOnlyHint is false; stated explicitly rather
+        # than left None so a client does not have to infer it.
+        destructiveHint=destructive if not read_only else False,
+        # Idempotent where this surface genuinely is: a remove of something
+        # absent is a no-op, and the add/update operations are documented
+        # idempotent (an equivalent edit returns noop rather than duplicating).
+        idempotentHint=read_only or destructive or mutating,
+        openWorldHint=False,
+    )
 
 
 def build_server(base_url: str | None = None) -> FastMCP:
@@ -32,16 +73,30 @@ def build_server(base_url: str | None = None) -> FastMCP:
     mcp = FastMCP("rumi-dev")
     usage = ToolUsage()
 
-    def tool() -> Any:
-        """Register a tool and count its calls (RUMI-415).
+    def tool(annotations: ToolAnnotations | None = None) -> Any:
+        """Register a tool, count its calls, and annotate it.
 
         Stands in for ``@mcp.tool()`` on every app-building tool below, so
-        adoption is recorded centrally rather than at 49 call sites.
+        adoption is recorded centrally rather than at 59 call sites (RUMI-415).
+
+        ANNOTATIONS ARE DERIVED FROM THE NAME, not written per tool, for the
+        same reason: 59 hand-written annotation blocks is 59 chances to drift,
+        and the naming convention on this surface is already enforced -- a tool
+        whose verb disagrees with its HTTP method fails
+        ``test_mutating_tools_use_a_mutating_http_method``. Pass `annotations`
+        explicitly for a tool the convention does not describe.
+
+        Why annotate at all: a client sees name, description and schema, which
+        says nothing about whether a call is safe to try or will delete
+        something. ``readOnlyHint`` is what lets an agent explore this surface
+        instead of guessing from the prompt, which is the whole of RUMI-415.
         """
 
         def decorate(fn: Any) -> Any:
             usage.register(fn.__name__)
-            return mcp.tool()(usage.counted(fn))
+            return mcp.tool(annotations=annotations or _annotations_for(fn.__name__))(
+                usage.counted(fn)
+            )
 
         return decorate
 
@@ -766,7 +821,8 @@ def build_server(base_url: str | None = None) -> FastMCP:
     # Registered directly rather than through `tool()`: this reports on the
     # app-building surface and is not part of it, so it stays out of both
     # halves of the ratio it exists to show.
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(
+        readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     def tool_usage_report() -> dict[str, Any]:
         """Report which Dev MCP tools have been called in this server process, how often, and which have never been called.
 
@@ -777,5 +833,67 @@ def build_server(base_url: str | None = None) -> FastMCP:
         start and end and diff `by_tool`.
         """
         return usage.report()
+
+    # ---- Resources: guidance that travels with the server -------------
+    #
+    # Why a resource rather than prompt text. The alternative was to state all
+    # of this in the Sutra and Support Agent prompts (SUT-187): two copies, in
+    # two repos, of something this server owns -- paid for on every turn of
+    # every conversation whether or not the turn builds a web tier, and free to
+    # drift from the surface it describes. A resource is read on demand, by the
+    # client, from the server that is authoritative for it.
+    #
+    # WARNING: this is a SUMMARY with pointers, deliberately. The full
+    # covered/not-covered table lives in the README of every generated app
+    # (RUMI-417), where someone reading the app finds it. Copying that table
+    # here would recreate the drift this resource exists to avoid; a test
+    # asserts the two agree on the load-bearing claims.
+    @mcp.resource(
+        "rumi-dev://guide/web-tier",
+        name="web-tier-surface",
+        title="Web tier: what this surface covers",
+        mime_type="text/markdown",
+        description=(
+            "Read before writing any JAX-RS by hand. What the REST endpoint "
+            "tools cover, what they do not, and which generated files are "
+            "extended rather than replaced."
+        ),
+    )
+    def guide_web_tier() -> str:
+        return """# Web tier: what this surface covers
+
+A webservice's REST endpoints are **added with tools**, not written by hand:
+
+- `add_rest_endpoint` / `update_rest_endpoint` / `remove_rest_endpoint` -- a path
+  and method whose body is your code. `list_rest_endpoints` and
+  `get_rest_endpoint` read back what is there.
+- `add_service_client` FIRST if the body calls another service. This is the step
+  most often missed; without it the body has nothing to call.
+- `add_operation` declares the operation in the service's `api.xml`.
+
+## What it does not cover
+
+These have no tool and no template shape. Write them yourself, and do not go
+looking for a command:
+
+- serving static assets (a browser app's HTML, JS, CSS)
+- streaming responses -- SSE, long-poll, websockets
+- authentication and authorization filters
+- in-memory projections, caches and correlation state
+- the browser application itself
+
+## Extend `Main.java` and `HttpServer.java`, never replace them
+
+They carry the engine wiring, the bind host and port, and the JAX-RS
+registration the rest of the scaffold depends on. Adding a filter or a
+static-content handler means adding a registration to `HttpServer`. Rewriting
+either file loses the wiring and usually reintroduces a `127.0.0.1` bind, which
+makes the app unreachable through a preview (502).
+
+## Where the detail is
+
+The generated app's own `README.md` carries the full table and worked examples
+for each request-reply kind. It ships in every scaffold, in both sample modes.
+"""
 
     return mcp
