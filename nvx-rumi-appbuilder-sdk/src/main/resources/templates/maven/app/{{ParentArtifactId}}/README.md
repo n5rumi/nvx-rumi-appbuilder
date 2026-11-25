@@ -119,6 +119,32 @@ client offers. `rumi dev rest-endpoint get` prints a body back, and `update`
 replaces it.
 <!-- @bare-end -->
 
+### What this surface does and does not cover
+
+`rest-endpoint add` covers **request-reply endpoints**: a path and method whose
+body talks to this service's engine or to another service through its client.
+Most of a web tier's endpoints are that shape, and for those you should not be
+writing JAX-RS by hand.
+
+It does not cover everything a web tier needs, and the parts it does not are
+worth knowing before you start, so you are not looking for a command that does
+not exist:
+
+| Not covered | Write it yourself |
+|---|---|
+| Serving static assets (a browser app's HTML, JS, CSS) | A servlet or Jersey static-content handler registered in `HttpServer` |
+| Streaming responses — SSE, long-poll, websockets | A resource class of your own; the endpoint surface assumes one request, one reply |
+| Authentication and authorization filters | A JAX-RS filter, registered once in `HttpServer` |
+| In-memory projections, caches and correlation state | Ordinary classes in your service |
+| The browser application itself | Outside this app entirely |
+
+**Extend `Main.java` and `HttpServer.java`, do not replace them.** They carry the
+engine wiring, the bind host and port, and the JAX-RS registration that the rest
+of the scaffold depends on. Adding a filter or a static-content handler means
+adding a registration to `HttpServer`; rewriting the file loses the wiring and
+usually reintroduces a `127.0.0.1` bind, which makes the app unreachable through
+a preview.
+
 Request-reply between two services' handlers is not available: a handler
 cannot block on another service. It is for REST endpoints, on the webservice's
 own threads.

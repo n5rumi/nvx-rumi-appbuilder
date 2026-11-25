@@ -419,6 +419,23 @@ verify_mode() {
     fi
     grep -q 'find-class.sh' "${app}/README.md" \
         || fail "[${label}] The generated README does not mention find-class.sh (I-06)"
+
+    # ---- RUMI-417 -----------------------------------------------------------
+    # The REST endpoint surface covers request-reply and not much else, and the
+    # parts it does NOT cover are what an agent hand-wrote 48 KB of rather than
+    # ask. Asserted in BOTH scaffold modes: the limits apply whatever mode the
+    # app was generated in, so the section sits outside the sample markers and a
+    # marker slipping around it would silently drop it from one mode.
+    grep -q 'does and does not cover' "${app}/README.md" \
+        || fail "[${label}] The generated README does not say what the REST endpoint surface does NOT cover (RUMI-417)"
+    local uncovered
+    for uncovered in 'static assets' 'Streaming responses' 'authorization filters'; do
+        grep -qi "${uncovered}" "${app}/README.md" \
+            || fail "[${label}] The README's uncovered-surface list omits '${uncovered}' (RUMI-417)"
+    done
+    grep -q 'do not replace them' "${app}/README.md" \
+        || fail "[${label}] The README does not say to EXTEND Main.java and HttpServer.java rather than replace them -- overwriting them is what cost 30 KB of rework (RUMI-417)"
+    info "[${label}] README states the REST surface's limits and the extend-not-replace rule"
     info "[${label}] find-class.sh resolves a Rumi class to its artifact"
     # The compile target must match the JDK the app RUNS on (RUMI-429). It was 8
     # while the runtime was 17, so everything the JDK gained after 8 compiled
