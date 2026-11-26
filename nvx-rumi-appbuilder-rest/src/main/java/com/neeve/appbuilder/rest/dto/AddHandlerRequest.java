@@ -24,27 +24,36 @@ package com.neeve.appbuilder.rest.dto;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.List;
+
 /**
  * Request body for {@code POST /v1/services/{svc}/handlers}.
  *
  * <p>{@code body} is the Java code for the method body (without braces).
  * Null means the editor inserts an empty body with a TODO comment.
+ *
+ * <p>{@code imports} names types the body uses that are NOT in the app's own
+ * models; model types are resolved and imported automatically.
  */
 public final class AddHandlerRequest {
     private final String method;
     private final String messageType;
     private final String body;
+    private final List<String> imports;
 
     @JsonCreator
     public AddHandlerRequest(@JsonProperty("method") String method,
                              @JsonProperty("messageType") String messageType,
-                             @JsonProperty("body") String body) {
+                             @JsonProperty("body") String body,
+                             @JsonProperty("imports") List<String> imports) {
         this.method = method;
         this.messageType = messageType;
         this.body = body;
+        this.imports = imports;
     }
 
     public String getMethod() { return method; }
     public String getMessageType() { return messageType; }
     public String getBody() { return body; }
+    public List<String> getImports() { return imports; }
 }

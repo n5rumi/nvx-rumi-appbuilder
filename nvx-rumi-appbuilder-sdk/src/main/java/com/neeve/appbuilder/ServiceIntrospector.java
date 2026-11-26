@@ -71,13 +71,32 @@ public final class ServiceIntrospector {
      * is declared in the app's parent POM.
      */
     public static ServiceInfo getService(Path appRoot, String serviceName) throws IOException {
-        List<String> names = listServiceNames(appRoot);
-        for (String name : names) {
-            if (name.equals(serviceName)) {
-                return buildServiceInfo(appRoot, name);
+        ServiceInfo found = null;
+        if (serviceName != null && !serviceName.isEmpty()) {
+            // Accept the name the CALLER used, not only the kebab-case form the
+            // module ended up with. ServiceBuilder runs the requested name
+            // through TokenUtils.toKebabCase to derive the artifact id, so a
+            // service added as "Greeting" is listed as "greeting" -- and an
+            // exact-match lookup on "Greeting" then found nothing. That was not
+            // a cosmetic miss: Services.add() returns getService(root,
+            // req.getName()) straight after creating the service, so every
+            // add_service call returned null, JAX-RS turned that into a 204, and
+            // the MCP tool (declared -> dict) failed validating its own result
+            // with "Input should be a valid dictionary ... input_value=None".
+            // The service WAS created, so the error arrived after success and
+            // read like a rejection -- the costly kind, because the natural
+            // response is to retry, which fails identically. GET
+            // /v1/services/{name} had the same miss, as a 404 for a service
+            // plainly present in the listing.
+            final String kebab = TokenUtils.toKebabCase(serviceName);
+            for (String name : listServiceNames(appRoot)) {
+                if (name.equals(serviceName) || name.equals(kebab)) {
+                    found = buildServiceInfo(appRoot, name);
+                    break;
+                }
             }
         }
-        return null;
+        return found;
     }
 
     /**

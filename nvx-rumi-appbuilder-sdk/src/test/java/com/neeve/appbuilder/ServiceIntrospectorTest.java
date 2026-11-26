@@ -36,6 +36,49 @@ import static org.junit.Assert.*;
 
 public class ServiceIntrospectorTest {
 
+    // ---- getService: the name the CALLER used -------------------------
+
+    /**
+     * ServiceBuilder runs the requested name through TokenUtils.toKebabCase to
+     * derive the module, so a service added as "OrderProcessor" is listed as
+     * "order-processor". getService matched exactly, so a lookup on the name
+     * the caller had just supplied found nothing -- and Services.add() does
+     * exactly that lookup immediately after creating the service. The null
+     * became a JAX-RS 204, and the MCP tool (declared -> dict) then failed
+     * validating its own result: "Input should be a valid dictionary ...
+     * input_value=None". The service existed; the error arrived after success.
+     */
+    @Test
+    public void getService_acceptsTheNameTheCallerUsed() throws Exception {
+        scaffoldProcessorModule("order-processor");
+
+        assertNotNull("kebab-case, as listed", ServiceIntrospector.getService(appRoot, "order-processor"));
+        assertNotNull("PascalCase, as a caller would pass it",
+            ServiceIntrospector.getService(appRoot, "OrderProcessor"));
+        assertNotNull("spaces and underscores normalise too",
+            ServiceIntrospector.getService(appRoot, "order_processor"));
+        assertEquals("the resolved service is the same one", "order-processor",
+            ServiceIntrospector.getService(appRoot, "OrderProcessor").getName());
+    }
+
+    /** Normalising must not turn a miss into a hit. */
+    @Test
+    public void getService_stillReturnsNullForAServiceThatIsNotThere() throws Exception {
+        scaffoldProcessorModule("order-processor");
+
+        assertNull(ServiceIntrospector.getService(appRoot, "Nonexistent"));
+        assertNull(ServiceIntrospector.getService(appRoot, "order"));
+        assertNull(ServiceIntrospector.getService(appRoot, null));
+        assertNull(ServiceIntrospector.getService(appRoot, ""));
+    }
+
+    private void scaffoldProcessorModule(String serviceName) throws IOException {
+        PhaseBTestSupport.writeParentPom(appRoot, "test-trading-" + serviceName);
+        Files.createDirectories(appRoot.resolve("test-trading-" + serviceName));
+        PhaseBTestSupport.writeMessagesXml(appRoot, serviceName,
+            "<model xmlns=\"http://www.neeveresearch.com/schema/x-adml\"><messages/></model>");
+    }
+
     private Path tempDir;
     private Path appRoot;
 
