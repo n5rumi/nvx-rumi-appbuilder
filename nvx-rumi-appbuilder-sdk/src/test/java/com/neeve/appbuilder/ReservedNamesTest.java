@@ -90,6 +90,31 @@ public class ReservedNamesTest {
         assertTrue(ReservedNames.isReservedFieldName("transactionId"));
     }
 
+    /**
+     * A refusal that names the wrong source sends the author to look in the
+     * wrong place. 'created' collides with a flag accessor generated INTO the
+     * Pojo; 'message' collides with an inherited final method. Same failure,
+     * different file to go and read.
+     */
+    @Test
+    public void theRefusalNamesWhichCollisionItIs() {
+        String pojo = ReservedNames.collisionSourceOf("created");
+        assertNotNull(pojo);
+        assertTrue("should point at the generated Pojo flags, not inheritance",
+            pojo.contains("generated into") && pojo.contains("FLG_CREATED"));
+        assertFalse("must not blame inheritance for a flag collision",
+            pojo.contains("inherited"));
+
+        String inherited = ReservedNames.collisionSourceOf("message");
+        assertNotNull(inherited);
+        assertTrue("should point at the inherited final methods",
+            inherited.contains("inherited") && inherited.contains("RogNode"));
+        assertFalse(inherited.contains("FLG_"));
+
+        assertNull("not reserved means no source", ReservedNames.collisionSourceOf("createdAt"));
+        assertNull(ReservedNames.collisionSourceOf(null));
+    }
+
     @Test
     public void nullAndBlankAreNotReserved() {
         assertFalse(ReservedNames.isReservedFieldName(null));

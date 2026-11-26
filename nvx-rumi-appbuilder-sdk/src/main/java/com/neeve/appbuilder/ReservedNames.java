@@ -135,12 +135,19 @@ public final class ReservedNames {
             "preWireTs", "receiveTs", "requestId", "requestorId",
             "requestorIdAsRaw", "sendStartTs", "sendTs", "serializedMetadataLength",
             "stableTransactionId", "storeMetadata", "transactionId", "transactionInSequenceNumber",
-            "transactionOutSequenceNumber", "vfid",
-            // Generated INTO each Pojo rather than inherited, so the
-            // RogNode/MessageViewImpl derivation above never saw them. See the
-            // class javadoc for how to re-derive these.
-            "created", "onlyPojos", "pooled", "private",
-            "wasRun", "wasSet")));
+            "transactionOutSequenceNumber", "vfid")));
+
+    /**
+     * Names colliding with the lifecycle-flag accessors generated INTO each
+     * {@code Pojo} rather than inherited, so the RogNode/MessageViewImpl
+     * derivation above cannot see them. Kept separate from the inherited set
+     * only so a refusal can name the right source: telling an author their
+     * field collides with an inherited final method, when it actually collides
+     * with a generated flag accessor, sends them to look in the wrong place.
+     */
+    private static final Set<String> POJO_FLAG_NAMES = Collections.unmodifiableSet(
+        new LinkedHashSet<>(Arrays.asList(
+            "created", "onlyPojos", "pooled", "private", "wasRun", "wasSet")));
 
     /**
      * Whether {@code fieldName} would generate an accessor colliding with an
@@ -153,7 +160,30 @@ public final class ReservedNames {
         if (fieldName == null || fieldName.trim().isEmpty()) {
             return false;
         }
-        return RESERVED_FIELD_NAMES.contains(decapitalize(fieldName.trim()));
+        final String key = decapitalize(fieldName.trim());
+        return RESERVED_FIELD_NAMES.contains(key) || POJO_FLAG_NAMES.contains(key);
+    }
+
+    /**
+     * Why {@code fieldName} is reserved, as a clause for a refusal message, or
+     * null when it is not reserved at all. The two sources fail the same way —
+     * generated source that will not compile — but in different places, so an
+     * author chasing the collision needs to be told which.
+     */
+    public static String collisionSourceOf(String fieldName) {
+        String source = null;
+        if (fieldName != null && !fieldName.trim().isEmpty()) {
+            final String key = decapitalize(fieldName.trim());
+            if (POJO_FLAG_NAMES.contains(key)) {
+                source = "one of the lifecycle-flag accessors generated into the message's "
+                       + "own Pojo class (FLG_" + key.toUpperCase() + ")";
+            }
+            else if (RESERVED_FIELD_NAMES.contains(key)) {
+                source = "a final method inherited from com.neeve.rog.impl.RogNode / "
+                       + "com.neeve.sma.MessageViewImpl";
+            }
+        }
+        return source;
     }
 
     /** The reserved names, for tests and for building an error message. */
