@@ -307,9 +307,9 @@ public final class ModelValidator {
         // breaks the build whatever the field is declared as.
         if (ReservedNames.isReservedFieldName(name)) {
             errors.add(error("field '" + name + "' on " + owner + " is a reserved name. "
-                + "Its generated getter would collide with a final method inherited from "
-                + "com.neeve.rog.impl.RogNode / com.neeve.sma.MessageViewImpl, so the "
-                + "generated source will not compile. Rename the field."));
+                + "Its generated accessor would collide with "
+                + ReservedNames.collisionSourceOf(name)
+                + ", so the generated source will not compile. Rename the field."));
         }
 
         if (rawType == null || rawType.trim().isEmpty()) {

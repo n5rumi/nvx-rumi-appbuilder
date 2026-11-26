@@ -95,7 +95,7 @@ public class Handlers extends AbstractResource {
                          AddHandlerRequest req) throws IOException {
         if (req == null) throw new IllegalArgumentException("request body is required");
         return JavaSourceEditor.addHandler(requireAbsoluteAppRoot(appRoot), service,
-            req.getMethod(), req.getMessageType(), req.getBody(), dryRun);
+            req.getMethod(), req.getMessageType(), req.getBody(), req.getImports(), dryRun);
     }
 
     @PUT

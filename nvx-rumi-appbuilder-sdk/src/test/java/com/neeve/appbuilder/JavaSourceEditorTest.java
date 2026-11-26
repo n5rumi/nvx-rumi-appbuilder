@@ -476,6 +476,100 @@ public class JavaSourceEditorTest {
 
     // ---- helpers -------------------------------------------------------
 
+    // ---- addHandler: the imports the body needs -----------------------
+
+    /**
+     * add_handler imported only the HANDLED message type. A request handler
+     * almost always constructs a response, so the generated Main.java named a
+     * type it had not imported and could not compile -- and add_handler had no
+     * imports parameter either (unlike add_rest_endpoint), so there was no way
+     * to supply it. The only remedy was to notice and hand-edit a file you did
+     * not write; miss it and the build fails minutes later in generated code.
+     */
+    @Test
+    public void addHandler_importsTheResponseTypeTheBodyBuilds() throws Exception {
+        writeEmptyMain("feeder");
+        writeTwoMessageModel("feeder");
+
+        JavaSourceEditor.addHandler(appRoot, "feeder", "onGreetRequest", "GreetRequest",
+            "final GreetResponse response = GreetResponse.create();\n"
+            + "_messageSender.sendReply(message, response);",
+            false);
+
+        String written = readMain("feeder");
+        assertTrue("the handled type is imported",
+            written.contains("import com.example.trading.messages.GreetRequest;"));
+        assertTrue("the type the BODY builds is imported too",
+            written.contains("import com.example.trading.messages.GreetResponse;"));
+    }
+
+    /** Resolution comes from the models, so nothing is ever guessed. */
+    @Test
+    public void addHandler_doesNotInventAnImportForAnUnknownType() throws Exception {
+        writeEmptyMain("feeder");
+        writeTwoMessageModel("feeder");
+
+        JavaSourceEditor.addHandler(appRoot, "feeder", "onGreetRequest", "GreetRequest",
+            "final Mystery m = Mystery.of(message); System.out.println(m);", false);
+
+        String written = readMain("feeder");
+        assertFalse("a name absent from the models must not be imported",
+            written.contains("Mystery;"));
+    }
+
+    /** imports carries what the models cannot: types from outside them. */
+    @Test
+    public void addHandler_acceptsExplicitImportsForNonModelTypes() throws Exception {
+        writeEmptyMain("feeder");
+        writeTwoMessageModel("feeder");
+
+        JavaSourceEditor.addHandler(appRoot, "feeder", "onGreetRequest", "GreetRequest",
+            "final List<String> seen = new ArrayList<>(); seen.add(message.toString());",
+            java.util.Arrays.asList("java.util.List", "java.util.ArrayList"), false);
+
+        String written = readMain("feeder");
+        assertTrue(written.contains("import java.util.List;"));
+        assertTrue(written.contains("import java.util.ArrayList;"));
+    }
+
+    @Test
+    public void addHandler_refusesSomethingThatIsNotAnImport() throws Exception {
+        writeEmptyMain("feeder");
+        writeTwoMessageModel("feeder");
+
+        try {
+            JavaSourceEditor.addHandler(appRoot, "feeder", "onGreetRequest", "GreetRequest",
+                "int x = 1;", java.util.Arrays.asList("not a type name!"), false);
+            fail("expected a refusal");
+        }
+        catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("not an import"));
+        }
+    }
+
+    /** The 6-arg form existing callers use must keep working. */
+    @Test
+    public void addHandler_sixArgFormStillWorks() throws Exception {
+        writeEmptyMain("feeder");
+        writeTwoMessageModel("feeder");
+
+        ChangeSet result = JavaSourceEditor.addHandler(
+            appRoot, "feeder", "onGreetRequest", "GreetRequest", "int x = 1;", false);
+        assertTrue(result.isApplied());
+    }
+
+    private void writeTwoMessageModel(String serviceName) throws IOException {
+        PhaseBTestSupport.writeMessagesXml(appRoot, serviceName,
+            "<model xmlns=\"http://www.neeveresearch.com/schema/x-adml\" "
+          + "namespace=\"com.example.trading.messages\">"
+          + "<messages>"
+          + "<message name=\"GreetRequest\"><fields>"
+          + "<field name=\"personName\" type=\"String\" id=\"1\"/></fields></message>"
+          + "<message name=\"GreetResponse\"><fields>"
+          + "<field name=\"greeting\" type=\"String\" id=\"1\"/></fields></message>"
+          + "</messages></model>");
+    }
+
     private void writeEmptyMain(String serviceName) throws IOException {
         Path mainJava = AppIntrospector.resolveMainJavaFile(appRoot, serviceName);
         Files.createDirectories(mainJava.getParent());

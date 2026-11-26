@@ -77,15 +77,44 @@ import java.util.Set;
  * then decapitalize the first letter of each. Adding a name that has since
  * stopped being final costs a false rejection; missing a newly-final one costs
  * the build break this class exists to prevent, so err towards re-deriving.
+ *
+ * <h2>A THIRD source: the generated Pojo's own lifecycle flags</h2>
+ *
+ * Inherited final getters are not the only way to collide. Every generated
+ * {@code Pojo} inner class carries its own lifecycle bitmask with private
+ * {@code setX} / {@code isX} / {@code clearX} accessors per flag, generated
+ * INTO the class rather than inherited, so the two-class derivation above
+ * cannot see them. Read off a generated message at Rumi 4.0.667 the flags are:
+ *
+ * <pre>
+ * FLG_CREATED  FLG_POOLED  FLG_PRIVATE  FLG_WASRUN  FLG_WASSET  FLG_ONLY_POJOS
+ * </pre>
+ *
+ * {@code created} is the one that actually bites, because it is the obvious
+ * name both for a timestamp and for the "did this create a new record" flag on
+ * an upsert response — and note {@code createTs} was already covered while
+ * {@code created} was not, which is exactly why the gap survived. Re-derive
+ * these from a generated source on a milestone bump:
+ *
+ * <pre>
+ * grep -oE "FLG_[A-Z_]+" &lt;module&gt;/target/generated-sources/rumi/adm/**&#47;*.java | sort -u
+ * </pre>
+ *
+ * <h2>What a rejection does and does not prove</h2>
+ *
+ * A rejection from here is trustworthy. Acceptance is NOT a promise that the
+ * model generates compilable code — this class knows about collisions, not
+ * about everything the ADM generator can refuse. Compile after a model change,
+ * before writing the Java that depends on it.
  */
 public final class ReservedNames {
 
     private ReservedNames() {}
 
     /**
-     * Field names that cannot be used in a message or entity, derived from the
-     * final no-argument getters on {@code RogNode} and {@code MessageViewImpl}
-     * at Rumi 4.0.640.
+     * Field names that cannot be used in a message or entity: the final
+     * no-argument getters on {@code RogNode} and {@code MessageViewImpl} at
+     * Rumi 4.0.640, plus the generated Pojo lifecycle flags at 4.0.667.
      */
     private static final Set<String> RESERVED_FIELD_NAMES = Collections.unmodifiableSet(
         new LinkedHashSet<>(Arrays.asList(
@@ -109,6 +138,18 @@ public final class ReservedNames {
             "transactionOutSequenceNumber", "vfid")));
 
     /**
+     * Names colliding with the lifecycle-flag accessors generated INTO each
+     * {@code Pojo} rather than inherited, so the RogNode/MessageViewImpl
+     * derivation above cannot see them. Kept separate from the inherited set
+     * only so a refusal can name the right source: telling an author their
+     * field collides with an inherited final method, when it actually collides
+     * with a generated flag accessor, sends them to look in the wrong place.
+     */
+    private static final Set<String> POJO_FLAG_NAMES = Collections.unmodifiableSet(
+        new LinkedHashSet<>(Arrays.asList(
+            "created", "onlyPojos", "pooled", "private", "wasRun", "wasSet")));
+
+    /**
      * Whether {@code fieldName} would generate an accessor colliding with an
      * inherited final method. Compared ignoring the case of the first letter,
      * since {@code message} and {@code Message} generate the same getter.
@@ -119,7 +160,30 @@ public final class ReservedNames {
         if (fieldName == null || fieldName.trim().isEmpty()) {
             return false;
         }
-        return RESERVED_FIELD_NAMES.contains(decapitalize(fieldName.trim()));
+        final String key = decapitalize(fieldName.trim());
+        return RESERVED_FIELD_NAMES.contains(key) || POJO_FLAG_NAMES.contains(key);
+    }
+
+    /**
+     * Why {@code fieldName} is reserved, as a clause for a refusal message, or
+     * null when it is not reserved at all. The two sources fail the same way —
+     * generated source that will not compile — but in different places, so an
+     * author chasing the collision needs to be told which.
+     */
+    public static String collisionSourceOf(String fieldName) {
+        String source = null;
+        if (fieldName != null && !fieldName.trim().isEmpty()) {
+            final String key = decapitalize(fieldName.trim());
+            if (POJO_FLAG_NAMES.contains(key)) {
+                source = "one of the lifecycle-flag accessors generated into the message's "
+                       + "own Pojo class (FLG_" + key.toUpperCase() + ")";
+            }
+            else if (RESERVED_FIELD_NAMES.contains(key)) {
+                source = "a final method inherited from com.neeve.rog.impl.RogNode / "
+                       + "com.neeve.sma.MessageViewImpl";
+            }
+        }
+        return source;
     }
 
     /** The reserved names, for tests and for building an error message. */

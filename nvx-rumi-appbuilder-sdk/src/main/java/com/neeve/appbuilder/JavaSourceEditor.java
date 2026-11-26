@@ -40,7 +40,13 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * AST-level editor for a service's {@code Main.java}. Adds and removes
@@ -77,6 +83,30 @@ public final class JavaSourceEditor {
                                        String messageType,
                                        String body,
                                        boolean dryRun) throws IOException {
+        return addHandler(appRoot, serviceName, methodName, messageType, body, null, dryRun);
+    }
+
+    /**
+     * As above, plus {@code imports}: fully qualified types the BODY uses that
+     * are not in the app's own models (a {@code java.util} collection, say).
+     *
+     * <p>Types that ARE in the models need no entry — they are resolved and
+     * imported automatically, which is the gap this overload closes. Before
+     * it, only the handled message type was imported, so the response message
+     * a request handler almost always constructs was left unimported and the
+     * generated {@code Main.java} could not compile. {@code add_handler} had no
+     * {@code imports} parameter either, unlike {@code add_rest_endpoint}, so
+     * there was no way to supply it in the call: the only remedy was to notice
+     * and hand-edit a file you did not write, and if you did not notice, the
+     * failure surfaced minutes later in a build, pointing at generated code.
+     */
+    public static ChangeSet addHandler(Path appRoot,
+                                       String serviceName,
+                                       String methodName,
+                                       String messageType,
+                                       String body,
+                                       List<String> imports,
+                                       boolean dryRun) throws IOException {
         Path mainJava = AppIntrospector.resolveMainJavaFile(appRoot, serviceName);
         if (!Files.exists(mainJava)) {
             throw new IOException("Main.java not found at " + mainJava);
@@ -103,6 +133,15 @@ public final class JavaSourceEditor {
         String fqn = resolveMessageFqn(appRoot, serviceName, messageType);
         if (fqn != null) {
             cu.addImport(fqn);
+        }
+
+        // The body's own types. Model types are resolved from the models, so a
+        // name is imported only when it genuinely exists there -- never guessed.
+        for (String bodyType : modelTypesIn(appRoot, serviceName, body, messageType)) {
+            cu.addImport(bodyType);
+        }
+        for (String explicit : checkImports(imports)) {
+            cu.addImport(explicit);
         }
 
         MethodDeclaration method = buildHandlerMethod(methodName, messageType, body);
@@ -273,6 +312,56 @@ public final class JavaSourceEditor {
      * @return the fully-qualified name, {@code messageType} unchanged if it is
      *         already qualified, or null if no model declares it.
      */
+    /**
+     * Fully qualified names for every type the body names that the app's own
+     * models declare, excluding {@code handledType} (already imported).
+     * A name that does not resolve is simply skipped — this adds imports for
+     * types known to exist, and never invents one.
+     */
+    private static List<String> modelTypesIn(Path appRoot, String serviceName,
+                                             String body, String handledType) {
+        Set<String> fqns = new LinkedHashSet<>();
+        if (body != null && !body.trim().isEmpty()) {
+            String handled = handledType == null ? "" : handledType.trim();
+            Set<String> seen = new LinkedHashSet<>();
+            Matcher m = CANDIDATE_TYPE.matcher(body);
+            while (m.find()) {
+                String candidate = m.group();
+                if (!candidate.equals(handled) && seen.add(candidate)) {
+                    String resolved = resolveMessageFqn(appRoot, serviceName, candidate);
+                    if (resolved != null) {
+                        fqns.add(resolved);
+                    }
+                }
+            }
+        }
+        return new ArrayList<>(fqns);
+    }
+
+    /** Validate and normalise caller-supplied imports, as RestEndpointEditor does. */
+    private static List<String> checkImports(List<String> imports) {
+        List<String> out = new ArrayList<>();
+        if (imports != null) {
+            for (String i : imports) {
+                String t = i == null ? "" : i.trim()
+                        .replaceFirst("^import\\s+", "").replaceFirst(";$", "").trim();
+                if (!IMPORT_FORM.matcher(t).matches()) {
+                    throw new IllegalArgumentException("not an import: '" + i + "'");
+                }
+                out.add(t);
+            }
+        }
+        return out;
+    }
+
+    /** A bare, capitalised Java identifier — a candidate simple type name. */
+    private static final Pattern CANDIDATE_TYPE =
+        Pattern.compile("\\b[A-Z][A-Za-z0-9_]*\\b");
+
+    /** {@code pkg.Type} or {@code pkg.*}. */
+    private static final Pattern IMPORT_FORM =
+        Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*(\\.\\*)?");
+
     private static String resolveMessageFqn(Path appRoot, String serviceName, String messageType) {
         if (messageType == null || messageType.trim().isEmpty()) {
             return null;

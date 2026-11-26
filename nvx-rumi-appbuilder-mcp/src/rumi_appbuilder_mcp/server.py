@@ -282,13 +282,19 @@ def build_server(base_url: str | None = None) -> FastMCP:
         method: str,
         message_type: str,
         body: str | None = None,
+        imports: list[str] | None = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Add an @EventHandler method. body is the Java method body (without braces); None inserts an empty TODO body."""
+        """Add an @EventHandler method. body is the Java method body (without braces); None inserts an empty TODO body. The handled message type and any OTHER type from the app's own models that the body names are imported for you, resolved from the models so nothing is guessed -- a request handler that builds a <Service>Response needs no action. imports is for types outside the models the body uses (a java.util collection, say), same contract as add_rest_endpoint."""
         return rest.post(
             f"/v1/services/{service}/handlers",
             params={"app_root": app_root, "dry_run": str(dry_run).lower()},
-            json={"method": method, "messageType": message_type, "body": body},
+            json={
+                "method": method,
+                "messageType": message_type,
+                "body": body,
+                "imports": imports,
+            },
         )
 
     @tool()
